@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Criar Build — Echo Arena</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0A0817; --bg2:#0D0A1C; --panel:#12102A; --panel2:#161331; --card:#1A1740;
+  --line:#241F4D; --line2:#332B63;
+  --ink:#ECE9F8; --dim:#9C93C4; --faint:#6A6194;
+  --pur:#8B5CF6; --pur2:#6D28D9; --pur-lt:#B794FF;
+  --grn:#4ADE80; --gold:#FBBF24; --red:#FF5470; --cyan:#4CC7E8; --blue:#5B8DEF;
+  /* raridades */
+  --r-comum:#8A93AD; --r-raro:#4CC7E8; --r-epico:#A855F7; --r-divino:#FBBF24;
+  --f:'Inter',system-ui,-apple-system,sans-serif;
+  --t:'Barlow Condensed',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{overflow-x:hidden}
+body{background:var(--bg);color:var(--ink);font-family:var(--f);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+input,select,textarea{font-family:inherit;color:inherit;outline:none}
+img,video{display:block;max-width:100%}
+.t{font-family:var(--t)}
+
+/* ===== MÍDIA CONFIGURÁVEL (png/jpg/gif transparente/mp4) ===== */
+.media{position:relative;overflow:hidden}
+.media>img,.media>video{position:absolute;top:50%;left:50%;width:100%;height:100%;
+  object-fit:var(--fit,contain);object-position:var(--pos,50% 50%);
+  transform:translate(-50%,-50%) translate(var(--x,0),var(--y,0)) scale(var(--scale,1))}
+.media.ph::after{content:"◈";position:absolute;inset:0;display:grid;place-items:center;
+  color:#ffffff14;font-size:1.4rem}
+
+/* ===== TOPBAR ===== */
+.top{position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:16px;
+  padding:12px 24px;background:rgba(10,8,23,.92);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:10px;flex:0 0 auto}
+.brand .mk{width:34px;height:34px;position:relative;flex:0 0 34px}
+.brand .mk::before{content:"";position:absolute;inset:0;background:linear-gradient(140deg,#A78BFA,#6D28D9);
+  clip-path:polygon(50% 0,100% 26%,100% 74%,50% 100%,0 74%,0 26%);box-shadow:0 0 16px #8b5cf666}
+.brand .mk::after{content:"";position:absolute;inset:9px;background:#0A0817;
+  clip-path:polygon(50% 8%,92% 30%,92% 70%,50% 92%,8% 70%,8% 30%)}
+.brand b{font-family:var(--t);font-weight:800;font-size:21px;line-height:.95;letter-spacing:.02em}
+.brand b span{display:block;color:var(--pur-lt);font-size:15px}
+.nav{display:flex;gap:28px;margin-left:24px;flex:1;min-width:0}
+.nav a{font-size:12.5px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);white-space:nowrap}
+.nav a:hover,.nav a.on{color:#fff}
+.srch{position:relative;flex:0 0 auto}
+.srch input{width:250px;background:var(--panel);border:1px solid var(--line);border-radius:9px;
+  padding:9px 12px 9px 34px;font-size:12.5px}
+.srch input::placeholder{color:var(--faint)}
+.srch::before{content:"⌕";position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--faint);font-size:15px}
+.bell{position:relative;width:36px;height:36px;display:grid;place-items:center;border-radius:9px;
+  border:1px solid var(--line);color:var(--dim);font-size:15px}
+.bell i{position:absolute;top:-5px;right:-5px;width:17px;height:17px;border-radius:50%;background:var(--pur);
+  color:#fff;font-size:9.5px;font-style:normal;display:grid;place-items:center;font-weight:700}
+.usr{display:flex;align-items:center;gap:9px;flex:0 0 auto}
+.usr .av{width:36px;height:36px;flex:0 0 36px;border-radius:10px;border:1.5px solid var(--pur);overflow:hidden}
+.usr .nm{font-size:12.5px;font-weight:600;line-height:1.25}
+.usr .nm small{display:block;color:var(--faint);font-size:11px;font-weight:400}
+.burger{display:none;width:38px;height:36px;border:1px solid var(--line2);border-radius:9px;font-size:17px}
+
+/* ===== LAYOUT ===== */
+.shell{display:grid;grid-template-columns:230px minmax(0,1fr) 300px 290px;gap:16px;
+  max-width:1560px;margin:0 auto;padding:18px 24px 40px;align-items:start}
+
+/* ===== SIDEBAR ===== */
+.side h1{font-family:var(--t);font-weight:800;font-size:34px;letter-spacing:.01em;line-height:1}
+.side .sub{color:var(--dim);font-size:12.5px;margin-top:2px;margin-bottom:22px}
+.steps{position:relative;display:flex;flex-direction:column;gap:6px;margin-bottom:22px}
+.steps::before{content:"";position:absolute;left:20px;top:26px;bottom:26px;width:2px;background:var(--line);z-index:0}
+.step{position:relative;z-index:1;display:flex;align-items:center;gap:13px;padding:11px 13px;border-radius:12px;
+  cursor:pointer;transition:.15s;border:1px solid transparent}
+.step .n{width:28px;height:28px;flex:0 0 28px;border-radius:50%;display:grid;place-items:center;
+  font-family:var(--t);font-weight:700;font-size:15px;background:var(--panel2);border:1.5px solid var(--line2);color:var(--dim)}
+.step b{font-size:12.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;display:block}
+.step small{color:var(--faint);font-size:11px}
+.step:hover{background:var(--panel)}
+.step.on{background:linear-gradient(90deg,#1E1747,#15112F);border-color:var(--line2)}
+.step.on .n{background:linear-gradient(180deg,var(--pur),var(--pur2));border-color:transparent;color:#fff;
+  box-shadow:0 0 14px #8b5cf677}
+.step.on small{color:var(--pur-lt)}
+.step.done .n{background:#1E3A2E;border-color:#2F6B4A;color:var(--grn)}
+.tip{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px}
+.tip .h{display:flex;align-items:center;gap:7px;font-size:11.5px;font-weight:700;letter-spacing:.07em;
+  text-transform:uppercase;color:var(--pur-lt);margin-bottom:8px}
+.tip p{font-size:12px;color:var(--dim);line-height:1.6}
+.prog{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:15px;margin-bottom:16px}
+.prog .h{display:flex;justify-content:space-between;font-size:11px;font-weight:700;letter-spacing:.07em;
+  text-transform:uppercase;color:var(--dim);margin-bottom:9px}
+.prog .h span{color:var(--pur-lt)}
+.bar{height:6px;border-radius:4px;background:var(--panel2);overflow:hidden}
+.bar i{display:block;height:100%;border-radius:4px;background:linear-gradient(90deg,var(--pur),#C4B5FD);
+  box-shadow:0 0 10px #8b5cf688;transition:width .4s}
+.back{width:100%;padding:12px;border-radius:11px;border:1px solid var(--line2);background:var(--panel);
+  font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--dim)}
+.back:hover{background:var(--panel2);color:var(--ink)}
+
+/* ===== CARDS ===== */
+.box{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px;margin-bottom:16px}
+.eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--pur-lt);margin-bottom:5px}
+.box h2{font-family:var(--t);font-weight:700;font-size:24px;letter-spacing:.02em;text-transform:uppercase;margin-bottom:16px}
+
+/* etapa 1 — form */
+.form{display:grid;grid-template-columns:1fr 1.2fr 0.9fr;gap:14px}
+.fld label{display:block;font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--dim);margin-bottom:7px}
+.fld input,.fld textarea,.fld select{width:100%;background:var(--bg2);border:1px solid var(--line2);
+  border-radius:10px;padding:11px 13px;font-size:13.5px}
+.fld textarea{resize:vertical;min-height:46px;line-height:1.5}
+.fld input:focus,.fld textarea:focus,.fld select:focus{border-color:var(--pur)}
+.fld .cnt{text-align:right;font-size:10.5px;color:var(--faint);margin-top:5px}
+.fld .hint{font-size:10.5px;color:var(--faint);margin-top:5px}
+
+/* etapa 2 — hero ring */
+.ring{position:relative;min-height:430px;display:grid;place-items:center;padding:22px 0 8px}
+.ring .glow{position:absolute;width:340px;height:340px;border-radius:50%;
+  background:radial-gradient(circle,#8B5CF633,transparent 62%);filter:blur(6px)}
+.ring .orbit{position:absolute;width:390px;height:390px;border-radius:50%;border:1px dashed #ffffff12}
+.hero{position:relative;z-index:3;display:flex;flex-direction:column;align-items:center}
+.hero .art{width:230px;height:300px;position:relative}
+.hero .art .media{position:absolute;inset:0}
+.hero .nm{font-family:var(--t);font-weight:800;font-size:38px;letter-spacing:.02em;line-height:1;margin-top:-6px;
+  text-shadow:0 4px 24px #0009}
+.hero .rl{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--red);margin-top:5px}
+/* slots hexagonais */
+.slot{position:absolute;z-index:4;width:104px;text-align:center;cursor:pointer}
+.slot .lb{font-size:9.5px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--dim);margin-bottom:5px}
+.slot .hex{width:88px;height:96px;margin:0 auto;position:relative;
+  clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);
+  background:linear-gradient(160deg,#221B4C,#141029);display:grid;place-items:center;transition:.18s}
+.slot .hex::before{content:"";position:absolute;inset:0;padding:2px;
+  clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);
+  background:var(--rc,#332B63);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude}
+.slot .hex .media{width:52px;height:52px;z-index:2}
+.slot:hover .hex{transform:translateY(-3px);filter:brightness(1.15)}
+.slot .in{font-size:10px;color:var(--dim);margin-top:6px;line-height:1.35}
+.slot .in b{display:block;font-size:11px;font-weight:600;color:var(--ink)}
+.slot .in i{font-style:normal;font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--rc,#8A93AD)}
+.slot.empty .hex{background:#12102A}
+.slot.empty .hex .plus{color:var(--faint);font-size:22px;z-index:2}
+.cta{display:block;margin:14px auto 0;padding:13px 26px;border-radius:11px;
+  background:linear-gradient(180deg,var(--pur),var(--pur2));color:#fff;font-size:13px;font-weight:700;
+  letter-spacing:.06em;text-transform:uppercase;box-shadow:0 8px 24px -8px #8b5cf6aa}
+.cta:hover{filter:brightness(1.08)}
+.cta.ghost{background:transparent;border:1px solid var(--line2);color:var(--dim);box-shadow:none}
+.cta.full{width:100%}
+
+/* carrossel de heróis */
+.pick{position:relative}
+.pick h3{font-family:var(--t);font-weight:700;font-size:19px;letter-spacing:.03em;text-transform:uppercase;margin-bottom:12px}
+.track{display:flex;gap:10px;overflow-x:auto;scroll-behavior:smooth;padding:2px 0 8px;scrollbar-width:none}
+.track::-webkit-scrollbar{display:none}
+.hcard{flex:0 0 88px;border-radius:11px;overflow:hidden;background:var(--card);border:1.5px solid var(--line);
+  cursor:pointer;transition:.15s}
+.hcard:hover{transform:translateY(-3px)}
+.hcard.on{border-color:var(--pur);box-shadow:0 0 0 1px #8b5cf655,0 10px 26px -12px #8b5cf6}
+.hcard .im{position:relative;aspect-ratio:88/104}
+.hcard .im .media{position:absolute;inset:0}
+.hcard .im .fd{position:absolute;inset:0;background:linear-gradient(0deg,#12102A 8%,transparent 55%)}
+.hcard .cp{padding:7px 4px 9px;text-align:center}
+.hcard .cp b{display:block;font-size:10.5px;font-weight:700;letter-spacing:.04em}
+.hcard .cp i{font-style:normal;font-size:11px}
+.arw{position:absolute;top:52%;width:32px;height:32px;border-radius:50%;background:rgba(10,8,23,.85);
+  border:1px solid var(--line2);color:var(--dim);display:grid;place-items:center;z-index:5;backdrop-filter:blur(4px)}
+.arw.l{left:-10px}.arw.r{right:-10px}
+.dots{display:flex;gap:5px;justify-content:center;margin-top:6px}
+.dots i{width:16px;height:3px;border-radius:2px;background:var(--line2)}
+.dots i.on{background:var(--pur);width:22px}
+
+/* ===== COLUNA 3 — equipamentos ===== */
+.tabs{display:flex;gap:4px;background:var(--bg2);border:1px solid var(--line);border-radius:11px;padding:4px;margin-bottom:12px;overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:1;min-width:52px;padding:8px 6px;border-radius:8px;text-align:center;font-size:9px;font-weight:700;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--faint);white-space:nowrap}
+.tab .ic{display:block;font-size:14px;margin-bottom:2px}
+.tab.on{background:var(--card);color:#fff;box-shadow:0 0 0 1px var(--line2)}
+.ilist{display:flex;flex-direction:column;gap:8px;max-height:560px;overflow-y:auto;padding-right:3px}
+.ilist::-webkit-scrollbar{width:5px}
+.ilist::-webkit-scrollbar-thumb{background:var(--line2);border-radius:4px}
+.item{display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:11px;background:var(--bg2);
+  border:1.5px solid var(--line);cursor:pointer;transition:.15s;position:relative}
+.item:hover{background:var(--card)}
+.item.sel{border-color:var(--rc,#8B5CF6);box-shadow:0 0 0 1px var(--rc,#8B5CF6)33}
+.item .ic{width:46px;height:46px;flex:0 0 46px;border-radius:9px;background:#0F0C22;
+  border:1px solid var(--line2);position:relative;overflow:hidden}
+.item .tx{flex:1;min-width:0}
+.item .tx b{display:block;font-size:12.5px;font-weight:600}
+.item .tx i{font-style:normal;font-size:9.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--rc,#8A93AD)}
+.item .st{display:flex;gap:1.5px;margin-top:3px}
+.item .st s{text-decoration:none;font-size:10px;color:#3A3363}
+.item .st s.f{color:var(--gold)}
+.item .ok{position:absolute;top:8px;right:9px;width:17px;height:17px;border-radius:50%;
+  background:var(--gold);color:#1B1608;font-size:10px;display:grid;place-items:center;font-weight:800}
+.foot{display:flex;gap:8px;margin-top:12px}
+.foot button{flex:1;padding:11px;border-radius:10px;border:1px solid var(--line2);background:var(--bg2);
+  font-size:11.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--dim)}
+.foot button:hover{background:var(--card);color:var(--ink)}
+
+/* ===== COLUNA 4 — stats ===== */
+.stat{margin-bottom:14px}
+.stat .h{display:flex;align-items:center;gap:9px;margin-bottom:6px}
+.stat .h .ic{width:22px;flex:0 0 22px;text-align:center;font-size:14px}
+.stat .h .nm{flex:1;font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--dim)}
+.stat .h .v{font-family:var(--t);font-weight:700;font-size:17px}
+.stat .h .d{font-size:10.5px;font-weight:700;color:var(--grn)}
+.stat .tr{height:5px;border-radius:3px;background:var(--panel2);overflow:hidden}
+.stat .tr i{display:block;height:100%;border-radius:3px;transition:width .5s}
+.tags{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:11px}
+.tags span{font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;padding:4px 10px;border-radius:6px}
+.tags .a{color:var(--red);background:#FF54701c;border:1px solid #FF547044}
+.tags .b{color:var(--gold);background:#FBBF241c;border:1px solid #FBBF2444}
+.syn{display:flex;gap:8px}
+.syn .s{width:46px;height:46px;border-radius:10px;border:1.5px solid var(--rc,#332B63);background:#0F0C22;
+  position:relative;overflow:hidden}
+.bonus{display:flex;flex-direction:column;gap:11px}
+.bonus .b{display:flex;gap:10px;align-items:flex-start}
+.bonus .b .ic{width:26px;height:26px;flex:0 0 26px;border-radius:8px;background:#1D1740;display:grid;
+  place-items:center;font-size:12px;color:var(--pur-lt)}
+.bonus .b b{display:block;font-size:11.5px;font-weight:600}
+.bonus .b small{color:var(--faint);font-size:10.5px}
+.h4{font-family:var(--t);font-weight:700;font-size:15px;letter-spacing:.05em;text-transform:uppercase;margin-bottom:12px;
+  display:flex;align-items:center;justify-content:space-between}
+.h4 .i{width:17px;height:17px;border-radius:50%;border:1px solid var(--line2);color:var(--faint);
+  font-size:10px;display:grid;place-items:center}
+
+/* ===== RESPONSIVO ===== */
+@media(max-width:1400px){
+  .shell{grid-template-columns:210px minmax(0,1fr) 280px}
+  .col4{grid-column:2/-1;display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+}
+@media(max-width:1100px){
+  .nav,.srch{display:none}
+  .burger{display:grid;place-items:center;margin-left:auto}
+  .shell{grid-template-columns:minmax(0,1fr)}
+  .side{display:none}
+  .side.open{display:block;position:fixed;inset:58px 0 0;z-index:55;background:var(--bg);padding:18px;overflow:auto}
+  .col3,.col4{grid-column:auto}
+  .col4{grid-template-columns:1fr 1fr}
+  .form{grid-template-columns:1fr}
+}
+@media(max-width:720px){
+  .col4{grid-template-columns:1fr}
+  .ring{min-height:0;padding:10px 0}
+  .ring .orbit,.ring .glow{display:none}
+  .slot{position:static!important;width:auto;transform:none!important}
+  .slots-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px}
+  .hero .art{width:180px;height:230px}
+  .hero .nm{font-size:30px}
+}
+</style>
+</head>
+<body>
+
+<!-- ============ TOPBAR ============ -->
+<header class="top">
+  <div class="brand"><span class="mk"></span><b>ECHO<span>ARENA</span></b></div>
+  <nav class="nav">
+    <a class="on">Builds</a><a>Heróis</a><a>Tier List</a><a>Guias</a><a>Notícias</a>
+  </nav>
+  <div class="srch"><input placeholder="Buscar conteúdo..."></div>
+  <button class="bell">🔔<i id="notif">3</i></button>
+  <div class="usr">
+    <div class="av media ph" id="user-av"></div>
+    <div class="nm" id="user-nm">SlayerX<small>Nível 42</small></div>
+  </div>
+  <button class="burger" id="burger">☰</button>
+</header>
+
+<div class="shell">
+
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="side" id="side">
+    <h1 class="t">CRIAR BUILD</h1>
+    <div class="sub">Monte sua estratégia perfeita</div>
+
+    <div class="steps" id="steps">
+      <div class="step on" data-s="1"><span class="n">1</span><div><b>Informações</b><small>Nome, descrição e visibilidade</small></div></div>
+      <div class="step" data-s="2"><span class="n">2</span><div><b>Herói</b><small>Escolha seu herói</small></div></div>
+      <div class="step" data-s="3"><span class="n">3</span><div><b>Equipamentos</b><small>Monte seu loadout</small></div></div>
+      <div class="step" data-s="4"><span class="n">4</span><div><b>Revisão</b><small>Confira e salve sua build</small></div></div>
+    </div>
+
+    <div class="tip">
+      <div class="h">✦ Dica do especialista</div>
+      <p id="tip-text">Equilíbrio é tudo! Uma build bem distribuída entre dano, sobrevivência e utilidade garante resultados melhores.</p>
+    </div>
+
+    <div class="prog">
+      <div class="h">Progresso da build <span id="prog-pct">25%</span></div>
+      <div class="bar"><i id="prog-bar" style="width:25%"></i></div>
+    </div>
+
+    <button class="back">← Voltar ao início</button>
+  </aside>
+
+  <!-- ============ CENTRO ============ -->
+  <main>
+    <!-- ETAPA 1 -->
+    <section class="box">
+      <div class="eyebrow">Etapa 1 de 4</div>
+      <h2>Informações da build</h2>
+      <div class="form">
+        <div class="fld">
+          <label>Nome da build</label>
+          <input id="b-name" maxlength="60" placeholder="Ex.: Slayer — Ruptura de Blindagem">
+          <div class="cnt"><span id="c-name">0</span> / 60</div>
+        </div>
+        <div class="fld">
+          <label>Descrição</label>
+          <textarea id="b-desc" maxlength="500" rows="2" placeholder="Explique sua estratégia..."></textarea>
+          <div class="cnt"><span id="c-desc">0</span> / 500</div>
+        </div>
+        <div class="fld">
+          <label>Visibilidade</label>
+          <select id="b-vis"><option value="public">🌐 Pública</option><option value="private">🔒 Privada</option></select>
+          <div class="hint" id="vis-hint">Sua build poderá ser vista por todos.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ETAPA 2 — herói + loadout -->
+    <section class="box">
+      <div class="eyebrow">Etapa 2 de 4</div>
+      <h2>Selecione seu herói</h2>
+
+      <div class="ring" id="ring">
+        <div class="glow"></div>
+        <div class="orbit"></div>
+        <div class="hero">
+          <div class="art media ph" id="hero-art"></div>
+          <div class="nm t" id="hero-name">SLAYER</div>
+          <div class="rl"><span id="hero-icon">⚔</span><span id="hero-role">Assassino</span></div>
+        </div>
+      </div>
+      <div class="slots-grid" id="slots-mobile"></div>
+
+      <button class="cta" id="next-equip">Próximo: equipamentos →</button>
+    </section>
+
+    <!-- escolha do herói -->
+    <section class="box pick">
+      <h3 class="t">Escolha seu herói</h3>
+      <button class="arw l" id="tk-l">‹</button>
+      <button class="arw r" id="tk-r">›</button>
+      <div class="track" id="track"></div>
+      <div class="dots" id="dots"></div>
+    </section>
+  </main>
+
+  <!-- ============ COLUNA 3 — equipamentos ============ -->
+  <aside class="col3">
+    <section class="box" style="margin-bottom:0">
+      <div class="eyebrow">Etapa 3 de 4</div>
+      <div class="h4">Seus equipamentos (<span id="eq-count">0/6</span>) <span class="i">i</span></div>
+      <p style="font-size:11.5px;color:var(--faint);margin:-6px 0 12px">Clique num slot e depois num equipamento.</p>
+
+      <div class="tabs" id="tabs"></div>
+      <div class="ilist" id="ilist"></div>
+
+      <div class="foot">
+        <button id="f-filter">⚙ Filtros</button>
+        <button id="f-sort">⇅ Ordenar</button>
+      </div>
+    </section>
+  </aside>
+
+  <!-- ============ COLUNA 4 — stats ============ -->
+  <aside class="col4">
+    <section class="box">
+      <div class="h4">Estatísticas previstas <span class="i">i</span></div>
+      <div id="stats"></div>
+      <button class="cta ghost full" style="margin-top:4px">Ver detalhes completos</button>
+    </section>
+
+    <section class="box">
+      <div class="h4">Resumo da build</div>
+      <div class="tags"><span class="a" id="sum-a">Assassino</span><span class="b" id="sum-b">Dano explosivo</span></div>
+      <p style="font-size:12px;color:var(--dim);line-height:1.6" id="sum-txt">
+        Foco em eliminar alvos rapidamente com alto dano e mobilidade.</p>
+    </section>
+
+    <section class="box">
+      <div class="h4">Sinergia dos itens</div>
+      <div class="syn" id="syn"></div>
+    </section>
+
+    <section class="box">
+      <div class="h4">Bônus ativos (<span id="bn-count">0</span>)</div>
+      <div class="bonus" id="bonus"></div>
+    </section>
+
+    <button class="cta full" style="margin-bottom:9px">Próximo: revisão →</button>
+    <button class="cta ghost full">Salvar rascunho</button>
+  </aside>
+</div>
+
+<script type="module">
+import { supabase } from './js/supabase.js';
+
+/* ============================================================
+   CONFIG — tudo que o painel admin vai alimentar depois.
+   Toda mídia aceita: .png .jpg .gif (transparente) .mp4 .webm
+   media: { src, fit, pos, scale, x, y }
+     fit   'contain' = mostra inteiro (ideal p/ GIF de herói sem fundo)
+           'cover'   = preenche o espaço
+     pos   '50% 30%'  ·  scale 1.15  ·  x '8px'  ·  y '-10px'
+   ============================================================ */
+let CONFIG = {
+  usuario: { nome:'SlayerX', nivel:42, media:{ src:'', fit:'cover' } },
+
+  /* --- herói em destaque (GIF sem fundo) --- */
+  heroi: {
+    id:'slayer', nome:'SLAYER', classe:'Assassino', icone:'⚔',
+    media:{ src:'img/Slayer.gif', fit:'contain', pos:'50% 50%', scale:1, x:0, y:0 }
+  },
+
+  /* --- 6 slots ao redor do herói (posição em % dentro do anel) --- */
+  slots: [
+    { key:'coracao',  label:'Coração',  x:22, y:12 },
+    { key:'arma',     label:'Arma',     x:78, y:12 },
+    { key:'gadget',   label:'Gadget',   x:10, y:50 },
+    { key:'suporte',  label:'Suporte',  x:90, y:50 },
+    { key:'modulo',   label:'Módulo',   x:22, y:84 },
+    { key:'especial', label:'Especial', x:78, y:84 }
+  ],
+
+  /* --- equipamento colocado em cada slot (vem do admin/banco) --- */
+  equipados: {
+    coracao:  { nome:'Heart',            raridade:'divino', media:{ src:'', fit:'contain' } },
+    arma:     { nome:'Submachine Gun',   raridade:'epico',  media:{ src:'', fit:'contain' } },
+    gadget:   { nome:'Firepower',        raridade:'epico',  media:{ src:'', fit:'contain' } },
+    suporte:  { nome:'Armor Break',      raridade:'raro',   media:{ src:'', fit:'contain' } },
+    modulo:   { nome:'Bouncing Grenade', raridade:'epico',  media:{ src:'', fit:'contain' } },
+    especial: { nome:'Stamina Booster',  raridade:'raro',   media:{ src:'', fit:'contain' } }
+  },
+
+  /* --- carrossel de heróis --- */
+  herois: [
+    { id:'slayer',    nome:'Slayer',    classe:'Assassino', icone:'⚔', cor:'#A855F7', media:{src:'',fit:'cover',pos:'50% 20%'} },
+    { id:'blast',     nome:'Blast',     classe:'Atirador',  icone:'✦', cor:'#5B8DEF', media:{src:'',fit:'cover',pos:'50% 20%'} },
+    { id:'cyclops',   nome:'Cyclops',   classe:'Tanque',    icone:'◉', cor:'#FF5470', media:{src:'',fit:'cover',pos:'50% 20%'} },
+    { id:'raven',     nome:'Raven',     classe:'Furtivo',   icone:'✧', cor:'#4ADE80', media:{src:'',fit:'cover',pos:'50% 20%'} },
+    { id:'firefly',   nome:'Firefly',   classe:'Suporte',   icone:'✚', cor:'#FBBF24', media:{src:'',fit:'cover',pos:'50% 20%'} },
+    { id:'leviathan', nome:'Leviathan', classe:'Tanque',    icone:'⛨', cor:'#4CC7E8', media:{src:'',fit:'cover',pos:'50% 20%'} },
+    { id:'stalker',   nome:'Stalker',   classe:'Assassino', icone:'⚔', cor:'#A855F7', media:{src:'',fit:'cover',pos:'50% 20%'} },
+    { id:'lenny',     nome:'Lenny',     classe:'Suporte',   icone:'✚', cor:'#4ADE80', media:{src:'',fit:'cover',pos:'50% 20%'} },
+    { id:'alice',     nome:'Alice',     classe:'Atirador',  icone:'✦', cor:'#FF5470', media:{src:'',fit:'cover',pos:'50% 20%'} },
+    { id:'dragon',    nome:'Dragon',    classe:'Assalto',   icone:'▲', cor:'#5B8DEF', media:{src:'',fit:'cover',pos:'50% 20%'} }
+  ],
+
+  /* --- catálogo de equipamentos (lista da direita) --- */
+  categorias: [
+    { key:'todos',    label:'Todos',    icone:'▦' },
+    { key:'arma',     label:'Arma',     icone:'🔫' },
+    { key:'armadura', label:'Armadura', icone:'🛡' },
+    { key:'suporte',  label:'Suporte',  icone:'✚' },
+    { key:'especial', label:'Especial', icone:'✧' },
+    { key:'modulo',   label:'Módulo',   icone:'◈' }
+  ],
+  catalogo: [
+    { nome:'Heart', cat:'armadura', raridade:'divino', estrelas:3.5, slot:'coracao', media:{src:'',fit:'contain'} },
+    { nome:'Heart', cat:'armadura', raridade:'epico',  estrelas:0,   slot:'coracao', media:{src:'',fit:'contain'} },
+    { nome:'Heart', cat:'armadura', raridade:'raro',   estrelas:0,   slot:'coracao', media:{src:'',fit:'contain'} },
+    { nome:'Heart', cat:'armadura', raridade:'comum',  estrelas:0,   slot:'coracao', media:{src:'',fit:'contain'} },
+    { nome:'Bulletproof Vest', cat:'armadura', raridade:'divino', estrelas:3, slot:'modulo', media:{src:'',fit:'contain'} },
+    { nome:'Bulletproof Vest', cat:'armadura', raridade:'epico',  estrelas:0, slot:'modulo', media:{src:'',fit:'contain'} },
+    { nome:'Bulletproof Vest', cat:'armadura', raridade:'raro',   estrelas:0, slot:'modulo', media:{src:'',fit:'contain'} }
+  ],
+
+  /* --- estatísticas previstas --- */
+  stats: [
+    { nome:'Poder de fogo',  valor:8450, delta:'+32%', pct:84, cor:'#FF5470', icone:'🚀' },
+    { nome:'Sobrevivência',  valor:9120, delta:'+28%', pct:91, cor:'#4ADE80', icone:'🛡' },
+    { nome:'Mobilidade',     valor:7210, delta:'+18%', pct:72, cor:'#FBBF24', icone:'⚡' },
+    { nome:'Suporte',        valor:6340, delta:'+12%', pct:63, cor:'#5B8DEF', icone:'✚' },
+    { nome:'Controle',       valor:7890, delta:'+22%', pct:79, cor:'#A855F7', icone:'✧' }
+  ],
+
+  /* --- bônus ativos --- */
+  bonus: [
+    { nome:'Dano Explosivo', desc:'+15% dano de habilidade', icone:'◉' },
+    { nome:'Quebra de Defesa', desc:'-20% armadura inimiga', icone:'◈' },
+    { nome:'Recarga Rápida', desc:'-12% tempo de recarga', icone:'↻' }
+  ],
+
+  resumo: { tagA:'Assassino', tagB:'Dano explosivo',
+            texto:'Foco em eliminar alvos rapidamente com alto dano e mobilidade.' }
+};
+
+const RARIDADES = {
+  comum:{ nome:'Comum', cor:'#8A93AD' }, raro:{ nome:'Raro', cor:'#4CC7E8' },
+  epico:{ nome:'Épico', cor:'#A855F7' }, divino:{ nome:'Divino', cor:'#FBBF24' },
+  lendario:{ nome:'Lendário', cor:'#FBBF24' }, mitico:{ nome:'Mítico', cor:'#FB923C' },
+  supremo:{ nome:'Supremo', cor:'#F87171' }, grandioso:{ nome:'Grandioso', cor:'#C084FC' },
+  celestial:{ nome:'Celestial', cor:'#38BDF8' }, estelar:{ nome:'Estelar', cor:'#A78BFA' },
+  imortal:{ nome:'Imortal', cor:'#FB7185' }
+};
+
+/* ---------- helpers de mídia ---------- */
+
+/* ============================================================
+   SUPABASE — conteúdo administrável
+   Heróis e equipamentos substituem os dados locais do CONFIG.
+   ============================================================ */
+async function carregarConteudoSupabase() {
+  const [
+    heroesResult,
+    classesResult,
+    equipmentsResult,
+    slotsResult
+  ] = await Promise.all([
+    supabase
+      .from('heroes')
+      .select('id,name,slug,class_id,enabled,display_order,image_url,card_image_url,gif_url,image_fit,image_position,image_scale,image_offset_x,image_offset_y')
+      .eq('enabled', true)
+      .order('display_order', { ascending: true })
+      .order('name', { ascending: true }),
+
+    supabase
+      .from('hero_classes')
+      .select('id,name,slug,color,icon')
+      .order('name', { ascending: true }),
+
+    supabase
+      .from('equipments')
+      .select('id,name,description,image_url,rarity,slot_id,enabled,display_order')
+      .eq('enabled', true)
+      .order('display_order', { ascending: true })
+      .order('name', { ascending: true }),
+
+    supabase
+      .from('equipment_slots')
+      .select('id,name,slug,display_order')
+      .order('display_order', { ascending: true })
+  ]);
+
+  if (heroesResult.error) {
+    console.error('Erro ao carregar heróis:', heroesResult.error);
+  }
+
+  if (equipmentsResult.error) {
+    console.error('Erro ao carregar equipamentos:', equipmentsResult.error);
+  }
+
+  const classes = new Map(
+    (classesResult.data || []).map(item => [item.id, item])
+  );
+
+  const slots = new Map(
+    (slotsResult.data || []).map(item => [item.id, item])
+  );
+
+  const heroes = (heroesResult.data || []).map(hero => {
+    const heroClass = classes.get(hero.class_id);
+    const mainSource = hero.gif_url || hero.image_url || hero.card_image_url || '';
+    const cardSource = hero.card_image_url || hero.image_url || hero.gif_url || '';
+
+    return {
+      id: hero.slug || hero.id,
+      databaseId: hero.id,
+      nome: hero.name,
+      classe: heroClass?.name || 'Sem classe',
+      icone: heroClass?.icon || '◆',
+      cor: heroClass?.color || '#A855F7',
+      media: {
+        src: cardSource,
+        fit: hero.image_fit || 'cover',
+        pos: hero.image_position || '50% 20%',
+        scale: Number(hero.image_scale ?? 1),
+        x: `${Number(hero.image_offset_x ?? 0)}px`,
+        y: `${Number(hero.image_offset_y ?? 0)}px`
+      },
+      destaque: {
+        src: mainSource,
+        fit: 'contain',
+        pos: hero.image_position || '50% 50%',
+        scale: Number(hero.image_scale ?? 1),
+        x: `${Number(hero.image_offset_x ?? 0)}px`,
+        y: `${Number(hero.image_offset_y ?? 0)}px`
+      }
+    };
+  });
+
+  const equipments = (equipmentsResult.data || []).map(item => {
+    const slot = slots.get(item.slot_id);
+    const rarity = String(item.rarity || 'comum').toLowerCase();
+
+    return {
+      databaseId: item.id,
+      nome: item.name,
+      cat: slot?.slug || 'todos',
+      slot: slot?.slug || null,
+      raridade: rarity,
+      estrelas: 0,
+      descricao: item.description || '',
+      media: {
+        src: item.image_url || '',
+        fit: 'contain',
+        pos: '50% 50%',
+        scale: 1,
+        x: 0,
+        y: 0
+      }
+    };
+  });
+
+  if (heroes.length) {
+    CONFIG.herois = heroes;
+
+    const first = heroes[0];
+    CONFIG.heroi = {
+      id: first.id,
+      databaseId: first.databaseId,
+      nome: first.nome.toUpperCase(),
+      classe: first.classe,
+      icone: first.icone,
+      media: first.destaque
+    };
+  }
+
+  if (equipments.length) {
+    CONFIG.catalogo = equipments;
+
+    // Não equipa itens automaticamente; todos os slots começam vazios.
+    CONFIG.equipados = {};
+  }
+}
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const isVid = s => /\.(mp4|webm)$/i.test(s || '');
+const mStyle = m => m ? `--fit:${m.fit||'contain'};--pos:${m.pos||'50% 50%'};--scale:${m.scale==null?1:m.scale};--x:${m.x||0};--y:${m.y||0}` : '';
+const mInner = m => (!m || !m.src) ? '' : (isVid(m.src)
+  ? `<video src="${esc(m.src)}" autoplay muted loop playsinline></video>`
+  : `<img src="${esc(m.src)}" alt="" loading="lazy">`);
+function pintar(el, m) {
+  if (!el) return;
+  el.setAttribute('style', mStyle(m));
+  el.innerHTML = mInner(m);
+  el.classList.toggle('ph', !(m && m.src));
+}
+const rc = r => (RARIDADES[r] || RARIDADES.comum).cor;
+const rn = r => (RARIDADES[r] || RARIDADES.comum).nome;
+
+/* ---------- estado ---------- */
+let heroiAtual = CONFIG.heroi.id;
+let slotAtivo = null;
+let categoria = 'todos';
+let etapa = 1;
+
+/* ---------- topo ---------- */
+pintar($('user-av'), CONFIG.usuario.media);
+$('user-nm').innerHTML = esc(CONFIG.usuario.nome) + '<small>Nível ' + CONFIG.usuario.nivel + '</small>';
+
+/* ---------- herói + slots ---------- */
+function renderHeroi() {
+  $('hero-name').textContent = CONFIG.heroi.nome;
+  $('hero-role').textContent = CONFIG.heroi.classe;
+  $('hero-icon').textContent = CONFIG.heroi.icone;
+  pintar($('hero-art'), CONFIG.heroi.media);
+  renderSlots();
+}
+
+function renderSlots() {
+  const ring = $('ring');
+  ring.querySelectorAll('.slot').forEach(s => s.remove());
+  const mob = $('slots-mobile'); mob.innerHTML = '';
+  const mobile = window.matchMedia('(max-width:720px)').matches;
+
+  CONFIG.slots.forEach(s => {
+    const it = CONFIG.equipados[s.key];
+    const cor = it ? rc(it.raridade) : '#332B63';
+    const el = document.createElement('div');
+    el.className = 'slot' + (it ? '' : ' empty');
+    el.dataset.slot = s.key;
+    el.style.setProperty('--rc', cor);
+    el.innerHTML =
+      '<div class="lb">' + esc(s.label) + '</div>' +
+      '<div class="hex">' + (it
+        ? '<div class="media ' + (it.media && it.media.src ? '' : 'ph') + '" style="' + mStyle(it.media) + '">' + mInner(it.media) + '</div>'
+        : '<span class="plus">+</span>') + '</div>' +
+      (it ? '<div class="in"><b>' + esc(it.nome) + '</b><i>' + esc(rn(it.raridade)) + '</i></div>'
+          : '<div class="in"><b>Vazio</b></div>');
+
+    el.onclick = () => selecionarSlot(s.key);
+
+    if (mobile) { mob.appendChild(el); }
+    else {
+      el.style.position = 'absolute';
+      el.style.left = s.x + '%';
+      el.style.top = s.y + '%';
+      el.style.transform = 'translate(-50%,-50%)';
+      ring.appendChild(el);
+    }
+  });
+  atualizarContagem();
+}
+
+function selecionarSlot(key) {
+  slotAtivo = key;
+  document.querySelectorAll('.slot').forEach(s =>
+    s.style.filter = s.dataset.slot === key ? 'brightness(1.25)' : '');
+  const s = CONFIG.slots.find(x => x.key === key);
+  if (s) categoria = 'todos';
+  renderTabs(); renderCatalogo();
+  document.querySelector('.col3').scrollIntoView({ behavior:'smooth', block:'nearest' });
+}
+
+function atualizarContagem() {
+  const n = CONFIG.slots.filter(s => CONFIG.equipados[s.key]).length;
+  $('eq-count').textContent = n + '/6';
+}
+
+/* ---------- carrossel de heróis ---------- */
+function renderHerois() {
+  const tk = $('track');
+  tk.innerHTML = CONFIG.herois.map(h => `
+    <div class="hcard ${h.id === heroiAtual ? 'on' : ''}" data-id="${esc(h.id)}">
+      <div class="im">
+        <div class="media ${h.media && h.media.src ? '' : 'ph'}" style="${mStyle(h.media)}">${mInner(h.media)}</div>
+        <div class="fd"></div>
+      </div>
+      <div class="cp"><b>${esc(h.nome)}</b><i style="color:${esc(h.cor)}">${esc(h.icone)}</i></div>
+    </div>`).join('');
+
+  tk.onclick = e => {
+    const c = e.target.closest('.hcard'); if (!c) return;
+    heroiAtual = c.dataset.id;
+    const h = CONFIG.herois.find(x => x.id === heroiAtual);
+    if (h) {
+      CONFIG.heroi.id = h.id; CONFIG.heroi.nome = h.nome.toUpperCase();
+      CONFIG.heroi.classe = h.classe; CONFIG.heroi.icone = h.icone;
+      if (h.destaque && h.destaque.src) {
+        CONFIG.heroi.media = Object.assign({}, h.destaque);
+      } else if (h.media && h.media.src) {
+        CONFIG.heroi.media = Object.assign({}, h.media, { fit:'contain' });
+      }
+      renderHeroi();
+    }
+    tk.querySelectorAll('.hcard').forEach(x => x.classList.toggle('on', x === c));
+    progresso(2);
+  };
+
+  const n = Math.ceil(CONFIG.herois.length / 5);
+  $('dots').innerHTML = Array.from({length:n}, (_,i) => `<i class="${i?'':'on'}"></i>`).join('');
+}
+$('tk-l').onclick = () => $('track').scrollBy({ left:-300, behavior:'smooth' });
+$('tk-r').onclick = () => $('track').scrollBy({ left: 300, behavior:'smooth' });
+
+/* ---------- abas + catálogo ---------- */
+function renderTabs() {
+  $('tabs').innerHTML = CONFIG.categorias.map(c => `
+    <button class="tab ${c.key === categoria ? 'on' : ''}" data-c="${esc(c.key)}">
+      <span class="ic">${esc(c.icone)}</span>${esc(c.label)}</button>`).join('');
+  $('tabs').onclick = e => {
+    const b = e.target.closest('.tab'); if (!b) return;
+    categoria = b.dataset.c; renderTabs(); renderCatalogo();
+  };
+}
+
+function renderCatalogo() {
+  const lista = CONFIG.catalogo.filter(i => categoria === 'todos' || i.cat === categoria);
+  if (!lista.length) { $('ilist').innerHTML = '<div style="padding:22px;text-align:center;color:var(--faint);font-size:12.5px">Nenhum equipamento nesta categoria.</div>'; return; }
+
+  $('ilist').innerHTML = lista.map((i, idx) => {
+    const eq = slotAtivo && CONFIG.equipados[slotAtivo];
+    const sel = eq && eq.nome === i.nome && eq.raridade === i.raridade;
+    const cheias = Math.floor(i.estrelas || 0);
+    const meia = (i.estrelas || 0) % 1 >= .5;
+    let st = '';
+    for (let k = 0; k < 5; k++) st += `<s class="${k < cheias ? 'f' : (k === cheias && meia ? 'f' : '')}">★</s>`;
+    return `
+      <div class="item ${sel ? 'sel' : ''}" data-i="${idx}" style="--rc:${rc(i.raridade)}">
+        <div class="ic media ${i.media && i.media.src ? '' : 'ph'}" style="${mStyle(i.media)}">${mInner(i.media)}</div>
+        <div class="tx"><b>${esc(i.nome)}</b><i>${esc(rn(i.raridade))}</i><div class="st">${st}</div></div>
+        ${sel ? '<span class="ok">✓</span>' : ''}
+      </div>`;
+  }).join('');
+
+  $('ilist').onclick = e => {
+    const el = e.target.closest('.item'); if (!el) return;
+    const item = lista[+el.dataset.i];
+    const alvo = slotAtivo || item.slot || CONFIG.slots[0].key;
+    CONFIG.equipados[alvo] = { nome:item.nome, raridade:item.raridade, media:item.media };
+    slotAtivo = alvo;
+    renderSlots(); renderCatalogo(); renderSinergia(); progresso(3);
+  };
+}
+
+/* ---------- stats / sinergia / bônus ---------- */
+function renderStats() {
+  $('stats').innerHTML = CONFIG.stats.map(s => `
+    <div class="stat">
+      <div class="h"><span class="ic">${esc(s.icone)}</span><span class="nm">${esc(s.nome)}</span>
+        <span class="v">${s.valor.toLocaleString('pt-BR')}</span><span class="d">${esc(s.delta)}</span></div>
+      <div class="tr"><i style="width:${s.pct}%;background:${esc(s.cor)};box-shadow:0 0 8px ${esc(s.cor)}66"></i></div>
+    </div>`).join('');
+}
+
+function renderSinergia() {
+  $('syn').innerHTML = CONFIG.slots.slice(0,4).map(s => {
+    const it = CONFIG.equipados[s.key];
+    return `<div class="s media ${it && it.media && it.media.src ? '' : 'ph'}"
+      style="--rc:${it ? rc(it.raridade) : '#332B63'};${mStyle(it && it.media)}">${mInner(it && it.media)}</div>`;
+  }).join('');
+}
+
+function renderBonus() {
+  $('bn-count').textContent = CONFIG.bonus.length;
+  $('bonus').innerHTML = CONFIG.bonus.map(b => `
+    <div class="b"><span class="ic">${esc(b.icone)}</span>
+      <div><b>${esc(b.nome)}</b><small>${esc(b.desc)}</small></div></div>`).join('');
+  $('sum-a').textContent = CONFIG.resumo.tagA;
+  $('sum-b').textContent = CONFIG.resumo.tagB;
+  $('sum-txt').textContent = CONFIG.resumo.texto;
+}
+
+/* ---------- etapas / progresso ---------- */
+function progresso(n) {
+  if (n > etapa) etapa = n;
+  const pct = Math.min(100, etapa * 25);
+  $('prog-pct').textContent = pct + '%';
+  $('prog-bar').style.width = pct + '%';
+  document.querySelectorAll('.step').forEach(s => {
+    const i = +s.dataset.s;
+    s.classList.toggle('on', i === etapa);
+    s.classList.toggle('done', i < etapa);
+  });
+}
+$('steps').onclick = e => {
+  const s = e.target.closest('.step'); if (!s) return;
+  progresso(+s.dataset.s);
+};
+$('next-equip').onclick = () => {
+  progresso(3);
+  document.querySelector('.col3').scrollIntoView({ behavior:'smooth', block:'start' });
+};
+
+/* ---------- form ---------- */
+$('b-name').oninput = e => { $('c-name').textContent = e.target.value.length; if (e.target.value) progresso(1); };
+$('b-desc').oninput = e => { $('c-desc').textContent = e.target.value.length; };
+$('b-vis').onchange = e => {
+  $('vis-hint').textContent = e.target.value === 'public'
+    ? 'Sua build poderá ser vista por todos.' : 'Somente você poderá ver esta build.';
+};
+$('burger').onclick = () => $('side').classList.toggle('open');
+window.addEventListener('resize', () => { clearTimeout(window._r); window._r = setTimeout(renderSlots, 200); });
+
+/* ---------- init ---------- */
+await carregarConteudoSupabase();
+heroiAtual = CONFIG.heroi.id;
+renderHeroi();
+renderHerois();
+renderTabs();
+renderCatalogo();
+renderStats();
+renderSinergia();
+renderBonus();
+progresso(1);
+</script>
+</body>
+</html>
