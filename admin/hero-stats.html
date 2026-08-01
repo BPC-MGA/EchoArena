@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Status do Herói — Echo Admin</title>
+  <link rel="stylesheet" href="./css/admin.css">
+  <link rel="stylesheet" href="./css/hero-stats.css">
+</head>
+<body>
+  <div class="stats-admin-page">
+    <aside class="sidebar">
+      <div class="brand">ECHO <span>ADMIN</span></div>
+
+      <nav>
+        <a href="./index.html">Dashboard</a>
+        <a href="./heroes.html">Heróis</a>
+        <a class="active" href="./hero-stats.html">Status dos heróis</a>
+        <a href="./equipments.html">Equipamentos</a>
+        <a href="../index.html">Ver site</a>
+      </nav>
+
+      <button id="logout" class="btn ghost">Sair</button>
+    </aside>
+
+    <main class="stats-admin-main">
+      <header class="stats-head">
+        <div>
+          <span class="eyebrow">Dados dinâmicos</span>
+          <h1>Status do herói e da arma</h1>
+        </div>
+
+        <div class="stats-head-actions">
+          <a class="btn ghost" href="./heroes.html">Voltar aos heróis</a>
+          <button id="save-all" class="btn primary" type="button">Salvar alterações</button>
+        </div>
+      </header>
+
+      <section class="stats-panel hero-selector-panel">
+        <label>
+          Herói
+          <select id="hero-select">
+            <option value="">Selecione um herói</option>
+          </select>
+        </label>
+
+        <div id="hero-summary" class="hero-summary">
+          <div class="hero-summary-art" id="hero-art">Sem herói</div>
+          <div>
+            <strong id="hero-name">Nenhum herói selecionado</strong>
+            <span id="hero-slug">—</span>
+          </div>
+        </div>
+      </section>
+
+      <div id="message" class="stats-message"></div>
+
+      <section id="stats-area" class="stats-area hidden">
+        <article class="stats-panel">
+          <div class="section-title">
+            <div>
+              <span class="eyebrow">Base</span>
+              <h2>Status do herói</h2>
+            </div>
+            <span class="section-note">Vida, armadura, visão e mobilidade</span>
+          </div>
+
+          <div id="hero-stats-grid" class="stats-grid"></div>
+        </article>
+
+        <article class="stats-panel">
+          <div class="section-title">
+            <div>
+              <span class="eyebrow">Arma</span>
+              <h2>Status da arma</h2>
+            </div>
+
+            <label class="weapon-name-field">
+              Nome da arma
+              <input id="weapon-name" placeholder="Ex.: Rifle de Precisão">
+            </label>
+          </div>
+
+          <div id="weapon-stats-grid" class="stats-grid"></div>
+        </article>
+
+        <article class="stats-panel">
+          <div class="section-title">
+            <div>
+              <span class="eyebrow">Prévia</span>
+              <h2>Resumo dos valores cadastrados</h2>
+            </div>
+          </div>
+
+          <div id="preview-grid" class="preview-grid"></div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="./js/hero-stats.js"></script>
+</body>
+</html>
