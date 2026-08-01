@@ -412,3 +412,6 @@ const hops = parseInt(sessionStorage.getItem('echoarena_admin_hops') || '0', 10)
         '<pre style="padding:2rem;color:#ffb4bd;background:#0b1221">' +
         'Loop interrompido. Veja o Console (F12).</pre>';
     }
+    return null;
+  }
+}
