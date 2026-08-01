@@ -200,6 +200,40 @@ img,video{display:block;max-width:100%}
 .item .st s.f{color:var(--gold)}
 .item .ok{position:absolute;top:8px;right:9px;width:17px;height:17px;border-radius:50%;
   background:var(--gold);color:#1B1608;font-size:10px;display:grid;place-items:center;font-weight:800}
+
+/* ===== DETALHE DINÂMICO DO EQUIPAMENTO ===== */
+.eq-detail{margin-top:14px;border:1px solid var(--line2);border-radius:14px;background:linear-gradient(180deg,#15122f,#0d0a1c);overflow:hidden}
+.eq-detail.empty{padding:24px;text-align:center;color:var(--faint);font-size:12px}
+.eq-head{display:grid;grid-template-columns:74px minmax(0,1fr);gap:12px;padding:14px;border-bottom:1px solid var(--line)}
+.eq-head .art{width:74px;height:74px;border:1px solid var(--line2);border-radius:12px;background:#090716;overflow:hidden}
+.eq-head h3{font-family:var(--t);font-size:21px;line-height:1.05;text-transform:uppercase;margin:1px 0 5px}
+.eq-head .set-name{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--pur-lt)}
+.eq-head p{font-size:11px;color:var(--dim);margin-top:6px;line-height:1.45}
+.eq-section{padding:14px;border-bottom:1px solid var(--line)}
+.eq-section:last-child{border-bottom:0}
+.eq-section-title{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+.rarity-picker{display:flex;gap:6px;overflow-x:auto;padding:2px 1px 7px;scrollbar-width:none}
+.rarity-picker::-webkit-scrollbar{display:none}
+.rarity-btn{flex:0 0 auto;padding:7px 9px;border-radius:8px;border:1px solid var(--line2);background:#0b0919;font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--rc,#fff);white-space:nowrap}
+.rarity-btn.on{border-color:var(--rc);background:color-mix(in srgb,var(--rc) 18%,#0b0919);box-shadow:0 0 12px color-mix(in srgb,var(--rc) 30%,transparent)}
+.eq-stats{display:grid;gap:8px}
+.eq-stat{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px;border-radius:9px;background:#0b0919;border:1px solid var(--line)}
+.eq-stat span{font-size:11px;color:var(--dim)}
+.eq-stat strong{font-family:var(--t);font-size:17px;color:var(--rc,var(--grn));white-space:nowrap}
+.set-progress{display:flex;align-items:center;gap:10px;margin-bottom:11px}
+.set-progress .track2{flex:1;height:7px;background:#090716;border-radius:10px;overflow:hidden;border:1px solid var(--line)}
+.set-progress .track2 i{display:block;height:100%;background:linear-gradient(90deg,var(--pur),var(--gold));transition:width .25s}
+.set-progress b{font-family:var(--t);font-size:16px}
+.set-bonuses{display:grid;gap:8px}
+.set-bonus{display:grid;grid-template-columns:35px minmax(0,1fr);gap:9px;padding:9px;border-radius:10px;border:1px solid var(--line);background:#0b0919;opacity:.58}
+.set-bonus.active{opacity:1;border-color:#4ade8066;background:#10241b}
+.set-bonus .pieces{width:35px;height:35px;border-radius:9px;display:grid;place-items:center;background:#1b1639;font-family:var(--t);font-weight:800;color:var(--pur-lt)}
+.set-bonus.active .pieces{background:#173c29;color:var(--grn)}
+.set-bonus b{display:block;font-size:11px;margin-bottom:2px}
+.set-bonus p{font-size:10.5px;color:var(--dim);line-height:1.45}
+.recommendation{padding:11px;border-radius:10px;background:#16112f;border:1px solid #8b5cf644;color:var(--dim);font-size:11px;line-height:1.55}
+.recommendation b{display:block;color:var(--pur-lt);margin-bottom:4px}
+
 .foot{display:flex;gap:8px;margin-top:12px}
 .foot button{flex:1;padding:11px;border-radius:10px;border:1px solid var(--line2);background:var(--bg2);
   font-size:11.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--dim)}
@@ -365,6 +399,7 @@ img,video{display:block;max-width:100%}
 
       <div class="tabs" id="tabs"></div>
       <div class="ilist" id="ilist"></div>
+      <div class="eq-detail empty" id="equipment-detail">Selecione um equipamento para ver níveis, atributos e bônus do conjunto.</div>
 
       <div class="foot">
         <button id="f-filter">⚙ Filtros</button>
@@ -529,7 +564,10 @@ async function carregarConteudoSupabase() {
     heroesResult,
     classesResult,
     equipmentsResult,
-    slotsResult
+    slotsResult,
+    rarityLevelsResult,
+    equipmentSetsResult,
+    setBonusesResult
   ] = await Promise.all([
     supabase
       .from('heroes')
@@ -571,6 +609,8 @@ async function carregarConteudoSupabase() {
         image_url,
         rarity,
         slot_id,
+        set_id,
+        recommendation_text,
         enabled,
         display_order
       `)
@@ -581,6 +621,21 @@ async function carregarConteudoSupabase() {
     supabase
       .from('equipment_slots')
       .select('id,name,slug,display_order')
+      .order('display_order', { ascending: true }),
+
+    supabase
+      .from('equipment_rarity_levels')
+      .select('equipment_id,rarity_slug,rarity_name,rarity_order,rarity_color,stats')
+      .order('rarity_order', { ascending: true }),
+
+    supabase
+      .from('equipment_sets')
+      .select('id,name,slug,description,image_path'),
+
+    supabase
+      .from('equipment_set_bonuses')
+      .select('id,set_id,required_pieces,title,description,display_order')
+      .order('required_pieces', { ascending: true })
       .order('display_order', { ascending: true })
   ]);
 
@@ -600,6 +655,10 @@ async function carregarConteudoSupabase() {
     console.error('Erro ao carregar slots:', slotsResult.error);
   }
 
+  if (rarityLevelsResult.error) console.error('Erro ao carregar níveis:', rarityLevelsResult.error);
+  if (equipmentSetsResult.error) console.error('Erro ao carregar conjuntos:', equipmentSetsResult.error);
+  if (setBonusesResult.error) console.error('Erro ao carregar bônus de conjunto:', setBonusesResult.error);
+
   const classes = new Map(
     (classesResult.data || []).map(item => [item.id, item])
   );
@@ -607,6 +666,27 @@ async function carregarConteudoSupabase() {
   const slots = new Map(
     (slotsResult.data || []).map(item => [item.id, item])
   );
+
+  const sets = new Map(
+    (equipmentSetsResult.data || []).map(item => [item.id, item])
+  );
+
+  const rarityLevels = new Map();
+  for (const level of (rarityLevelsResult.data || [])) {
+    if (!rarityLevels.has(level.equipment_id)) rarityLevels.set(level.equipment_id, []);
+    rarityLevels.get(level.equipment_id).push(level);
+  }
+
+  const setBonuses = new Map();
+  for (const bonus of (setBonusesResult.data || [])) {
+    if (!setBonuses.has(bonus.set_id)) setBonuses.set(bonus.set_id, []);
+    setBonuses.get(bonus.set_id).push(bonus);
+  }
+
+  const slotAliases = {
+    eye: 'gadget', head: 'gadget', body: 'coracao', hand: 'arma',
+    leg: 'suporte', ring: 'modulo', special: 'especial'
+  };
 
   const heroes = (heroesResult.data || []).map(hero => {
     const heroClass = classes.get(hero.class_id);
@@ -649,16 +729,35 @@ async function carregarConteudoSupabase() {
 
   const equipments = (equipmentsResult.data || []).map(item => {
     const slot = slots.get(item.slot_id);
-    const rarity = String(item.rarity || 'comum').toLowerCase();
+    const levels = rarityLevels.get(item.id) || [];
+    const initialLevel = levels[0];
+    const equipmentSet = sets.get(item.set_id) || null;
 
     return {
       databaseId: item.id,
       nome: item.name,
       cat: slot?.slug || 'todos',
-      slot: slot?.slug || null,
-      raridade: rarity,
+      slot: slotAliases[slot?.slug] || slot?.slug || null,
+      slotOriginal: slot?.slug || null,
+      raridade: initialLevel?.rarity_slug || String(item.rarity || 'comum').toLowerCase(),
       estrelas: 0,
       descricao: item.description || '',
+      recommendation: item.recommendation_text || '',
+      setId: item.set_id || null,
+      set: equipmentSet ? {
+        id: equipmentSet.id,
+        nome: equipmentSet.name,
+        slug: equipmentSet.slug,
+        descricao: equipmentSet.description || '',
+        bonus: setBonuses.get(equipmentSet.id) || []
+      } : null,
+      levels: levels.map(level => ({
+        slug: level.rarity_slug,
+        nome: level.rarity_name,
+        ordem: level.rarity_order,
+        cor: level.rarity_color || rc(level.rarity_slug),
+        stats: level.stats || {}
+      })),
       media: {
         src: getMediaUrl(item.image_path, item.image_url),
         fit: 'contain',
@@ -669,6 +768,20 @@ async function carregarConteudoSupabase() {
       }
     };
   });
+
+  if (equipments.length) {
+    const dynamicCategories = [...new Map(
+      equipments
+        .filter(item => item.slotOriginal)
+        .map(item => [item.slotOriginal, {
+          key: item.slotOriginal,
+          label: slots.get((equipmentsResult.data || []).find(row => row.id === item.databaseId)?.slot_id)?.name || item.slotOriginal,
+          icone: item.slotOriginal === 'eye' ? '👁' : '◈'
+        }])
+    ).values()];
+
+    CONFIG.categorias = [{ key:'todos', label:'Todos', icone:'▦' }, ...dynamicCategories];
+  }
 
   if (heroes.length) {
     CONFIG.herois = heroes;
@@ -711,6 +824,7 @@ let heroiAtual = CONFIG.heroi.id;
 let slotAtivo = null;
 let categoria = 'todos';
 let etapa = 1;
+let equipamentoSelecionado = null;
 
 /* ---------- topo ---------- */
 pintar($('user-av'), CONFIG.usuario.media);
@@ -822,6 +936,97 @@ function renderTabs() {
   };
 }
 
+
+function nivelAtual(item) {
+  return item?.levels?.find(level => level.slug === item.raridade) || item?.levels?.[0] || null;
+}
+
+function formatStatLabel(key) {
+  const labels = {
+    vision_range: 'Alcance de visão do herói',
+    weapon_damage_to_armor_pct: 'Dano da arma à armadura inimiga',
+    weapon_damage_to_health_pct: 'Dano da arma à vida inimiga',
+    weapon_range_franco: 'Alcance de tiro do Franco',
+    special_ability_cooldown_pct: 'Recarga da habilidade especial',
+    crate_opening_cooldown_pct: 'Tempo de abertura da caixa'
+  };
+  return labels[key] || key.replaceAll('_', ' ');
+}
+
+function formatStatValue(key, value) {
+  if (key.endsWith('_pct')) return `${Number(value) >= 0 ? '+' : ''}${value}%`;
+  return `${Number(value) >= 0 ? '+' : ''}${value}`;
+}
+
+function quantidadeDoConjunto(setId) {
+  if (!setId) return 0;
+  return Object.values(CONFIG.equipados).filter(item => item?.setId === setId).length;
+}
+
+function renderDetalheEquipamento(item = equipamentoSelecionado) {
+  const detail = $('equipment-detail');
+  if (!item) {
+    detail.className = 'eq-detail empty';
+    detail.textContent = 'Selecione um equipamento para ver níveis, atributos e bônus do conjunto.';
+    return;
+  }
+
+  equipamentoSelecionado = item;
+  const level = nivelAtual(item);
+  const stats = level?.stats || {};
+  const pieces = quantidadeDoConjunto(item.setId);
+  const bonuses = item.set?.bonus || [];
+  const maxPieces = Math.max(6, ...bonuses.map(b => b.required_pieces || 0));
+
+  detail.className = 'eq-detail';
+  detail.innerHTML = `
+    <div class="eq-head">
+      <div class="art media ${item.media?.src ? '' : 'ph'}" style="${mStyle(item.media)}">${mInner(item.media)}</div>
+      <div>
+        <div class="set-name">${esc(item.set?.nome || 'Equipamento individual')}</div>
+        <h3>${esc(item.nome)}</h3>
+        <span style="font-size:10px;font-weight:800;color:${esc(level?.cor || rc(item.raridade))}">${esc(level?.nome || rn(item.raridade))}</span>
+        <p>${esc(item.descricao)}</p>
+      </div>
+    </div>
+
+    <div class="eq-section">
+      <div class="eq-section-title"><span>Escolha sua classificação</span><span>${esc(level?.nome || '')}</span></div>
+      <div class="rarity-picker">
+        ${(item.levels || []).map(l => `<button class="rarity-btn ${l.slug === item.raridade ? 'on' : ''}" data-rarity="${esc(l.slug)}" style="--rc:${esc(l.cor)}">${esc(l.nome)}</button>`).join('')}
+      </div>
+    </div>
+
+    <div class="eq-section">
+      <div class="eq-section-title"><span>Atributos neste nível</span><span>${Object.keys(stats).length}</span></div>
+      <div class="eq-stats">
+        ${Object.entries(stats).map(([key,value]) => `<div class="eq-stat" style="--rc:${esc(level?.cor || rc(item.raridade))}"><span>${esc(formatStatLabel(key))}</span><strong>${esc(formatStatValue(key,value))}</strong></div>`).join('') || '<div class="message">Sem atributos cadastrados.</div>'}
+      </div>
+    </div>
+
+    ${item.set ? `<div class="eq-section">
+      <div class="eq-section-title"><span>${esc(item.set.nome)}</span><span>${pieces}/${maxPieces} peças</span></div>
+      <div class="set-progress"><div class="track2"><i style="width:${Math.min(100,(pieces/maxPieces)*100)}%"></i></div><b>${pieces}/${maxPieces}</b></div>
+      <div class="set-bonuses">
+        ${bonuses.map(b => `<div class="set-bonus ${pieces >= b.required_pieces ? 'active' : ''}"><div class="pieces">${b.required_pieces}</div><div><b>${esc(b.title)}</b><p>${esc(b.description)}</p></div></div>`).join('')}
+      </div>
+    </div>` : ''}
+
+    ${item.recommendation ? `<div class="eq-section"><div class="recommendation"><b>Indicação para Franco (Atirador)</b>${esc(item.recommendation)}</div></div>` : ''}
+  `;
+
+  detail.querySelectorAll('[data-rarity]').forEach(button => {
+    button.onclick = () => {
+      item.raridade = button.dataset.rarity;
+      const equippedEntry = Object.values(CONFIG.equipados).find(eq => eq?.databaseId === item.databaseId);
+      if (equippedEntry) equippedEntry.raridade = item.raridade;
+      renderDetalheEquipamento(item);
+      renderSlots();
+      renderCatalogo();
+    };
+  });
+}
+
 function renderCatalogo() {
   const lista = CONFIG.catalogo.filter(i => categoria === 'todos' || i.cat === categoria);
   if (!lista.length) { $('ilist').innerHTML = '<div style="padding:22px;text-align:center;color:var(--faint);font-size:12.5px">Nenhum equipamento nesta categoria.</div>'; return; }
@@ -844,10 +1049,14 @@ function renderCatalogo() {
   $('ilist').onclick = e => {
     const el = e.target.closest('.item'); if (!el) return;
     const item = lista[+el.dataset.i];
+    equipamentoSelecionado = item;
     const alvo = slotAtivo || item.slot || CONFIG.slots[0].key;
-    CONFIG.equipados[alvo] = { nome:item.nome, raridade:item.raridade, media:item.media };
+    CONFIG.equipados[alvo] = {
+      databaseId:item.databaseId, nome:item.nome, raridade:item.raridade, media:item.media,
+      setId:item.setId, set:item.set, levels:item.levels, descricao:item.descricao
+    };
     slotAtivo = alvo;
-    renderSlots(); renderCatalogo(); renderSinergia(); progresso(3);
+    renderSlots(); renderCatalogo(); renderDetalheEquipamento(item); renderSinergia(); progresso(3);
   };
 }
 
@@ -917,6 +1126,7 @@ renderHeroi();
 renderHerois();
 renderTabs();
 renderCatalogo();
+renderDetalheEquipamento();
 renderStats();
 renderSinergia();
 renderBonus();
