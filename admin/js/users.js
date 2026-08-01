@@ -437,8 +437,16 @@ async function showUserDetails(userId) {
   const user = users.find(item => item.id === userId);
   if (!user) return;
 
+  if (!drawer || !drawerBody || !drawerTitle) {
+    console.error('[users] painel de detalhes não encontrado no HTML.');
+    setMessage('Painel de detalhes indisponível nesta página.', 'error');
+    return;
+  }
+
   drawerTitle.textContent = displayNameOf(user);
-  drawerSubtitle.textContent = user.username ? `@${user.username}` : 'sem username';
+  if (drawerSubtitle) {
+    drawerSubtitle.textContent = user.username ? `@${user.username}` : 'sem username';
+  }
   drawerBody.innerHTML = '<div class="users-empty">Carregando...</div>';
 
   openDrawer();
@@ -666,35 +674,45 @@ async function runBulk(label, handler) {
 ========================================================= */
 
 function bindRowEvents() {
-  list.querySelectorAll('[data-block]').forEach(button => {
-    button.addEventListener('click', () => toggleBlock(button.dataset.block));
-  });
-
-  list.querySelectorAll('[data-role-for]').forEach(select => {
-    select.addEventListener('change', () => {
-      changeRole(select.dataset.roleFor, select.value);
-    });
-  });
-
-  list.querySelectorAll('[data-select]').forEach(checkbox => {
-    checkbox.addEventListener('change', () => {
-      const id = checkbox.dataset.select;
-
-      if (checkbox.checked) {
-        selected.add(id);
-      } else {
-        selected.delete(id);
-      }
-
-      checkbox.closest('.user-row')?.classList.toggle('is-selected', checkbox.checked);
-      renderBulkBar();
-    });
-  });
-
-  list.querySelectorAll('[data-open]').forEach(target => {
-    target.addEventListener('click', () => showUserDetails(target.dataset.open));
-  });
+  /* Delegação: os listeners ficam no container, que nunca é
+     recriado. Linhas podem ser redesenhadas à vontade. */
 }
+
+list?.addEventListener('click', (event) => {
+  const blockButton = event.target.closest('[data-block]');
+  if (blockButton) {
+    toggleBlock(blockButton.dataset.block);
+    return;
+  }
+
+  const opener = event.target.closest('[data-open]');
+  if (opener) {
+    showUserDetails(opener.dataset.open);
+  }
+});
+
+list?.addEventListener('change', (event) => {
+  const checkbox = event.target.closest('[data-select]');
+
+  if (checkbox) {
+    const id = checkbox.dataset.select;
+
+    if (checkbox.checked) {
+      selected.add(id);
+    } else {
+      selected.delete(id);
+    }
+
+    checkbox.closest('.user-row')?.classList.toggle('is-selected', checkbox.checked);
+    renderBulkBar();
+    return;
+  }
+
+  const roleSelect = event.target.closest('[data-role-for]');
+  if (roleSelect) {
+    changeRole(roleSelect.dataset.roleFor, roleSelect.value);
+  }
+});
 
 /* =========================================================
    CARREGAMENTO
