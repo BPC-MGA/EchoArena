@@ -1,5 +1,5 @@
 import { supabase } from './supabase.js';
-
+import { loadSiteStats, loadHeroHighlights } from './stats.js';
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 
@@ -111,7 +111,7 @@ async function loadHeroes(classSlug = '') {
 
 function renderSpotlight(hero) {
   if (!hero) return;
-
+loadHeroHighlights(hero);
   $('#sp-name').textContent = hero.name || '';
   $('#sp-sub').textContent = hero.subtitle || hero.class_name || '';
   $('.spot .desc').textContent = hero.description || 'Informações em atualização.';
@@ -305,7 +305,7 @@ async function bootstrap() {
     updateAuthUI();
   });
 
-  await Promise.all([loadHeroes(), loadBuilds()]);
+ await Promise.all([loadHeroes(), loadBuilds(), loadSiteStats()]);
 }
 
 bootstrap().catch((error) => {
