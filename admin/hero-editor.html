@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Editor de herói — Echo Arena Admin</title>
+  <link rel="stylesheet" href="./css/admin.css">
+</head>
+<body>
+  <div class="admin-shell">
+    <aside class="sidebar">
+      <div class="brand">ECHO <span>ADMIN</span></div>
+      <nav>
+        <a href="./index.html">Dashboard</a>
+        <a class="active" href="./heroes.html">Heróis</a>
+        <a href="../index.html">Ver site</a>
+      </nav>
+      <button id="logout" class="btn ghost">Sair</button>
+    </aside>
+
+    <main class="content">
+      <div class="page-head">
+        <div>
+          <span class="eyebrow">Cadastro</span>
+          <h1 id="page-title">Novo herói</h1>
+        </div>
+        <a class="btn ghost" href="./heroes.html">Voltar</a>
+      </div>
+
+      <form id="hero-form" class="form-card">
+        <div class="form-grid">
+          <label>Nome
+            <input id="name" required maxlength="80">
+          </label>
+
+          <label>Slug
+            <input id="slug" required maxlength="80">
+          </label>
+
+          <label>Classe
+            <select id="class-id">
+              <option value="">Sem classe</option>
+            </select>
+          </label>
+
+          <label>Ordem de exibição
+            <input id="display-order" type="number" value="0">
+          </label>
+
+          <label class="full">Descrição
+            <textarea id="description" rows="5"></textarea>
+          </label>
+
+          <label>Imagem principal
+            <input id="image-file" type="file" accept="image/png,image/jpeg,image/gif,image/webp">
+          </label>
+
+          <label>Imagem do card
+            <input id="card-file" type="file" accept="image/png,image/jpeg,image/gif,image/webp">
+          </label>
+
+          <label>GIF do herói
+            <input id="gif-file" type="file" accept="image/gif">
+          </label>
+
+          <label>Ajuste da imagem
+            <select id="image-fit">
+              <option value="contain">Contain</option>
+              <option value="cover">Cover</option>
+            </select>
+          </label>
+
+          <label>Posição
+            <input id="image-position" value="50% 50%">
+          </label>
+
+          <label>Escala
+            <input id="image-scale" type="number" step="0.05" value="1">
+          </label>
+
+          <label>Offset X
+            <input id="image-offset-x" type="number" value="0">
+          </label>
+
+          <label>Offset Y
+            <input id="image-offset-y" type="number" value="0">
+          </label>
+
+          <label class="check">
+            <input id="enabled" type="checkbox" checked>
+            Herói ativo
+          </label>
+        </div>
+
+        <section class="preview-grid">
+          <article>
+            <span>Imagem principal</span>
+            <div id="preview-image" class="media-preview"></div>
+          </article>
+          <article>
+            <span>Card</span>
+            <div id="preview-card" class="media-preview"></div>
+          </article>
+          <article>
+            <span>GIF</span>
+            <div id="preview-gif" class="media-preview"></div>
+          </article>
+        </section>
+
+        <div id="message" class="message"></div>
+
+        <div class="form-actions">
+          <button class="btn primary" type="submit">Salvar herói</button>
+        </div>
+      </form>
+    </main>
+  </div>
+
+  <script type="module" src="./js/hero-editor.js"></script>
+</body>
+</html>

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Heróis — Echo Arena Admin</title>
+  <link rel="stylesheet" href="./css/admin.css">
+</head>
+<body>
+  <div class="admin-shell">
+    <aside class="sidebar">
+      <div class="brand">ECHO <span>ADMIN</span></div>
+      <nav>
+        <a href="./index.html">Dashboard</a>
+        <a class="active" href="./heroes.html">Heróis</a>
+        <a href="../index.html">Ver site</a>
+      </nav>
+      <button id="logout" class="btn ghost">Sair</button>
+    </aside>
+
+    <main class="content">
+      <div class="page-head">
+        <div>
+          <span class="eyebrow">Conteúdo</span>
+          <h1>Heróis</h1>
+        </div>
+        <a class="btn primary" href="./hero-editor.html">Novo herói</a>
+      </div>
+
+      <div class="toolbar">
+        <input id="search" placeholder="Buscar herói...">
+      </div>
+
+      <section id="heroes-list" class="cards-list"></section>
+      <div id="message" class="message"></div>
+    </main>
+  </div>
+
+  <script type="module" src="./js/heroes.js"></script>
+</body>
+</html>
