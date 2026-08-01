@@ -505,11 +505,24 @@ const RARIDADES = {
   imortal:{ nome:'Imortal', cor:'#FB7185' }
 };
 
-/* ---------- helpers de mídia ---------- */
+const MEDIA_BUCKET = 'game-media';
+
+function getMediaUrl(path, legacyUrl = '') {
+  if (path) {
+    const { data } = supabase.storage
+      .from(MEDIA_BUCKET)
+      .getPublicUrl(path);
+
+    return data?.publicUrl || legacyUrl || '';
+  }
+
+  return legacyUrl || '';
+}
 
 /* ============================================================
    SUPABASE — conteúdo administrável
    Heróis e equipamentos substituem os dados locais do CONFIG.
+   Mantém compatibilidade com URLs antigas durante a migração.
    ============================================================ */
 async function carregarConteudoSupabase() {
   const [
@@ -520,7 +533,25 @@ async function carregarConteudoSupabase() {
   ] = await Promise.all([
     supabase
       .from('heroes')
-      .select('id,name,slug,class_id,enabled,display_order,image_url,card_image_url,gif_url,image_fit,image_position,image_scale,image_offset_x,image_offset_y')
+      .select(`
+        id,
+        name,
+        slug,
+        class_id,
+        enabled,
+        display_order,
+        image_path,
+        card_image_path,
+        gif_path,
+        image_url,
+        card_image_url,
+        gif_url,
+        image_fit,
+        image_position,
+        image_scale,
+        image_offset_x,
+        image_offset_y
+      `)
       .eq('enabled', true)
       .order('display_order', { ascending: true })
       .order('name', { ascending: true }),
@@ -532,7 +563,17 @@ async function carregarConteudoSupabase() {
 
     supabase
       .from('equipments')
-      .select('id,name,description,image_url,rarity,slot_id,enabled,display_order')
+      .select(`
+        id,
+        name,
+        description,
+        image_path,
+        image_url,
+        rarity,
+        slot_id,
+        enabled,
+        display_order
+      `)
       .eq('enabled', true)
       .order('display_order', { ascending: true })
       .order('name', { ascending: true }),
@@ -547,8 +588,16 @@ async function carregarConteudoSupabase() {
     console.error('Erro ao carregar heróis:', heroesResult.error);
   }
 
+  if (classesResult.error) {
+    console.error('Erro ao carregar classes:', classesResult.error);
+  }
+
   if (equipmentsResult.error) {
     console.error('Erro ao carregar equipamentos:', equipmentsResult.error);
+  }
+
+  if (slotsResult.error) {
+    console.error('Erro ao carregar slots:', slotsResult.error);
   }
 
   const classes = new Map(
@@ -561,8 +610,16 @@ async function carregarConteudoSupabase() {
 
   const heroes = (heroesResult.data || []).map(hero => {
     const heroClass = classes.get(hero.class_id);
-    const mainSource = hero.gif_url || hero.image_url || hero.card_image_url || '';
-    const cardSource = hero.card_image_url || hero.image_url || hero.gif_url || '';
+
+    const mainSource = getMediaUrl(
+      hero.gif_path || hero.image_path || hero.card_image_path,
+      hero.gif_url || hero.image_url || hero.card_image_url
+    );
+
+    const cardSource = getMediaUrl(
+      hero.card_image_path || hero.image_path || hero.gif_path,
+      hero.card_image_url || hero.image_url || hero.gif_url
+    );
 
     return {
       id: hero.slug || hero.id,
@@ -603,7 +660,7 @@ async function carregarConteudoSupabase() {
       estrelas: 0,
       descricao: item.description || '',
       media: {
-        src: item.image_url || '',
+        src: getMediaUrl(item.image_path, item.image_url),
         fit: 'contain',
         pos: '50% 50%',
         scale: 1,
@@ -629,8 +686,6 @@ async function carregarConteudoSupabase() {
 
   if (equipments.length) {
     CONFIG.catalogo = equipments;
-
-    // Não equipa itens automaticamente; todos os slots começam vazios.
     CONFIG.equipados = {};
   }
 }
