@@ -75,8 +75,14 @@ function formatDate(value, withTime = true) {
 }
 
 function authorName(userId) {
+  if (!userId) return 'Autor desconhecido';
+
   const author = authors.get(userId);
-  return author?.display_name || author?.username || 'Usuário removido';
+
+  /* Perfil ausente é diferente de perfil sem nome preenchido. */
+  if (!author) return 'Usuário removido';
+
+  return author.display_name || author.username || 'Usuário sem nome';
 }
 
 /* =========================================================
