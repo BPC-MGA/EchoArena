@@ -7,7 +7,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#060912;font-family:Inter,sans-serif;color:#fff;display:flex;justify-content:center;
@@ -25,9 +24,11 @@ input:focus{outline:none;border-color:#8d5eff}
 button{width:100%;padding:15px;border:none;border-radius:10px;
   background:linear-gradient(180deg,#9658ff,#6d28d9);color:#fff;font-size:15px;font-weight:700;
   cursor:pointer;transition:.2s;font-family:inherit}
-button:hover{transform:translateY(-2px)}
+button:hover:not(:disabled){transform:translateY(-2px)}
 button:disabled{opacity:.6;cursor:wait;transform:none}
 #msg{margin-top:18px;text-align:center;font-size:13px;color:#ff8d8d;min-height:18px;line-height:1.5}
+#msg.ok{color:#8bf0aa}
+.checking{text-align:center;color:#9ea7bc;font-size:13px}
 </style>
 </head>
 <body>
@@ -46,85 +47,133 @@ button:disabled{opacity:.6;cursor:wait;transform:none}
   <div id="msg"></div>
 </div>
 
-<script>
-const SUPABASE_URL = "https://suwlxuwhkoilesdlyqll.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN1d2x4dXdoa29pbGVzZGx5cWxsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU1MTc0NDMsImV4cCI6MjEwMTA5MzQ0M30.7cQf-XwKUHX-P8AHiJpiczZvuS8hXac6UbERwAiWAz4";
+<script type="module">
+/* Usa o MESMO cliente do painel. Duas instâncias separadas do
+   Supabase geram sessões que não se enxergam — era isso que
+   alimentava o loop entre login.html e index.html. */
+import { loginAdmin, redirectIfAdmin } from './js/admin-auth.js';
 
 const $ = id => document.getElementById(id);
-const say = t => { const m = $('msg'); if (m) m.textContent = t; console.log('[admin]', t); };
 
-// mostra qualquer erro não tratado na própria tela
-window.addEventListener('error', e => say('Erro: ' + e.message));
-window.addEventListener('unhandledrejection', e => say('Erro: ' + (e.reason?.message || e.reason)));
-
-let sb = null;
-
-function iniciar() {
-  if (!window.supabase || !window.supabase.createClient) {
-    say('A biblioteca do Supabase não carregou. Verifique sua conexão, adblock ou extensões e recarregue (Ctrl+Shift+R).');
-    return false;
-  }
-  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-  return true;
+function say(text, ok = false) {
+  const m = $('msg');
+  if (!m) return;
+  m.textContent = text;
+  m.classList.toggle('ok', ok);
 }
 
+window.addEventListener('error', e => say('Erro: ' + e.message));
+window.addEventListener('unhandledrejection', e =>
+  say('Erro: ' + (e.reason?.message || e.reason))
+);
+
+/* ---------- proteção contra força bruta ---------- */
+
+const RL_KEY = 'echoarena_admin_attempts';
+const MAX_TRIES = 5;
+const LOCK_MS = 15 * 60 * 1000;
+
+function readAttempts() {
+  try {
+    return JSON.parse(localStorage.getItem(RL_KEY)) || { n: 0, until: 0 };
+  } catch {
+    return { n: 0, until: 0 };
+  }
+}
+
+function lockedSeconds() {
+  const a = readAttempts();
+  return a.until > Date.now()
+    ? Math.ceil((a.until - Date.now()) / 1000)
+    : 0;
+}
+
+function registerFail() {
+  const a = readAttempts();
+  a.n += 1;
+  if (a.n >= MAX_TRIES) {
+    a.until = Date.now() + LOCK_MS;
+    a.n = 0;
+  }
+  localStorage.setItem(RL_KEY, JSON.stringify(a));
+}
+
+function resetAttempts() {
+  localStorage.removeItem(RL_KEY);
+}
+
+/* ---------- login ---------- */
+
+let running = false;
+
 async function entrar() {
-  if (!sb && !iniciar()) return;
+  if (running) return;
+
+  const wait = lockedSeconds();
+  if (wait) {
+    say(`Muitas tentativas. Aguarde ${Math.ceil(wait / 60)} minuto(s).`);
+    return;
+  }
 
   const email = $('email').value.trim();
   const password = $('password').value;
-  say('');
 
-  if (!email || !password) { say('Preencha e-mail e senha.'); return; }
+  if (!email || !password) {
+    say('Preencha e-mail e senha.');
+    return;
+  }
 
+  running = true;
   $('login').disabled = true;
   $('login').textContent = 'Entrando...';
+  say('');
 
   try {
-    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    await loginAdmin(email, password);
+    resetAttempts();
+    say('Entrando no painel...', true);
+    location.replace('./index.html');
+  } catch (err) {
+    registerFail();
+    /* atraso fixo: encarece tentativa automatizada */
+    await new Promise(r => setTimeout(r, 700));
 
-    if (error) {
-      say(error.message === 'Invalid login credentials'
-        ? 'E-mail ou senha incorretos.' : error.message);
-      return;
-    }
-
-    const { data: profile, error: pErr } = await sb
-      .from('profiles').select('role').eq('id', data.user.id).single();
-
-    if (pErr) { say('Logou, mas falhou ao ler o perfil: ' + pErr.message); return; }
-
-    if (profile?.role !== 'admin') {
-      say(`Esta conta não é administradora (role: ${profile?.role ?? 'nulo'}).`);
-      await sb.auth.signOut();
-      return;
-    }
-
-    say('Entrando no painel...');
-    location.href = 'index.html';
-
-  } catch (e) {
-    say('Falha inesperada: ' + (e?.message || e));
-    console.error(e);
+    const raw = err?.message || String(err);
+    say(
+      raw === 'Invalid login credentials'
+        ? 'E-mail ou senha incorretos.'
+        : raw
+    );
+    console.error('[login]', err);
   } finally {
+    running = false;
     $('login').disabled = false;
     $('login').textContent = 'Entrar';
   }
 }
 
-// liga tudo só depois que a página existir
-document.addEventListener('DOMContentLoaded', () => {
-  $('login').addEventListener('click', entrar);
-  $('password').addEventListener('keydown', e => { if (e.key === 'Enter') entrar(); });
-  $('email').addEventListener('keydown', e => { if (e.key === 'Enter') entrar(); });
+/* ---------- inicialização ---------- */
 
-  if (!iniciar()) return;
+$('login').addEventListener('click', entrar);
 
-  // já logado? vai direto
-  sb.auth.getSession()
-    .then(({ data: { session } }) => { if (session) location.href = 'index.html'; })
-    .catch(e => say('Erro ao checar sessão: ' + e.message));
+['email', 'password'].forEach(id => {
+  $(id).addEventListener('keydown', e => {
+    if (e.key === 'Enter') entrar();
+  });
 });
+
+/* redirectIfAdmin valida o PAPEL antes de redirecionar e respeita
+   o quebra-loop. Sessão de usuário comum não entra mais no painel. */
+say('Verificando sessão...');
+
+redirectIfAdmin('./index.html')
+  .then(redirected => {
+    if (!redirected) say('');
+  })
+  .catch(err => {
+    console.error('[login] falha ao verificar sessão:', err);
+    say('');
+  });
 </script>
 </body>
 </html>
