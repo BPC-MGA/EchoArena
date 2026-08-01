@@ -1,53 +1,130 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Echo Arena Admin — Login</title>
-  <link rel="stylesheet" href="./css/admin.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Echo Arena Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060912;font-family:Inter,sans-serif;color:#fff;display:flex;justify-content:center;
+  align-items:center;min-height:100vh;padding:20px;
+  background-image:radial-gradient(circle at top,#5227b8 0%,transparent 45%)}
+.card{width:100%;max-width:420px;background:#0f1628;border:1px solid #232e49;border-radius:18px;
+  padding:40px;box-shadow:0 25px 70px rgba(0,0,0,.45)}
+.logo{font-family:"Barlow Condensed";font-size:42px;font-weight:800;text-align:center;margin-bottom:8px}
+.logo span{color:#a56dff}
+.sub{text-align:center;color:#9ea7bc;font-size:14px;margin-bottom:35px}
+label{display:block;margin-bottom:8px;font-size:12px;color:#bcc4d7;text-transform:uppercase}
+input{width:100%;padding:14px;background:#08101e;border:1px solid #26334d;border-radius:10px;
+  color:#fff;margin-bottom:18px;font-size:15px;font-family:inherit}
+input:focus{outline:none;border-color:#8d5eff}
+button{width:100%;padding:15px;border:none;border-radius:10px;
+  background:linear-gradient(180deg,#9658ff,#6d28d9);color:#fff;font-size:15px;font-weight:700;
+  cursor:pointer;transition:.2s;font-family:inherit}
+button:hover{transform:translateY(-2px)}
+button:disabled{opacity:.6;cursor:wait;transform:none}
+#msg{margin-top:18px;text-align:center;font-size:13px;color:#ff8d8d;min-height:18px;line-height:1.5}
+</style>
 </head>
-<body class="auth-page">
-  <main class="auth-card">
-    <div class="brand">ECHO <span>ARENA</span></div>
-    <h1>Painel administrativo</h1>
-    <p>Entre com sua conta de administrador.</p>
+<body>
 
-    <form id="login-form">
-      <label>Email
-        <input id="email" type="email" autocomplete="email" required>
-      </label>
-      <label>Senha
-        <input id="password" type="password" autocomplete="current-password" required>
-      </label>
-      <button type="submit" class="btn primary">Entrar</button>
-      <div id="message" class="message"></div>
-    </form>
-  </main>
+<div class="card">
+  <div class="logo">ECHO <span>ARENA</span></div>
+  <div class="sub">Painel Administrativo</div>
 
-  <script type="module">
-    import { loginAdmin, redirectIfAdmin } from './js/admin-auth.js';
+  <label>Email</label>
+  <input type="email" id="email" placeholder="admin@email.com" autocomplete="username">
 
-    await redirectIfAdmin('./index.html');
+  <label>Senha</label>
+  <input type="password" id="password" placeholder="********" autocomplete="current-password">
 
-    const form = document.getElementById('login-form');
-    const message = document.getElementById('message');
+  <button id="login">Entrar</button>
+  <div id="msg"></div>
+</div>
 
-    form.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      message.textContent = 'Entrando...';
-      message.className = 'message';
+<script>
+const SUPABASE_URL = "https://suwlxuwhkoilesdlyqll.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN1d2x4dXdoa29pbGVzZGx5cWxsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU1MTc0NDMsImV4cCI6MjEwMTA5MzQ0M30.7cQf-XwKUHX-P8AHiJpiczZvuS8hXac6UbERwAiWAz4";
 
-      try {
-        await loginAdmin(
-          document.getElementById('email').value.trim(),
-          document.getElementById('password').value
-        );
-        location.href = './index.html';
-      } catch (error) {
-        message.textContent = error.message;
-        message.className = 'message error';
-      }
-    });
-  </script>
+const $ = id => document.getElementById(id);
+const say = t => { const m = $('msg'); if (m) m.textContent = t; console.log('[admin]', t); };
+
+// mostra qualquer erro não tratado na própria tela
+window.addEventListener('error', e => say('Erro: ' + e.message));
+window.addEventListener('unhandledrejection', e => say('Erro: ' + (e.reason?.message || e.reason)));
+
+let sb = null;
+
+function iniciar() {
+  if (!window.supabase || !window.supabase.createClient) {
+    say('A biblioteca do Supabase não carregou. Verifique sua conexão, adblock ou extensões e recarregue (Ctrl+Shift+R).');
+    return false;
+  }
+  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  return true;
+}
+
+async function entrar() {
+  if (!sb && !iniciar()) return;
+
+  const email = $('email').value.trim();
+  const password = $('password').value;
+  say('');
+
+  if (!email || !password) { say('Preencha e-mail e senha.'); return; }
+
+  $('login').disabled = true;
+  $('login').textContent = 'Entrando...';
+
+  try {
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+
+    if (error) {
+      say(error.message === 'Invalid login credentials'
+        ? 'E-mail ou senha incorretos.' : error.message);
+      return;
+    }
+
+    const { data: profile, error: pErr } = await sb
+      .from('profiles').select('role').eq('id', data.user.id).single();
+
+    if (pErr) { say('Logou, mas falhou ao ler o perfil: ' + pErr.message); return; }
+
+    if (profile?.role !== 'admin') {
+      say(`Esta conta não é administradora (role: ${profile?.role ?? 'nulo'}).`);
+      await sb.auth.signOut();
+      return;
+    }
+
+    say('Entrando no painel...');
+    location.href = 'index.html';
+
+  } catch (e) {
+    say('Falha inesperada: ' + (e?.message || e));
+    console.error(e);
+  } finally {
+    $('login').disabled = false;
+    $('login').textContent = 'Entrar';
+  }
+}
+
+// liga tudo só depois que a página existir
+document.addEventListener('DOMContentLoaded', () => {
+  $('login').addEventListener('click', entrar);
+  $('password').addEventListener('keydown', e => { if (e.key === 'Enter') entrar(); });
+  $('email').addEventListener('keydown', e => { if (e.key === 'Enter') entrar(); });
+
+  if (!iniciar()) return;
+
+  // já logado? vai direto
+  sb.auth.getSession()
+    .then(({ data: { session } }) => { if (session) location.href = 'index.html'; })
+    .catch(e => say('Erro ao checar sessão: ' + e.message));
+});
+</script>
 </body>
 </html>

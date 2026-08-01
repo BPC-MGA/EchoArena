@@ -1,60 +1,500 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Echo Arena Admin</title>
-  <link rel="stylesheet" href="./css/admin.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Echo Arena Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:Inter,sans-serif}
+body{background:#070b14;color:#fff;display:grid;grid-template-columns:250px 1fr;min-height:100vh}
+aside{background:#0f1628;border-right:1px solid #25314d;padding:26px 20px}
+.logo{font-family:"Barlow Condensed";font-size:32px;font-weight:800;margin-bottom:28px}
+.logo span{color:#9d63ff}
+.menu{display:flex;flex-direction:column;gap:5px}
+.menu a{text-decoration:none;color:#c6cde0;padding:11px 14px;border-radius:8px;font-size:14px;transition:.15s;cursor:pointer}
+.menu a:hover{background:#1b2540}
+.menu a.on{background:#231b45;color:#fff;border:1px solid #3a2d6b}
+main{padding:30px 32px 60px;min-width:0}
+.top{display:flex;justify-content:space-between;align-items:center;gap:14px;margin-bottom:26px;flex-wrap:wrap}
+h1{font-family:"Barlow Condensed";font-size:38px;line-height:1}
+.me{font-size:12px;color:#8b96b0}
+button{background:#8a55ff;border:none;padding:10px 16px;color:#fff;border-radius:8px;cursor:pointer;font-weight:700;font-size:13px}
+button.g{background:#1b2540;border:1px solid #2c3a5c;font-weight:600}
+button.g:hover{background:#243056}
+button.d{background:transparent;border:1px solid #7a2634;color:#ff8d9b}
+button.d:hover{background:#2a1016}
+button:disabled{opacity:.45;cursor:not-allowed}
+input,select,textarea{background:#08101e;border:1px solid #26334d;border-radius:8px;color:#fff;
+  padding:9px 12px;font-size:13px;font-family:inherit;outline:none}
+input:focus,select:focus,textarea:focus{border-color:#8d5eff}
+textarea{width:100%;resize:vertical;line-height:1.5}
+.view{display:none}.view.on{display:block}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px}
+.card{background:#10192d;border:1px solid #26344f;border-radius:14px;padding:22px}
+.card h2{font-size:13px;color:#9ea7bc;margin-bottom:10px}
+.card strong{font-size:34px;display:block}
+.list{display:flex;flex-direction:column;gap:9px}
+.row{background:#10192d;border:1px solid #26344f;border-radius:11px;padding:13px 15px;
+  display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
+.row .main{flex:1;min-width:200px}
+.row .tt{font-weight:600;font-size:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.row .sub{color:#8b96b0;font-size:12px;margin-top:3px;word-break:break-word}
+.row .acts{display:flex;gap:7px;flex-wrap:wrap}
+.tag{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:5px;
+  border:1px solid #2c3a5c;color:#9ea7bc}
+.tag.gold{color:#fbbf24;border-color:#7a5a12;background:#2a1f08}
+.tag.red{color:#ff8d9b;border-color:#7a2634;background:#2a1016}
+.tag.pin{color:#a56dff;border-color:#4a2f8c;background:#1d1440}
+.bar{display:flex;gap:9px;align-items:center;margin-bottom:16px;flex-wrap:wrap}
+.bar input{min-width:180px}
+.msg{padding:14px;border-radius:10px;background:#101a2e;border:1px dashed #2c3a5c;color:#8b96b0;
+  text-align:center;font-size:13px}
+.msg.err{background:#2a1016;border:1px solid #7a2634;color:#ffb4bd;text-align:left;white-space:pre-wrap}
+.eqwrap{display:grid;grid-template-columns:250px 1fr;gap:14px;align-items:start}
+.eqlist{background:#10192d;border:1px solid #26344f;border-radius:12px;padding:8px;max-height:66vh;overflow:auto}
+.eqlist .it{padding:9px 11px;border-radius:8px;cursor:pointer;font-size:13px}
+.eqlist .it:hover{background:#1b2540}
+.eqlist .it.on{background:#231b45;border:1px solid #3a2d6b}
+.eqlist .it small{display:block;color:#8b96b0;font-size:11px}
+.pane{background:#10192d;border:1px solid #26344f;border-radius:12px;padding:18px;min-height:280px}
+.head{display:grid;grid-template-columns:110px 1.2fr 1.2fr 90px 62px;gap:8px;font-size:10px;
+  color:#7d879e;text-transform:uppercase;letter-spacing:.07em;padding-bottom:8px;border-bottom:1px solid #26344f;margin-bottom:4px}
+.tr{display:grid;grid-template-columns:110px 1.2fr 1.2fr 90px 62px;gap:8px;align-items:center;
+  padding:7px 0;border-top:1px solid #1c2740}
+.tr .tn{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+.tr input{width:100%;padding:7px 9px;font-size:12px}
+.chk{display:flex;align-items:center;gap:5px;font-size:11px;color:#8b96b0}
+.txr{display:grid;grid-template-columns:210px 1fr auto;gap:12px;align-items:start;
+  background:#10192d;border:1px solid #26344f;border-radius:11px;padding:13px 15px;margin-bottom:9px}
+.txr code{color:#a56dff;font-size:11.5px;font-family:ui-monospace,monospace}
+.toast{position:fixed;left:50%;bottom:22px;transform:translate(-50%,18px);opacity:0;pointer-events:none;
+  background:#1b2540;border:1px solid #3a2d6b;border-radius:10px;padding:11px 18px;font-size:13px;z-index:90;transition:.2s}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+.toast.err{background:#2a1016;border-color:#7a2634;color:#ffb4bd}
+@media(max-width:900px){
+  body{grid-template-columns:1fr}
+  aside{border-right:0;border-bottom:1px solid #25314d;padding:16px}
+  .menu{flex-direction:row;overflow-x:auto;gap:6px}
+  .menu a{white-space:nowrap}
+  main{padding:20px 16px 60px}
+  .eqwrap{grid-template-columns:1fr}
+  .head{display:none}
+  .tr{grid-template-columns:1fr 1fr}
+  .tr .tn{grid-column:1/-1}
+  .txr{grid-template-columns:1fr}
+}
+</style>
 </head>
 <body>
-  <div class="admin-shell">
-    <aside class="sidebar">
-      <div class="brand">ECHO <span>ADMIN</span></div>
-      <nav>
-        <a class="active" href="./index.html">Dashboard</a>
-        <a href="./heroes.html">Heróis</a>
-        <a href="../index.html">Ver site</a>
-      </nav>
-      <button id="logout" class="btn ghost">Sair</button>
-    </aside>
 
-    <main class="content">
-      <div class="page-head">
-        <div>
-          <span class="eyebrow">Visão geral</span>
-          <h1>Dashboard</h1>
-        </div>
-        <a class="btn primary" href="./hero-editor.html">Novo herói</a>
-      </div>
+<aside>
+  <div class="logo">ECHO <span>ADMIN</span></div>
+  <nav class="menu" id="menu">
+    <a class="on" data-v="dash">Dashboard</a>
+    <a data-v="heroes">Heróis</a>
+    <a data-v="equip">Equipamentos</a>
+    <a data-v="builds">Builds</a>
+    <a data-v="comments">Comentários</a>
+    <a data-v="users">Usuários</a>
+    <a data-v="texts">Textos do site</a>
+  </nav>
+</aside>
 
-      <section class="stats-grid">
-        <article class="stat-card"><span>Heróis</span><strong id="heroes-count">—</strong></article>
-        <article class="stat-card"><span>Equipamentos</span><strong id="equipments-count">—</strong></article>
-        <article class="stat-card"><span>Builds</span><strong id="builds-count">—</strong></article>
-        <article class="stat-card"><span>Usuários</span><strong id="users-count">—</strong></article>
-      </section>
-    </main>
+<main>
+  <div class="top">
+    <h1 id="titulo">Dashboard</h1>
+    <div style="display:flex;gap:10px;align-items:center">
+      <span class="me" id="me"></span>
+      <button class="g" id="logout">Sair</button>
+    </div>
   </div>
 
-  <script type="module">
-    import { requireAdmin, logoutAdmin } from './js/admin-auth.js';
-    import { countRows } from './js/api.js';
+  <div id="erro" class="msg err" style="display:none"></div>
 
-    await requireAdmin();
+  <section class="view on" id="v-dash">
+    <div class="cards">
+      <div class="card"><h2>Heróis</h2><strong id="c-heroes">…</strong></div>
+      <div class="card"><h2>Equipamentos</h2><strong id="c-equip">…</strong></div>
+      <div class="card"><h2>Builds</h2><strong id="c-builds">…</strong></div>
+      <div class="card"><h2>Usuários</h2><strong id="c-users">…</strong></div>
+      <div class="card"><h2>Comentários</h2><strong id="c-comments">…</strong></div>
+      <div class="card"><h2>Bloqueados</h2><strong id="c-blocked">…</strong></div>
+    </div>
+  </section>
 
-    document.getElementById('logout').onclick = logoutAdmin;
+  <section class="view" id="v-heroes">
+    <div class="bar"><input id="s-heroes" placeholder="Buscar herói..."></div>
+    <div class="list" id="l-heroes"></div>
+  </section>
 
-    const counts = await Promise.all([
-      countRows('heroes'),
-      countRows('equipments'),
-      countRows('builds'),
-      countRows('profiles')
-    ]);
+  <section class="view" id="v-equip">
+    <div class="bar">
+      <input id="s-equip" placeholder="Buscar equipamento...">
+      <button id="new-equip">+ Novo equipamento</button>
+    </div>
+    <div class="eqwrap">
+      <div class="eqlist" id="l-equip"></div>
+      <div class="pane" id="p-equip"><div class="msg">Selecione um equipamento.</div></div>
+    </div>
+  </section>
 
-    document.getElementById('heroes-count').textContent = counts[0];
-    document.getElementById('equipments-count').textContent = counts[1];
-    document.getElementById('builds-count').textContent = counts[2];
-    document.getElementById('users-count').textContent = counts[3];
-  </script>
+  <section class="view" id="v-builds">
+    <div class="bar"><input id="s-builds" placeholder="Buscar build..."></div>
+    <div class="list" id="l-builds"></div>
+  </section>
+
+  <section class="view" id="v-comments">
+    <div class="bar">
+      <select id="f-comments">
+        <option value="all">Todos</option>
+        <option value="pinned">Destacados</option>
+        <option value="hidden">Ocultos</option>
+      </select>
+    </div>
+    <div class="list" id="l-comments"></div>
+  </section>
+
+  <section class="view" id="v-users">
+    <div class="bar"><input id="s-users" placeholder="Buscar usuário..."></div>
+    <div class="list" id="l-users"></div>
+  </section>
+
+  <section class="view" id="v-texts">
+    <div class="bar"><button id="new-text">+ Novo texto</button></div>
+    <div id="l-texts"></div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const SUPABASE_URL = "https://suwlxuwhkoilesdlyqll.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN1d2x4dXdoa29pbGVzZGx5cWxsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU1MTc0NDMsImV4cCI6MjEwMTA5MzQ0M30.7cQf-XwKUHX-P8AHiJpiczZvuS8hXac6UbERwAiWAz4";
+
+let sb = null, ME = null, TIERS = [];
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const dt = d => d ? new Date(d).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+
+function toast(m, err) {
+  const t = $('toast'); t.textContent = m; t.className = 'toast on' + (err ? ' err' : '');
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.className = 'toast', 2800);
+}
+function erro(m) { $('erro').style.display = 'block'; $('erro').textContent = m; }
+window.addEventListener('error', e => erro('Erro: ' + e.message));
+window.addEventListener('unhandledrejection', e => erro('Erro: ' + (e.reason?.message || e.reason)));
+
+async function boot() {
+  if (!window.supabase || !window.supabase.createClient)
+    return erro('Biblioteca do Supabase não carregou (adblock/rede). Recarregue com Ctrl+Shift+R.');
+  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  const { data:{ session } } = await sb.auth.getSession();
+  if (!session) { location.href = 'login.html'; return; }
+
+  const { data: p, error } = await sb.from('profiles')
+    .select('id,username,display_name,role').eq('id', session.user.id).single();
+  if (error) return erro('Erro ao ler perfil: ' + error.message);
+  if (!p || p.role !== 'admin') return erro('Acesso negado (role: ' + (p ? p.role : 'sem perfil') + ').');
+
+  ME = p;
+  $('me').textContent = p.display_name || p.username || session.user.email;
+
+  const { data: t } = await sb.from('equipment_tiers')
+    .select('name,slug,display_order,color').order('display_order');
+  TIERS = t || [];
+
+  dash();
+}
+
+$('logout').onclick = async () => { await sb.auth.signOut(); location.href = 'login.html'; };
+
+const NOMES = { dash:'Dashboard', heroes:'Heróis', equip:'Equipamentos', builds:'Builds',
+                comments:'Comentários', users:'Usuários', texts:'Textos do site' };
+
+$('menu').onclick = e => {
+  const a = e.target.closest('a[data-v]'); if (!a) return;
+  const v = a.dataset.v;
+  Array.from($('menu').children).forEach(x => x.classList.toggle('on', x === a));
+  document.querySelectorAll('.view').forEach(s => s.classList.toggle('on', s.id === 'v-' + v));
+  $('titulo').textContent = NOMES[v];
+  const fn = { dash, heroes, equip, builds, comments, users, texts }[v];
+  if (fn) fn();
+};
+
+async function contar(tab, f) {
+  try {
+    let q = sb.from(tab).select('*', { count:'exact', head:true });
+    if (f) q = f(q);
+    const { count, error } = await q;
+    return error ? '—' : (count ?? 0);
+  } catch { return '—'; }
+}
+const vazio = m => '<div class="msg">' + esc(m) + '</div>';
+const falha = e => '<div class="msg err">' + esc(e.message) + '</div>';
+function deb(fn, ms) { let t; return function(){ clearTimeout(t); t = setTimeout(fn, ms || 350); }; }
+
+async function dash() {
+  $('c-heroes').textContent   = await contar('heroes');
+  $('c-equip').textContent    = await contar('equipment');
+  $('c-builds').textContent   = await contar('builds');
+  $('c-users').textContent    = await contar('profiles');
+  $('c-comments').textContent = await contar('comments');
+  $('c-blocked').textContent  = await contar('profiles', q => q.eq('is_blocked', true));
+}
+
+async function heroes() {
+  const box = $('l-heroes'); box.innerHTML = vazio('Carregando...');
+  const term = $('s-heroes').value.trim();
+  let q = sb.from('heroes').select('*').limit(100);
+  if (term) q = q.ilike('name', '%' + term + '%');
+  const { data, error } = await q;
+  if (error) return box.innerHTML = falha(error);
+  if (!data || !data.length) return box.innerHTML = vazio('Nenhum herói cadastrado.');
+  box.innerHTML = data.map(h => '<div class="row"><div class="main"><div class="tt">'
+    + esc(h.name || h.slug || h.id) + '</div><div class="sub">'
+    + esc(h.class_id || h.class || h.role || '') + '</div></div></div>').join('');
+}
+$('s-heroes').oninput = deb(heroes);
+
+async function equip() {
+  const box = $('l-equip'); box.innerHTML = vazio('Carregando...');
+  const term = $('s-equip').value.trim();
+  let q = sb.from('equipment').select('*').order('slot').order('name').limit(300);
+  if (term) q = q.ilike('name', '%' + term + '%');
+  const { data, error } = await q;
+  if (error) return box.innerHTML = falha(error);
+  if (!data || !data.length) return box.innerHTML = vazio('Nenhum equipamento. Use "+ Novo".');
+  box.innerHTML = data.map(e => '<div class="it" data-id="' + e.id + '">' + esc(e.name || 'sem nome')
+    + '<small>' + esc(e.slot || '—') + ' · ' + esc(e.set_name || e.set_type || '') + '</small></div>').join('');
+  box.onclick = ev => {
+    const it = ev.target.closest('.it'); if (!it) return;
+    Array.from(box.children).forEach(x => x.classList.toggle('on', x === it));
+    abrirEquip(it.dataset.id);
+  };
+}
+$('s-equip').oninput = deb(equip);
+
+$('new-equip').onclick = async () => {
+  const nome = prompt('Nome do equipamento:'); if (!nome) return;
+  const { data, error } = await sb.from('equipment')
+    .insert({ name: nome.trim(), slot: 'cabeca', set_type: 'avulso' }).select().single();
+  if (error) return toast(error.message, 1);
+  toast('Criado.'); await equip(); abrirEquip(data.id);
+};
+
+async function abrirEquip(id) {
+  const p = $('p-equip'); p.innerHTML = vazio('Carregando...');
+  const r1 = await sb.from('equipment').select('*').eq('id', id).single();
+  const r2 = await sb.from('equipment_tier_stats').select('*').eq('equipment_id', id);
+  const eq = r1.data;
+  if (!eq) return p.innerHTML = vazio('Não encontrado.');
+  const by = {}; (r2.data || []).forEach(x => by[x.tier_slug] = x);
+  const slots = ['cabeca','peito','ombro','pes','acessorio','utilitario'];
+
+  p.innerHTML =
+    '<div class="bar">'
+    + '<input id="e-name" value="' + esc(eq.name || '') + '" style="flex:1;min-width:170px">'
+    + '<select id="e-slot">' + slots.map(s => '<option ' + (s === eq.slot ? 'selected' : '') + '>' + s + '</option>').join('') + '</select>'
+    + '<select id="e-type">' + ['geral','especial','avulso'].map(s => '<option ' + (s === eq.set_type ? 'selected' : '') + '>' + s + '</option>').join('') + '</select>'
+    + '<input id="e-set" placeholder="Conjunto" value="' + esc(eq.set_name || '') + '">'
+    + '<button id="e-save">Salvar</button><button class="d" id="e-del">Apagar</button></div>'
+    + '<div class="head"><span>Raridade</span><span>Efeito exibido</span><span>JSON</span><span>Versão</span><span></span></div>'
+    + TIERS.map(t => {
+        const d = by[t.slug] || {};
+        return '<div class="tr" data-t="' + esc(t.slug) + '">'
+          + '<span class="tn" style="color:' + esc(t.color || '#9ea7bc') + '">' + esc(t.name) + '</span>'
+          + '<input class="x-txt" value="' + esc(d.effect_text || '') + '" placeholder="+30 visão · +3% armadura">'
+          + '<input class="x-json" value="' + esc(JSON.stringify(d.effects || {})) + '">'
+          + '<input class="x-ver" value="' + esc(d.verified_version || '') + '" placeholder="abr/2026">'
+          + '<label class="chk"><input type="checkbox" class="x-re" ' + (d.needs_recheck ? 'checked' : '') + '>rever</label>'
+          + '</div>';
+      }).join('')
+    + '<div class="bar" style="margin-top:14px"><button id="t-save">Salvar raridades</button>'
+    + '<span class="me">Deixe em branco o que não foi coletado.</span></div>';
+
+  $('e-save').onclick = async () => {
+    const { error } = await sb.from('equipment').update({
+      name: $('e-name').value.trim(), slot: $('e-slot').value,
+      set_type: $('e-type').value, set_name: $('e-set').value.trim() || null,
+      updated_at: new Date().toISOString()
+    }).eq('id', id);
+    toast(error ? error.message : 'Salvo.', !!error); if (!error) equip();
+  };
+  $('e-del').onclick = async () => {
+    if (!confirm('Apagar "' + eq.name + '"?')) return;
+    const { error } = await sb.from('equipment').delete().eq('id', id);
+    if (error) return toast(error.message, 1);
+    toast('Apagado.'); p.innerHTML = vazio('Selecione um equipamento.'); equip();
+  };
+  $('t-save').onclick = async () => {
+    const up = [], del = [];
+    const rows = p.querySelectorAll('.tr');
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i], slug = r.dataset.t;
+      const txt = r.querySelector('.x-txt').value.trim();
+      const js  = r.querySelector('.x-json').value.trim();
+      const ver = r.querySelector('.x-ver').value.trim();
+      const re  = r.querySelector('.x-re').checked;
+      if (!txt && (!js || js === '{}')) { del.push(slug); continue; }
+      let eff = {};
+      try { eff = js ? JSON.parse(js) : {}; }
+      catch (e) { return toast('JSON inválido em "' + slug + '".', 1); }
+      up.push({ equipment_id:id, tier_slug:slug, effects:eff, effect_text:txt||null,
+                verified_version:ver||null, needs_recheck:re, updated_at:new Date().toISOString() });
+    }
+    if (up.length) {
+      const { error } = await sb.from('equipment_tier_stats')
+        .upsert(up, { onConflict:'equipment_id,tier_slug' });
+      if (error) return toast(error.message, 1);
+    }
+    if (del.length) await sb.from('equipment_tier_stats').delete().eq('equipment_id', id).in('tier_slug', del);
+    toast('Raridades salvas (' + up.length + ').');
+  };
+}
+
+async function builds() {
+  const box = $('l-builds'); box.innerHTML = vazio('Carregando...');
+  const term = $('s-builds').value.trim();
+  let q = sb.from('builds').select('*').order('created_at', { ascending:false }).limit(150);
+  if (term) q = q.ilike('title', '%' + term + '%');
+  const { data, error } = await q;
+  if (error) return box.innerHTML = falha(error);
+  if (!data || !data.length) return box.innerHTML = vazio('Nenhuma build.');
+  box.innerHTML = data.map(b => '<div class="row" data-id="' + b.id + '"><div class="main"><div class="tt">'
+    + esc(b.title || 'sem título')
+    + (b.is_featured ? '<span class="tag gold">destacada</span>' : '')
+    + (b.is_public === false ? '<span class="tag">privada</span>' : '')
+    + '</div><div class="sub">' + esc((b.description || '').slice(0,140)) + ' · ' + dt(b.created_at)
+    + '</div></div><div class="acts">'
+    + '<button class="g" data-a="feat">' + (b.is_featured ? 'Remover destaque' : 'Destacar') + '</button>'
+    + '<button class="d" data-a="del">Apagar</button></div></div>').join('');
+  box.onclick = async ev => {
+    const b = ev.target.closest('button[data-a]'); if (!b) return;
+    const row = b.closest('.row'), id = row.dataset.id;
+    if (b.dataset.a === 'del') {
+      if (!confirm('Apagar esta build?')) return;
+      const { error } = await sb.from('builds').delete().eq('id', id);
+      if (error) return toast(error.message, 1);
+      row.remove(); toast('Apagada.');
+    } else {
+      const on = !!row.querySelector('.tag.gold');
+      const { error } = await sb.from('builds').update({ is_featured: !on }).eq('id', id);
+      if (error) return toast(error.message, 1);
+      builds();
+    }
+  };
+}
+$('s-builds').oninput = deb(builds);
+
+async function comments() {
+  const box = $('l-comments'); box.innerHTML = vazio('Carregando...');
+  const f = $('f-comments').value;
+  let q = sb.from('v_admin_comments').select('*').limit(150);
+  if (f === 'pinned') q = q.eq('is_pinned', true);
+  if (f === 'hidden') q = q.eq('is_hidden', true);
+  const { data, error } = await q;
+  if (error) return box.innerHTML = falha(error);
+  if (!data || !data.length) return box.innerHTML = vazio('Nenhum comentário.');
+  box.innerHTML = data.map(c => '<div class="row" data-id="' + c.id + '"><div class="main"><div class="tt">'
+    + esc(c.display_name || c.username || 'anônimo')
+    + (c.is_pinned ? '<span class="tag pin">destacado</span>' : '')
+    + (c.is_hidden ? '<span class="tag">oculto</span>' : '')
+    + (c.is_blocked ? '<span class="tag red">bloqueado</span>' : '')
+    + '<span class="me">' + dt(c.created_at) + (c.build_name ? ' · ' + esc(c.build_name) : '') + '</span>'
+    + '</div><div class="sub">' + esc(c.body) + '</div></div><div class="acts">'
+    + '<button class="g" data-a="pin">' + (c.is_pinned ? 'Remover destaque' : 'Destacar') + '</button>'
+    + '<button class="g" data-a="hide">' + (c.is_hidden ? 'Reexibir' : 'Ocultar') + '</button>'
+    + '<button class="d" data-a="del">Apagar</button></div></div>').join('');
+  box.onclick = async ev => {
+    const b = ev.target.closest('button[data-a]'); if (!b) return;
+    const row = b.closest('.row'), id = row.dataset.id, a = b.dataset.a;
+    if (a === 'del') {
+      if (!confirm('Apagar este comentário?')) return;
+      const { error } = await sb.from('comments').delete().eq('id', id);
+      if (error) return toast(error.message, 1);
+      row.remove(); toast('Apagado.'); return;
+    }
+    const campo = a === 'pin' ? 'is_pinned' : 'is_hidden';
+    const atual = a === 'pin' ? !!row.querySelector('.tag.pin') : b.textContent.indexOf('Reexibir') >= 0;
+    const { error } = await sb.from('comments').update({ [campo]: !atual }).eq('id', id);
+    if (error) return toast(error.message, 1);
+    comments();
+  };
+}
+$('f-comments').onchange = comments;
+
+async function users() {
+  const box = $('l-users'); box.innerHTML = vazio('Carregando...');
+  const term = $('s-users').value.trim();
+  let q = sb.from('profiles').select('*').limit(150);
+  if (term) q = q.ilike('username', '%' + term + '%');
+  const { data, error } = await q;
+  if (error) return box.innerHTML = falha(error);
+  if (!data || !data.length) return box.innerHTML = vazio('Nenhum usuário.');
+  box.innerHTML = data.map(u => '<div class="row" data-id="' + u.id + '"><div class="main"><div class="tt">'
+    + esc(u.display_name || u.username || u.id.slice(0,8))
+    + (u.role === 'admin' ? '<span class="tag gold">admin</span>' : '')
+    + (u.is_blocked ? '<span class="tag red">bloqueado</span>' : '')
+    + '</div><div class="sub">' + esc(u.blocked_reason || '') + (u.created_at ? ' · ' + dt(u.created_at) : '')
+    + '</div></div><div class="acts">'
+    + '<button class="g" data-a="block">' + (u.is_blocked ? 'Desbloquear' : 'Bloquear') + '</button>'
+    + '<button class="g" data-a="role" ' + (u.id === ME.id ? 'disabled' : '') + '>'
+    + (u.role === 'admin' ? 'Remover admin' : 'Tornar admin') + '</button></div></div>').join('');
+  box.onclick = async ev => {
+    const b = ev.target.closest('button[data-a]'); if (!b) return;
+    const row = b.closest('.row'), id = row.dataset.id;
+    if (b.dataset.a === 'block') {
+      const bloq = !!row.querySelector('.tag.red');
+      const patch = bloq
+        ? { is_blocked:false, blocked_reason:null, blocked_at:null }
+        : { is_blocked:true, blocked_reason: prompt('Motivo (opcional):') || null, blocked_at:new Date().toISOString() };
+      const { error } = await sb.from('profiles').update(patch).eq('id', id);
+      if (error) return toast(error.message, 1);
+      toast(bloq ? 'Desbloqueado.' : 'Bloqueado.'); users();
+    } else {
+      const adm = !!row.querySelector('.tag.gold');
+      if (!confirm(adm ? 'Remover admin?' : 'Conceder acesso TOTAL de admin?')) return;
+      const { error } = await sb.from('profiles').update({ role: adm ? 'user' : 'admin' }).eq('id', id);
+      if (error) return toast(error.message, 1);
+      toast('Atualizado.'); users();
+    }
+  };
+}
+$('s-users').oninput = deb(users);
+
+async function texts() {
+  const box = $('l-texts'); box.innerHTML = vazio('Carregando...');
+  const { data, error } = await sb.from('site_content').select('*').order('key');
+  if (error) return box.innerHTML = falha(error);
+  if (!data || !data.length) return box.innerHTML = vazio('Nenhum texto.');
+  box.innerHTML = data.map(t => '<div class="txr" data-k="' + esc(t.key) + '">'
+    + '<div><code>' + esc(t.key) + '</code><div class="sub">' + esc(t.description || '') + '</div></div>'
+    + '<textarea rows="2">' + esc(t.value) + '</textarea>'
+    + '<button class="g" data-a="save">Salvar</button></div>').join('');
+  box.onclick = async ev => {
+    const b = ev.target.closest('button[data-a]'); if (!b) return;
+    const r = b.closest('.txr');
+    const { error } = await sb.from('site_content').update({
+      value: r.querySelector('textarea').value,
+      updated_at: new Date().toISOString(), updated_by: ME.id
+    }).eq('key', r.dataset.k);
+    toast(error ? error.message : 'Texto atualizado.', !!error);
+  };
+}
+$('new-text').onclick = async () => {
+  const k = prompt('Chave (ex: home.footer.aviso):'); if (!k) return;
+  const { error } = await sb.from('site_content')
+    .insert({ key: k.trim(), value: '', description: prompt('Onde aparece?') || null });
+  if (error) return toast(error.message, 1);
+  toast('Criado.'); texts();
+};
+
+boot();
+</script>
 </body>
 </html>
