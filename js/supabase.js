@@ -1,6 +1,7 @@
-import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2?bundle';
 
-const SUPABASE_URL = 'https://suwlxuwhkoilesdlyqll.supabase.co';
+const SUPABASE_URL =
+  'https://suwlxuwhkoilesdlyqll.supabase.co';
 
 const SUPABASE_ANON_KEY =
   'sb_publishable_z2QOcUx2s3otTuOMNo0VoQ_9wz-yQAt';

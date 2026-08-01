@@ -1,5 +1,5 @@
-
 import { supabase } from '../../js/supabase.js';
+import { requireAdmin } from './admin-auth.js';
 
 const DEFAULT_MENU = [
   { id: 'dashboard', label: 'Dashboard', href: './index.html' },
@@ -109,25 +109,28 @@ function renderMenu(items, activeId) {
 }
 
 async function getCurrentAdmin() {
-  const {
-    data: { session },
-    error: sessionError
-  } = await supabase.auth.getSession();
+  const isCodespacesPreview =
+    location.hostname.endsWith('.app.github.dev');
 
-  if (sessionError) throw sessionError;
-  if (!session) return null;
+  // Apenas para testar localmente no Codespaces.
+  // Não afeta o GitHub Pages nem o site publicado.
+  if (isCodespacesPreview) {
+    const {
+      data: { session }
+    } = await supabase.auth.getSession();
 
-  const { data: profile, error: profileError } = await supabase
-    .from('profiles')
-    .select('id,username,display_name,role_id,roles(name)')
-    .eq('id', session.user.id)
-    .single();
+    return {
+      session: session ?? null,
+      email: session?.user?.email ?? 'preview@codespaces.local',
+      displayName:
+        session?.user?.user_metadata?.display_name ||
+        session?.user?.email ||
+        'Preview administrativo'
+    };
+  }
 
-  if (profileError) throw profileError;
-
-  const roleName = profile?.roles?.name ?? profile?.roles?.[0]?.name;
-
-  if (roleName !== 'admin') return null;
+  // Produção continua protegida.
+  const { session, profile } = await requireAdmin();
 
   return {
     session,
@@ -145,8 +148,13 @@ function setPageTitle(title, subtitle) {
   const titleElement = document.querySelector('[data-admin-page-title]');
   const subtitleElement = document.querySelector('[data-admin-page-subtitle]');
 
-  if (titleElement && title) titleElement.textContent = title;
-  if (subtitleElement) subtitleElement.textContent = subtitle ?? '';
+  if (titleElement && title) {
+    titleElement.textContent = title;
+  }
+
+  if (subtitleElement) {
+    subtitleElement.textContent = subtitle ?? '';
+  }
 }
 
 function bindNavigation() {
@@ -154,6 +162,7 @@ function bindNavigation() {
     button.addEventListener('click', () => {
       const group = button.closest('.admin-shell-group');
       const opened = group.classList.toggle('is-open');
+
       button.setAttribute('aria-expanded', String(opened));
     });
   });
@@ -177,7 +186,9 @@ function bindNavigation() {
   backdrop?.addEventListener('click', closeMobile);
 
   window.addEventListener('resize', () => {
-    if (window.innerWidth > 900) closeMobile();
+    if (window.innerWidth > 900) {
+      closeMobile();
+    }
   });
 }
 
@@ -191,16 +202,26 @@ function renderShell({
   document.body.classList.add('admin-shell-body');
 
   const existingContent = document.querySelector('[data-admin-content]');
+
   const pageContent = existingContent
     ? existingContent.innerHTML
     : document.body.innerHTML;
 
   document.body.innerHTML = `
     <div class="admin-shell-app">
-      <div id="admin-shell-backdrop" class="admin-shell-backdrop"></div>
+      <div
+        id="admin-shell-backdrop"
+        class="admin-shell-backdrop"
+      ></div>
 
-      <aside id="admin-shell-sidebar" class="admin-shell-sidebar">
-        <a class="admin-shell-brand" href="./index.html">
+      <aside
+        id="admin-shell-sidebar"
+        class="admin-shell-sidebar"
+      >
+        <a
+          class="admin-shell-brand"
+          href="./index.html"
+        >
           <span>ECHO</span>
           <strong>ADMIN</strong>
         </a>
@@ -210,7 +231,12 @@ function renderShell({
         </nav>
 
         <div class="admin-shell-sidebar-footer">
-          <a class="admin-shell-site-link" href="../index.html">Ver site</a>
+          <a
+            class="admin-shell-site-link"
+            href="../index.html"
+          >
+            Ver site
+          </a>
         </div>
       </aside>
 
@@ -226,24 +252,41 @@ function renderShell({
           </button>
 
           <div class="admin-shell-heading">
-            <span data-admin-page-subtitle>${escapeHtml(pageSubtitle ?? '')}</span>
-            <h1 data-admin-page-title>${escapeHtml(pageTitle ?? 'Painel administrativo')}</h1>
+            <span data-admin-page-subtitle>
+              ${escapeHtml(pageSubtitle ?? '')}
+            </span>
+
+            <h1 data-admin-page-title>
+              ${escapeHtml(pageTitle ?? 'Painel administrativo')}
+            </h1>
           </div>
 
           <div class="admin-shell-user">
             <div class="admin-shell-user-copy">
-              <strong>${escapeHtml(admin.displayName)}</strong>
-              <span>${escapeHtml(admin.email)}</span>
+              <strong>
+                ${escapeHtml(admin.displayName)}
+              </strong>
+
+              <span>
+                ${escapeHtml(admin.email)}
+              </span>
             </div>
 
-            <button id="admin-shell-logout" class="admin-shell-logout" type="button">
+            <button
+              id="admin-shell-logout"
+              class="admin-shell-logout"
+              type="button"
+            >
               Sair
             </button>
           </div>
         </header>
 
         <main class="admin-shell-main">
-          <div data-admin-content class="admin-shell-content">
+          <div
+            data-admin-content
+            class="admin-shell-content"
+          >
             ${pageContent}
           </div>
         </main>
@@ -253,10 +296,12 @@ function renderShell({
 
   bindNavigation();
 
-  document.getElementById('admin-shell-logout')?.addEventListener('click', async () => {
-    await supabase.auth.signOut();
-    location.href = './login.html';
-  });
+  document
+    .getElementById('admin-shell-logout')
+    ?.addEventListener('click', async () => {
+      await supabase.auth.signOut();
+      location.href = './login.html';
+    });
 }
 
 export async function initAdminShell({
@@ -270,8 +315,9 @@ export async function initAdminShell({
     const admin = await getCurrentAdmin();
 
     if (!admin) {
-      location.href = redirectTo;
-      return null;
+      throw new Error(
+        'Não foi possível identificar a sessão administrativa.'
+      );
     }
 
     renderShell({
@@ -288,10 +334,78 @@ export async function initAdminShell({
       supabase
     };
   } catch (error) {
-    console.error('Falha ao iniciar o painel:', error);
-    location.href = redirectTo;
+    console.error(
+      'Falha ao iniciar o painel:',
+      error
+    );
+
+    const isCodespacesPreview =
+      location.hostname.endsWith('.app.github.dev');
+
+    /*
+     * No Codespaces, não redireciona automaticamente.
+     * Mostra o erro para conseguirmos corrigir.
+     */
+    if (isCodespacesPreview) {
+      document.body.classList.remove(
+        'admin-shell-body'
+      );
+
+      document.body.innerHTML = `
+        <main
+          style="
+            max-width: 900px;
+            margin: 40px auto;
+            padding: 24px;
+            font-family: Arial, sans-serif;
+            color: #ffffff;
+            background: #111a2e;
+            border: 1px solid #33415f;
+            border-radius: 14px;
+          "
+        >
+          <h1 style="margin-top:0;">
+            Falha ao carregar o painel
+          </h1>
+
+          <p>
+            O Admin Shell encontrou um erro antes de montar a página.
+          </p>
+
+          <pre
+            style="
+              padding:16px;
+              overflow:auto;
+              white-space:pre-wrap;
+              color:#ffb4bd;
+              background:#080d18;
+              border-radius:10px;
+            "
+          >${escapeHtml(
+            error?.message ||
+            String(error)
+          )}</pre>
+
+          <p style="color:#aab4c8;">
+            Consulte também o Console do navegador para ver os detalhes.
+          </p>
+
+          <a
+            href="./login.html"
+            style="color:#b79cff;"
+          >
+            Abrir página de login
+          </a>
+        </main>
+      `;
+
+      return null;
+    }
+
+    location.replace(
+      redirectTo
+    );
+
     return null;
   }
 }
-
-export { setPageTitle, DEFAULT_MENU };

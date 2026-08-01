@@ -1,59 +1,155 @@
 import { supabase } from '../../js/supabase.js';
 
+function getRoleName(profile) {
+  const roles = profile?.roles;
+
+  if (Array.isArray(roles)) {
+    return roles[0]?.name ?? null;
+  }
+
+  return roles?.name ?? null;
+}
+
 async function getAdminProfile(userId) {
+  if (!userId) {
+    throw new Error('Usuário não identificado.');
+  }
+
   const { data, error } = await supabase
     .from('profiles')
-    .select('id,role_id,roles(name)')
+    .select(`
+      id,
+      username,
+      display_name,
+      role_id,
+      roles (
+        name
+      )
+    `)
     .eq('id', userId)
     .single();
 
-  if (error) throw error;
+  if (error) {
+    throw error;
+  }
+
   return data;
 }
 
 export async function loginAdmin(email, password) {
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) throw error;
+  const normalizedEmail = String(email ?? '').trim();
+  const normalizedPassword = String(password ?? '');
 
-  const profile = await getAdminProfile(data.user.id);
-  if (profile?.roles?.name !== 'admin') {
-    await supabase.auth.signOut();
-    throw new Error('Esta conta não possui acesso administrativo.');
+  if (!normalizedEmail || !normalizedPassword) {
+    throw new Error('Informe o e-mail e a senha.');
   }
 
-  return data;
-}
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: normalizedEmail,
+    password: normalizedPassword
+  });
 
-export async function requireAdmin() {
-  const { data: { session } } = await supabase.auth.getSession();
+  if (error) {
+    throw error;
+  }
 
-  if (!session) {
-    location.href = './login.html';
-    throw new Error('Sem sessão.');
+  if (!data.user) {
+    throw new Error('Não foi possível identificar o usuário.');
   }
 
   try {
-    const profile = await getAdminProfile(session.user.id);
-    if (profile?.roles?.name !== 'admin') throw new Error('Acesso negado.');
-    return { session, profile };
+    const profile = await getAdminProfile(data.user.id);
+    const roleName = getRoleName(profile);
+
+    if (roleName !== 'admin') {
+      await supabase.auth.signOut();
+      throw new Error('Esta conta não possui acesso administrativo.');
+    }
+
+    return {
+      ...data,
+      profile
+    };
   } catch (error) {
     await supabase.auth.signOut();
-    location.href = './login.html';
     throw error;
   }
 }
 
-export async function redirectIfAdmin(destination) {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) return;
+export async function requireAdmin() {
+  const {
+    data: { session },
+    error: sessionError
+  } = await supabase.auth.getSession();
+
+  if (sessionError) {
+    throw sessionError;
+  }
+
+  if (!session?.user) {
+    location.replace('./login.html');
+    throw new Error('Sem sessão administrativa.');
+  }
 
   try {
     const profile = await getAdminProfile(session.user.id);
-    if (profile?.roles?.name === 'admin') location.href = destination;
-  } catch (_) {}
+    const roleName = getRoleName(profile);
+
+    if (roleName !== 'admin') {
+      throw new Error('Esta conta não possui acesso administrativo.');
+    }
+
+    return {
+      session,
+      profile,
+      roleName
+    };
+  } catch (error) {
+    console.error('Falha na validação administrativa:', error);
+
+    await supabase.auth.signOut();
+    location.replace('./login.html');
+
+    throw error;
+  }
+}
+
+export async function redirectIfAdmin(destination = './index.html') {
+  const {
+    data: { session },
+    error: sessionError
+  } = await supabase.auth.getSession();
+
+  if (sessionError || !session?.user) {
+    return false;
+  }
+
+  try {
+    const profile = await getAdminProfile(session.user.id);
+    const roleName = getRoleName(profile);
+
+    if (roleName === 'admin') {
+      location.replace(destination);
+      return true;
+    }
+  } catch (error) {
+    console.error('Não foi possível verificar o administrador:', error);
+  }
+
+  return false;
 }
 
 export async function logoutAdmin() {
-  await supabase.auth.signOut();
-  location.href = './login.html';
+  const { error } = await supabase.auth.signOut();
+
+  if (error) {
+    console.error('Erro ao encerrar sessão:', error);
+  }
+
+  location.replace('./login.html');
 }
+
+export {
+  getAdminProfile,
+  getRoleName
+};

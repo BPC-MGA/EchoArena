@@ -1,20 +1,49 @@
 import { supabase } from '../../js/supabase.js';
-import { requireAdmin, logoutAdmin } from './admin-auth.js';
 
-await requireAdmin();
-document.getElementById('logout').onclick = logoutAdmin;
+const params = new URLSearchParams(location.search);
+const requestedHeroId = params.get('hero');
 
-const heroSelect = document.getElementById('hero-select');
-const heroStatsGrid = document.getElementById('hero-stats-grid');
-const weaponStatsGrid = document.getElementById('weapon-stats-grid');
-const previewGrid = document.getElementById('preview-grid');
-const statsArea = document.getElementById('stats-area');
-const message = document.getElementById('message');
-const weaponNameInput = document.getElementById('weapon-name');
+const heroSelect =
+  document.getElementById('hero-select');
+
+const heroStatsGrid =
+  document.getElementById('hero-stats-grid');
+
+const weaponStatsGrid =
+  document.getElementById('weapon-stats-grid');
+
+const previewGrid =
+  document.getElementById('preview-grid');
+
+const statsArea =
+  document.getElementById('stats-area');
+
+const message =
+  document.getElementById('message');
+
+const weaponNameInput =
+  document.getElementById('weapon-name');
+
+const saveButton =
+  document.getElementById('save-all');
+
+const heroArt =
+  document.getElementById('hero-art');
+
+const heroName =
+  document.getElementById('hero-name');
+
+const heroSlug =
+  document.getElementById('hero-slug');
+
+const backToHeroEditor =
+  document.getElementById('back-to-hero-editor');
 
 let heroes = [];
 let definitions = [];
 let currentHero = null;
+let isLoadingHero = false;
+let isSaving = false;
 
 const HERO_CATEGORIES = new Set([
   'hero',
@@ -28,8 +57,47 @@ const WEAPON_CATEGORIES = new Set([
   'ability'
 ]);
 
+/* =========================================================
+   UTILITÁRIOS
+========================================================= */
+
+function setMessage(
+  text = '',
+  type = ''
+) {
+  if (!message) {
+    return;
+  }
+
+  message.textContent = text;
+  message.className =
+    `stats-message${type ? ` ${type}` : ''}`;
+}
+
+function escapeHtml(value = '') {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function toNumber(
+  value,
+  fallback = 0
+) {
+  const number = Number(value);
+
+  return Number.isFinite(number)
+    ? number
+    : fallback;
+}
+
 function publicMediaUrl(path) {
-  if (!path) return '';
+  if (!path) {
+    return '';
+  }
 
   return supabase.storage
     .from('game-media')
@@ -38,122 +106,461 @@ function publicMediaUrl(path) {
     .publicUrl;
 }
 
-function formatValue(value, definition) {
-  const number = Number(value ?? 0);
-  const decimals = Number(definition.decimals ?? 0);
+function formatValue(
+  value,
+  definition = {}
+) {
+  const number =
+    toNumber(value, 0);
 
-  const formatted = number.toLocaleString('pt-BR', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals
-  });
+  const decimals =
+    Math.max(
+      0,
+      toNumber(
+        definition.decimals,
+        0
+      )
+    );
 
-  if (!definition.unit) return formatted;
-  if (definition.unit === 'x') return `x${formatted}`;
+  const formatted =
+    number.toLocaleString(
+      'pt-BR',
+      {
+        minimumFractionDigits:
+          decimals,
+
+        maximumFractionDigits:
+          decimals
+      }
+    );
+
+  if (!definition.unit) {
+    return formatted;
+  }
+
+  if (definition.unit === 'x') {
+    return `x${formatted}`;
+  }
 
   return `${formatted}${definition.unit}`;
 }
 
-function createStatField(definition, group, currentValue = '') {
-  const wrapper = document.createElement('div');
-  wrapper.className = 'stat-field';
-  wrapper.dataset.statKey = definition.key;
-  wrapper.dataset.group = group;
+function getInputStep(definition) {
+  const decimals =
+    Math.max(
+      0,
+      toNumber(
+        definition.decimals,
+        0
+      )
+    );
 
-  wrapper.innerHTML = `
-    <label>
-      ${definition.name}
-      ${definition.unit ? `<span class="unit">${definition.unit}</span>` : ''}
-    </label>
-    <small>${definition.description || ''}</small>
-    <input
-      type="number"
-      step="${definition.decimals > 0 ? '0.01' : '1'}"
-      value="${currentValue ?? ''}"
-      placeholder="0"
-    >
-  `;
+  if (decimals === 0) {
+    return '1';
+  }
 
-  wrapper.querySelector('input').addEventListener('input', renderPreview);
+  return String(
+    1 / Math.pow(10, decimals)
+  );
+}
+
+function findDefinition(statKey) {
+  return definitions.find(
+    definition =>
+      definition.key === statKey
+  );
+}
+
+/* =========================================================
+   CAMPOS DE STATUS
+========================================================= */
+
+function createStatField(
+  definition,
+  group,
+  currentValue = ''
+) {
+  const wrapper =
+    document.createElement('div');
+
+  wrapper.className =
+    'stat-field';
+
+  wrapper.dataset.statKey =
+    definition.key;
+
+  wrapper.dataset.group =
+    group;
+
+  const label =
+    document.createElement('label');
+
+  const labelText =
+    document.createElement('span');
+
+  labelText.textContent =
+    definition.name ||
+    definition.key;
+
+  label.appendChild(labelText);
+
+  if (definition.unit) {
+    const unit =
+      document.createElement('span');
+
+    unit.className = 'unit';
+    unit.textContent =
+      definition.unit;
+
+    label.appendChild(unit);
+  }
+
+  const description =
+    document.createElement('small');
+
+  description.textContent =
+    definition.description || '';
+
+  const input =
+    document.createElement('input');
+
+  input.type = 'number';
+  input.step =
+    getInputStep(definition);
+
+  input.value =
+    currentValue === null ||
+    currentValue === undefined
+      ? ''
+      : String(currentValue);
+
+  input.placeholder = '0';
+
+  if (
+    definition.value_type ===
+    'integer'
+  ) {
+    input.step = '1';
+  }
+
+  input.addEventListener(
+    'input',
+    renderPreview
+  );
+
+  wrapper.append(
+    label,
+    description,
+    input
+  );
 
   return wrapper;
 }
 
-function renderFields(heroValues = {}, weaponValues = {}) {
+function renderEmptyDefinitions(
+  container,
+  text
+) {
+  if (!container) {
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="stats-empty">
+      ${escapeHtml(text)}
+    </div>
+  `;
+}
+
+function renderFields(
+  heroValues = {},
+  weaponValues = {}
+) {
   heroStatsGrid.innerHTML = '';
   weaponStatsGrid.innerHTML = '';
 
-  const heroDefinitions = definitions.filter(definition =>
-    HERO_CATEGORIES.has(definition.category)
-  );
-
-  const weaponDefinitions = definitions.filter(definition =>
-    WEAPON_CATEGORIES.has(definition.category)
-  );
-
-  heroDefinitions.forEach(definition => {
-    heroStatsGrid.appendChild(
-      createStatField(
-        definition,
-        'hero',
-        heroValues[definition.key] ?? ''
-      )
+  const heroDefinitions =
+    definitions.filter(
+      definition =>
+        HERO_CATEGORIES.has(
+          definition.category
+        )
     );
-  });
 
-  weaponDefinitions.forEach(definition => {
-    weaponStatsGrid.appendChild(
-      createStatField(
-        definition,
-        'weapon',
-        weaponValues[definition.key] ?? ''
-      )
+  const weaponDefinitions =
+    definitions.filter(
+      definition =>
+        WEAPON_CATEGORIES.has(
+          definition.category
+        )
     );
-  });
+
+  if (!heroDefinitions.length) {
+    renderEmptyDefinitions(
+      heroStatsGrid,
+      'Nenhuma definição de status do herói foi encontrada.'
+    );
+  } else {
+    heroDefinitions.forEach(
+      definition => {
+        heroStatsGrid.appendChild(
+          createStatField(
+            definition,
+            'hero',
+            heroValues[
+              definition.key
+            ] ?? ''
+          )
+        );
+      }
+    );
+  }
+
+  if (!weaponDefinitions.length) {
+    renderEmptyDefinitions(
+      weaponStatsGrid,
+      'Nenhuma definição de status da arma foi encontrada.'
+    );
+  } else {
+    weaponDefinitions.forEach(
+      definition => {
+        weaponStatsGrid.appendChild(
+          createStatField(
+            definition,
+            'weapon',
+            weaponValues[
+              definition.key
+            ] ?? ''
+          )
+        );
+      }
+    );
+  }
 
   renderPreview();
 }
 
 function collectFields(group) {
-  return [...document.querySelectorAll(`[data-group="${group}"]`)]
-    .map(field => ({
-      stat_key: field.dataset.statKey,
-      value: field.querySelector('input').value
-    }))
-    .filter(item => item.value !== '')
-    .map(item => ({
-      stat_key: item.stat_key,
-      value: Number(item.value)
-    }));
-}
-
-function renderPreview() {
-  const allFields = [
-    ...document.querySelectorAll('.stat-field')
+  const fields = [
+    ...document.querySelectorAll(
+      `.stat-field[data-group="${group}"]`
+    )
   ];
 
-  previewGrid.innerHTML = allFields
-    .filter(field => field.querySelector('input').value !== '')
+  return fields
     .map(field => {
-      const definition = definitions.find(
-        item => item.key === field.dataset.statKey
-      );
+      const input =
+        field.querySelector('input');
 
-      const value = field.querySelector('input').value;
+      const rawValue =
+        input?.value.trim() ?? '';
 
-      return `
-        <div class="preview-stat">
-          <span>${definition?.name || field.dataset.statKey}</span>
-          <strong>${formatValue(value, definition || {})}</strong>
-        </div>
-      `;
+      return {
+        stat_key:
+          field.dataset.statKey,
+
+        rawValue
+      };
     })
-    .join('') || '<div class="stats-message">Nenhum valor cadastrado ainda.</div>';
+    .filter(
+      item =>
+        item.stat_key &&
+        item.rawValue !== ''
+    )
+    .map(item => {
+      const value =
+        Number(item.rawValue);
+
+      if (!Number.isFinite(value)) {
+        throw new Error(
+          `Valor inválido em "${item.stat_key}".`
+        );
+      }
+
+      return {
+        stat_key:
+          item.stat_key,
+
+        value
+      };
+    });
+}
+
+/* =========================================================
+   PRÉVIA
+========================================================= */
+
+function renderPreview() {
+  const fields = [
+    ...document.querySelectorAll(
+      '.stat-field'
+    )
+  ];
+
+  const filledFields =
+    fields.filter(field => {
+      const input =
+        field.querySelector('input');
+
+      return (
+        input &&
+        input.value.trim() !== ''
+      );
+    });
+
+  if (!filledFields.length) {
+    previewGrid.innerHTML = `
+      <div class="stats-empty">
+        Nenhum valor cadastrado ainda.
+      </div>
+    `;
+
+    return;
+  }
+
+  previewGrid.innerHTML =
+    filledFields
+      .map(field => {
+        const statKey =
+          field.dataset.statKey;
+
+        const definition =
+          findDefinition(statKey);
+
+        const value =
+          field
+            .querySelector('input')
+            .value;
+
+        return `
+          <div class="preview-stat">
+            <span>
+              ${escapeHtml(
+                definition?.name ||
+                statKey
+              )}
+            </span>
+
+            <strong>
+              ${escapeHtml(
+                formatValue(
+                  value,
+                  definition || {}
+                )
+              )}
+            </strong>
+          </div>
+        `;
+      })
+      .join('');
+}
+
+/* =========================================================
+   HERO SUMMARY
+========================================================= */
+
+function clearHeroSummary() {
+  currentHero = null;
+
+  heroName.textContent =
+    'Nenhum herói selecionado';
+
+  heroSlug.textContent = '—';
+
+  heroArt.textContent =
+    'Sem herói';
+
+  weaponNameInput.value = '';
+
+  statsArea.classList.add(
+    'hidden'
+  );
+
+  if (backToHeroEditor) {
+    backToHeroEditor.href =
+      './heroes.html';
+  }
+}
+
+function renderHeroSummary(hero) {
+  heroName.textContent =
+    hero.name ||
+    'Herói sem nome';
+
+  heroSlug.textContent =
+    hero.slug ||
+    '—';
+
+  const mediaPath =
+    hero.card_image_path ||
+    hero.image_path ||
+    hero.gif_path;
+
+  if (mediaPath) {
+    heroArt.innerHTML = `
+      <img
+        src="${publicMediaUrl(mediaPath)}"
+        alt="${escapeHtml(
+          hero.name || ''
+        )}"
+      >
+    `;
+  } else {
+    heroArt.textContent =
+      'Sem imagem';
+  }
+
+  if (backToHeroEditor) {
+    backToHeroEditor.href =
+      `./hero-editor.html?id=${encodeURIComponent(
+        hero.id
+      )}&tab=stats`;
+  }
+}
+
+/* =========================================================
+   CARREGAMENTO INICIAL
+========================================================= */
+
+function populateHeroSelect() {
+  heroSelect.innerHTML = '';
+
+  const emptyOption =
+    document.createElement('option');
+
+  emptyOption.value = '';
+  emptyOption.textContent =
+    'Selecione um herói';
+
+  heroSelect.appendChild(
+    emptyOption
+  );
+
+  heroes.forEach(hero => {
+    const option =
+      document.createElement('option');
+
+    option.value = hero.id;
+    option.textContent =
+      hero.enabled === false
+        ? `${hero.name} — inativo`
+        : hero.name;
+
+    heroSelect.appendChild(
+      option
+    );
+  });
 }
 
 async function loadInitialData() {
-  message.textContent = 'Carregando dados...';
+  setMessage(
+    'Carregando dados...'
+  );
 
-  const [heroesResult, definitionsResult] = await Promise.all([
+  const [
+    heroesResult,
+    definitionsResult
+  ] = await Promise.all([
     supabase
       .from('heroes')
       .select(`
@@ -181,159 +588,457 @@ async function loadInitialData() {
         display_order
       `)
       .eq('enabled', true)
-      .order('display_order')
+      .order(
+        'display_order',
+        {
+          ascending: true
+        }
+      )
   ]);
 
-  if (heroesResult.error) throw heroesResult.error;
-  if (definitionsResult.error) throw definitionsResult.error;
+  if (heroesResult.error) {
+    throw heroesResult.error;
+  }
 
-  heroes = heroesResult.data || [];
-  definitions = definitionsResult.data || [];
+  if (definitionsResult.error) {
+    throw definitionsResult.error;
+  }
 
-  heroSelect.innerHTML =
-    '<option value="">Selecione um herói</option>' +
-    heroes.map(hero =>
-      `<option value="${hero.id}">${hero.name}</option>`
-    ).join('');
+  heroes =
+    heroesResult.data || [];
 
-  message.textContent = '';
+  definitions =
+    definitionsResult.data || [];
+
+  populateHeroSelect();
+
+  setMessage('');
 }
+
+/* =========================================================
+   CARREGAMENTO DOS STATUS
+========================================================= */
 
 async function loadHeroStats(heroId) {
-  currentHero = heroes.find(hero => hero.id === heroId);
-
-  if (!currentHero) {
-    statsArea.classList.add('hidden');
+  if (isLoadingHero) {
     return;
   }
 
-  message.textContent = 'Carregando status...';
-
-  const [heroStatsResult, weaponStatsResult] = await Promise.all([
-    supabase
-      .from('hero_base_stats')
-      .select('stat_key,value')
-      .eq('hero_id', heroId),
-
-    supabase
-      .from('hero_weapon_stats')
-      .select('stat_key,value,weapon_name')
-      .eq('hero_id', heroId)
-  ]);
-
-  if (heroStatsResult.error) throw heroStatsResult.error;
-  if (weaponStatsResult.error) throw weaponStatsResult.error;
-
-  const heroValues = Object.fromEntries(
-    (heroStatsResult.data || []).map(row => [
-      row.stat_key,
-      row.value
-    ])
-  );
-
-  const weaponValues = Object.fromEntries(
-    (weaponStatsResult.data || []).map(row => [
-      row.stat_key,
-      row.value
-    ])
-  );
-
-  weaponNameInput.value =
-    weaponStatsResult.data?.[0]?.weapon_name || '';
-
-  document.getElementById('hero-name').textContent =
-    currentHero.name;
-
-  document.getElementById('hero-slug').textContent =
-    currentHero.slug;
-
-  const path =
-    currentHero.card_image_path ||
-    currentHero.image_path ||
-    currentHero.gif_path;
-
-  document.getElementById('hero-art').innerHTML = path
-    ? `<img src="${publicMediaUrl(path)}" alt="">`
-    : 'Sem imagem';
-
-  renderFields(heroValues, weaponValues);
-  statsArea.classList.remove('hidden');
-  message.textContent = '';
-}
-
-async function replaceStats(table, heroId, rows, extra = {}) {
-  const { error: deleteError } = await supabase
-    .from(table)
-    .delete()
-    .eq('hero_id', heroId);
-
-  if (deleteError) throw deleteError;
-
-  if (!rows.length) return;
-
-  const payload = rows.map(row => ({
-    hero_id: heroId,
-    stat_key: row.stat_key,
-    value: row.value,
-    ...extra
-  }));
-
-  const { error: insertError } = await supabase
-    .from(table)
-    .insert(payload);
-
-  if (insertError) throw insertError;
-}
-
-heroSelect.addEventListener('change', async event => {
-  try {
-    await loadHeroStats(event.target.value);
-  } catch (error) {
-    message.textContent = error.message;
-    message.className = 'stats-message error';
-  }
-});
-
-document.getElementById('save-all').addEventListener('click', async () => {
-  if (!currentHero) {
-    message.textContent = 'Selecione um herói.';
-    message.className = 'stats-message error';
+  if (!heroId) {
+    clearHeroSummary();
     return;
   }
 
-  message.textContent = 'Salvando status...';
-  message.className = 'stats-message';
+  const selectedHero =
+    heroes.find(
+      hero =>
+        String(hero.id) ===
+        String(heroId)
+    );
+
+  if (!selectedHero) {
+    clearHeroSummary();
+
+    setMessage(
+      'O herói selecionado não foi encontrado.',
+      'error'
+    );
+
+    return;
+  }
+
+  isLoadingHero = true;
+  currentHero = selectedHero;
+
+  statsArea.classList.add(
+    'hidden'
+  );
+
+  setMessage(
+    'Carregando status...'
+  );
 
   try {
-    const heroRows = collectFields('hero');
-    const weaponRows = collectFields('weapon');
+    const [
+      heroStatsResult,
+      weaponStatsResult
+    ] = await Promise.all([
+      supabase
+        .from('hero_base_stats')
+        .select(
+          'stat_key,value'
+        )
+        .eq(
+          'hero_id',
+          selectedHero.id
+        ),
 
-    await replaceStats(
+      supabase
+        .from('hero_weapon_stats')
+        .select(
+          'stat_key,value,weapon_name'
+        )
+        .eq(
+          'hero_id',
+          selectedHero.id
+        )
+    ]);
+
+    if (heroStatsResult.error) {
+      throw heroStatsResult.error;
+    }
+
+    if (weaponStatsResult.error) {
+      throw weaponStatsResult.error;
+    }
+
+    const heroValues =
+      Object.fromEntries(
+        (
+          heroStatsResult.data ||
+          []
+        ).map(row => [
+          row.stat_key,
+          row.value
+        ])
+      );
+
+    const weaponValues =
+      Object.fromEntries(
+        (
+          weaponStatsResult.data ||
+          []
+        ).map(row => [
+          row.stat_key,
+          row.value
+        ])
+      );
+
+    weaponNameInput.value =
+      weaponStatsResult
+        .data?.[0]
+        ?.weapon_name ||
+      '';
+
+    renderHeroSummary(
+      selectedHero
+    );
+
+    renderFields(
+      heroValues,
+      weaponValues
+    );
+
+    statsArea.classList.remove(
+      'hidden'
+    );
+
+    setMessage('');
+  } finally {
+    isLoadingHero = false;
+  }
+}
+
+/* =========================================================
+   SALVAMENTO SEGURO
+========================================================= */
+
+async function getExistingStatKeys(
+  table,
+  heroId
+) {
+  const { data, error } =
+    await supabase
+      .from(table)
+      .select('stat_key')
+      .eq('hero_id', heroId);
+
+  if (error) {
+    throw error;
+  }
+
+  return (
+    data || []
+  ).map(
+    row =>
+      row.stat_key
+  );
+}
+
+async function syncStats(
+  table,
+  heroId,
+  rows,
+  extra = {}
+) {
+  const existingKeys =
+    await getExistingStatKeys(
+      table,
+      heroId
+    );
+
+  const incomingKeys =
+    rows.map(
+      row =>
+        row.stat_key
+    );
+
+  /*
+   * Primeiro cria ou atualiza os valores.
+   * Só depois remove os campos apagados.
+   *
+   * Isso evita apagar todos os status antes
+   * de descobrir que a inserção falhou.
+   */
+  if (rows.length) {
+    const payload =
+      rows.map(row => ({
+        hero_id:
+          heroId,
+
+        stat_key:
+          row.stat_key,
+
+        value:
+          row.value,
+
+        ...extra
+      }));
+
+    const { error: upsertError } =
+      await supabase
+        .from(table)
+        .upsert(
+          payload,
+          {
+            onConflict:
+              'hero_id,stat_key'
+          }
+        );
+
+    if (upsertError) {
+      throw upsertError;
+    }
+  }
+
+  const removedKeys =
+    existingKeys.filter(
+      key =>
+        !incomingKeys.includes(key)
+    );
+
+  if (removedKeys.length) {
+    const { error: deleteError } =
+      await supabase
+        .from(table)
+        .delete()
+        .eq(
+          'hero_id',
+          heroId
+        )
+        .in(
+          'stat_key',
+          removedKeys
+        );
+
+    if (deleteError) {
+      throw deleteError;
+    }
+  }
+}
+
+async function saveAllStats() {
+  if (isSaving) {
+    return;
+  }
+
+  if (!currentHero) {
+    setMessage(
+      'Selecione um herói.',
+      'error'
+    );
+
+    return;
+  }
+
+  isSaving = true;
+
+  const originalButtonText =
+    saveButton.textContent;
+
+  saveButton.disabled = true;
+  saveButton.textContent =
+    'Salvando...';
+
+  setMessage(
+    'Salvando status...'
+  );
+
+  try {
+    const heroRows =
+      collectFields('hero');
+
+    const weaponRows =
+      collectFields('weapon');
+
+    const weaponName =
+      weaponNameInput
+        .value
+        .trim() ||
+      null;
+
+    await syncStats(
       'hero_base_stats',
       currentHero.id,
       heroRows
     );
 
-    await replaceStats(
+    await syncStats(
       'hero_weapon_stats',
       currentHero.id,
       weaponRows,
       {
-        weapon_name: weaponNameInput.value.trim() || null
+        weapon_name:
+          weaponName
       }
     );
 
-    message.textContent = 'Status salvos com sucesso.';
-    message.className = 'stats-message ok';
+    setMessage(
+      'Status salvos com sucesso.',
+      'ok'
+    );
   } catch (error) {
-    message.textContent = error.message;
-    message.className = 'stats-message error';
-  }
-});
+    console.error(
+      'Erro ao salvar status:',
+      error
+    );
 
-try {
-  await loadInitialData();
-} catch (error) {
-  message.textContent = error.message;
-  message.className = 'stats-message error';
+    setMessage(
+      error.message ||
+      'Não foi possível salvar os status.',
+      'error'
+    );
+  } finally {
+    isSaving = false;
+
+    saveButton.disabled = false;
+    saveButton.textContent =
+      originalButtonText;
+  }
 }
+
+/* =========================================================
+   EVENTOS
+========================================================= */
+
+heroSelect.addEventListener(
+  'change',
+  async event => {
+    const selectedHeroId =
+      event.target.value;
+
+    const url =
+      new URL(location.href);
+
+    if (selectedHeroId) {
+      url.searchParams.set(
+        'hero',
+        selectedHeroId
+      );
+    } else {
+      url.searchParams.delete(
+        'hero'
+      );
+    }
+
+    history.replaceState(
+      {},
+      '',
+      url
+    );
+
+    try {
+      await loadHeroStats(
+        selectedHeroId
+      );
+    } catch (error) {
+      console.error(
+        'Erro ao carregar status:',
+        error
+      );
+
+      setMessage(
+        error.message ||
+        'Não foi possível carregar os status.',
+        'error'
+      );
+    }
+  }
+);
+
+weaponNameInput.addEventListener(
+  'input',
+  () => {
+    if (
+      currentHero &&
+      message.classList.contains('ok')
+    ) {
+      setMessage('');
+    }
+  }
+);
+
+saveButton.addEventListener(
+  'click',
+  saveAllStats
+);
+
+/* =========================================================
+   INICIALIZAÇÃO
+========================================================= */
+
+async function initialize() {
+  try {
+    clearHeroSummary();
+
+    await loadInitialData();
+
+    if (requestedHeroId) {
+      const heroExists =
+        heroes.some(
+          hero =>
+            String(hero.id) ===
+            String(requestedHeroId)
+        );
+
+      if (!heroExists) {
+        setMessage(
+          'O herói informado na URL não foi encontrado.',
+          'error'
+        );
+
+        return;
+      }
+
+      heroSelect.value =
+        requestedHeroId;
+
+      await loadHeroStats(
+        requestedHeroId
+      );
+    }
+  } catch (error) {
+    console.error(
+      'Erro ao iniciar editor de status:',
+      error
+    );
+
+    setMessage(
+      error.message ||
+      'Não foi possível carregar o editor de status.',
+      'error'
+    );
+  }
+}
+
+await initialize();

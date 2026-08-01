@@ -1,30 +1,414 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Equipamentos — Echo Admin</title>
-<link rel="stylesheet" href="./css/admin.css">
-<link rel="stylesheet" href="./css/equipments.css">
+  <meta charset="utf-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  >
+
+  <title>Equipamentos — Echo Arena Admin</title>
+
+  <link
+    rel="stylesheet"
+    href="./css/admin.css"
+  >
+
+  <link
+    rel="stylesheet"
+    href="./css/admin-shell.css"
+  >
+
+  <style>
+    .equipments-page {
+      display: grid;
+      gap: 18px;
+    }
+
+    .equipments-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .equipments-toolbar-copy strong {
+      display: block;
+      font-size: 18px;
+    }
+
+    .equipments-toolbar-copy span {
+      display: block;
+      margin-top: 5px;
+      color: var(--admin-muted);
+      font-size: 12px;
+    }
+
+    .equipments-toolbar-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .equipment-filters {
+      display: grid;
+      grid-template-columns:
+        minmax(220px, 1fr)
+        minmax(170px, 240px)
+        minmax(170px, 240px);
+      gap: 12px;
+      padding: 16px;
+      border: 1px solid var(--admin-line);
+      border-radius: 14px;
+      background: var(--admin-panel);
+    }
+
+    .equipment-filter-field {
+      display: grid;
+      gap: 7px;
+    }
+
+    .equipment-filter-field label {
+      color: #c8cfdd;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .equipment-list {
+      display: grid;
+      grid-template-columns:
+        repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .equipment-card {
+      min-width: 0;
+      overflow: hidden;
+      border: 1px solid var(--admin-line);
+      border-radius: 14px;
+      background: var(--admin-panel);
+    }
+
+    .equipment-card-media {
+      position: relative;
+      height: 230px;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      background:
+        radial-gradient(
+          circle at 50% 45%,
+          rgba(139, 92, 246, 0.15),
+          transparent 50%
+        ),
+        #07101f;
+    }
+
+    .equipment-card-media img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .equipment-card-media-empty {
+      color: var(--admin-muted);
+      font-size: 11px;
+    }
+
+    .equipment-card-body {
+      display: grid;
+      gap: 14px;
+      padding: 16px;
+    }
+
+    .equipment-card-heading {
+      min-width: 0;
+    }
+
+    .equipment-card-heading h2 {
+      margin: 0;
+      font-size: 18px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .equipment-card-heading p {
+      margin: 5px 0 0;
+      color: var(--admin-muted);
+      font-size: 10px;
+      word-break: break-word;
+    }
+
+    .equipment-card-meta {
+      display: grid;
+      grid-template-columns:
+        repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .equipment-meta-item {
+      min-width: 0;
+      padding: 9px;
+      border: 1px solid var(--admin-line);
+      border-radius: 9px;
+      background: #09111f;
+    }
+
+    .equipment-meta-item span {
+      display: block;
+      color: var(--admin-muted);
+      font-size: 8px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .equipment-meta-item strong {
+      display: block;
+      margin-top: 4px;
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .equipment-card-actions {
+      display: grid;
+      grid-template-columns:
+        repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .equipment-card-actions .admin-button {
+      justify-content: center;
+      min-width: 0;
+      text-align: center;
+    }
+
+    .equipment-card-actions .danger {
+      color: #ff9aaa;
+      border-color: #71303b;
+      background: #2a1016;
+    }
+
+    .equipment-message {
+      min-height: 22px;
+      color: var(--admin-muted);
+      font-size: 13px;
+    }
+
+    .equipment-message.error {
+      color: #ff8585;
+    }
+
+    .equipment-message.ok {
+      color: #4ade80;
+    }
+
+    .equipment-empty {
+      grid-column: 1 / -1;
+      padding: 36px;
+      border: 1px dashed var(--admin-line);
+      border-radius: 14px;
+      background: var(--admin-panel);
+      color: var(--admin-muted);
+      text-align: center;
+      font-size: 12px;
+    }
+
+    @media (max-width: 1150px) {
+      .equipment-list {
+        grid-template-columns:
+          repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 780px) {
+      .equipment-filters {
+        grid-template-columns: 1fr;
+      }
+
+      .equipment-list {
+        grid-template-columns: 1fr;
+      }
+
+      .equipment-card-media {
+        height: 300px;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .equipment-card-actions,
+      .equipment-card-meta {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
 </head>
+
 <body>
-<div class="equipment-page">
-  <aside class="sidebar">
-    <div class="brand">ECHO <span>ADMIN</span></div>
-    <nav><a href="./index.html">Dashboard</a><a href="./heroes.html">Heróis</a><a class="active" href="./equipments.html">Equipamentos</a><a href="../index.html">Ver site</a></nav>
-    <button id="logout" class="btn ghost">Sair</button>
-  </aside>
-  <main class="equipment-main">
-    <header class="eq-head">
-      <div><div class="eyebrow">Conteúdo</div><h1>Equipamentos</h1></div>
-      <div class="eq-actions">
-        <a class="eq-btn" href="./equipment-import.html">Importar por print</a>
-        <a class="eq-btn primary" href="./equipment-editor.html">Novo equipamento</a>
-      </div>
-    </header>
-    <div class="eq-panel"><input id="search" placeholder="Buscar equipamento..."></div>
-    <section id="equipment-list" class="eq-list"></section>
-    <div id="message" class="eq-message"></div>
-  </main>
-</div>
-<script type="module" src="./js/equipments.js"></script>
-</body></html>
+  <div data-admin-content>
+    <section class="equipments-page">
+
+      <header class="equipments-toolbar">
+        <div class="equipments-toolbar-copy">
+          <strong>
+            Gerenciamento de equipamentos
+          </strong>
+
+          <span>
+            Consulte, importe, edite ou remova equipamentos.
+          </span>
+        </div>
+
+        <div class="equipments-toolbar-actions">
+          <a
+            class="admin-button"
+            href="./equipment-import.html"
+          >
+            Importar por print
+          </a>
+
+          <a
+            class="admin-button primary"
+            href="./equipment-editor.html"
+          >
+            Novo equipamento
+          </a>
+        </div>
+      </header>
+
+      <section class="equipment-filters">
+        <div class="equipment-filter-field">
+          <label for="search">
+            Buscar
+          </label>
+
+          <input
+            id="search"
+            class="admin-input"
+            type="search"
+            placeholder="Nome, conjunto ou slot..."
+            autocomplete="off"
+          >
+        </div>
+
+        <div class="equipment-filter-field">
+          <label for="set-filter">
+            Conjunto
+          </label>
+
+          <select
+            id="set-filter"
+            class="admin-select"
+          >
+            <option value="all">
+              Todos os conjuntos
+            </option>
+          </select>
+        </div>
+
+        <div class="equipment-filter-field">
+          <label for="slot-filter">
+            Slot
+          </label>
+
+          <select
+            id="slot-filter"
+            class="admin-select"
+          >
+            <option value="all">
+              Todos os slots
+            </option>
+          </select>
+        </div>
+      </section>
+
+      <div
+        id="message"
+        class="equipment-message"
+        role="status"
+        aria-live="polite"
+      ></div>
+
+      <section
+        id="equipment-list"
+        class="equipment-list"
+      >
+        <div class="equipment-empty">
+          Carregando equipamentos...
+        </div>
+      </section>
+    </section>
+  </div>
+
+<script type="module">
+  function showFatalError(title, error) {
+    document.body.innerHTML = `
+      <main style="
+        max-width: 900px;
+        margin: 40px auto;
+        padding: 24px;
+        font-family: Arial, sans-serif;
+        color: white;
+        background: #111a2e;
+        border: 1px solid #33415f;
+        border-radius: 14px;
+      ">
+        <h1 style="margin-top: 0;">
+          ${title}
+        </h1>
+
+        <pre style="
+          padding: 16px;
+          overflow: auto;
+          white-space: pre-wrap;
+          color: #ffb4bd;
+          background: #080d18;
+          border-radius: 10px;
+        "></pre>
+      </main>
+    `;
+
+    document.querySelector('pre').textContent =
+      error?.stack ||
+      error?.message ||
+      String(error);
+  }
+
+  try {
+    const shellModule = await import(
+      './js/admin-shell.js?v=902'
+    );
+
+    const shell = await shellModule.initAdminShell({
+      activeId: 'equipments-list',
+      pageTitle: 'Equipamentos',
+      pageSubtitle: 'Gerenciamento de conteúdo'
+    });
+
+    if (!shell) {
+      throw new Error(
+        'O Admin Shell não foi inicializado.'
+      );
+    }
+
+    try {
+      await import(
+        './js/equipments.js?v=902'
+      );
+    } catch (error) {
+      showFatalError(
+        'Erro ao carregar equipments.js',
+        error
+      );
+    }
+  } catch (error) {
+    showFatalError(
+      'Erro ao carregar o Admin Shell',
+      error
+    );
+  }
+</script>

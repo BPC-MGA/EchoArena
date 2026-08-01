@@ -1,103 +1,537 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Status do Herói — Echo Admin</title>
-  <link rel="stylesheet" href="./css/admin.css">
-  <link rel="stylesheet" href="./css/hero-stats.css">
+  <meta charset="UTF-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+
+  <title>Status do Herói — Echo Arena Admin</title>
+
+  <link
+    rel="stylesheet"
+    href="./css/admin.css"
+  >
+
+  <link
+    rel="stylesheet"
+    href="./css/admin-shell.css"
+  >
+
+  <link
+    rel="stylesheet"
+    href="./css/hero-stats.css"
+  >
+
+  <style>
+    .hero-stats-page {
+      display: grid;
+      gap: 18px;
+    }
+
+    .hero-stats-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .hero-stats-toolbar-copy strong {
+      display: block;
+      font-size: 18px;
+    }
+
+    .hero-stats-toolbar-copy span {
+      display: block;
+      margin-top: 5px;
+      color: var(--admin-muted);
+      font-size: 12px;
+    }
+
+    .hero-stats-toolbar-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .stats-panel {
+      padding: 20px;
+      border: 1px solid var(--admin-line);
+      border-radius: 14px;
+      background: var(--admin-panel);
+    }
+
+    .hero-selector-panel {
+      display: grid;
+      grid-template-columns:
+        minmax(260px, 0.8fr)
+        minmax(0, 1.2fr);
+      gap: 18px;
+      align-items: center;
+    }
+
+    .hero-select-field {
+      display: grid;
+      gap: 8px;
+    }
+
+    .hero-select-field label {
+      color: #c8cfdd;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .hero-summary {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+      padding: 12px;
+      border: 1px solid var(--admin-line);
+      border-radius: 11px;
+      background: #09111f;
+    }
+
+    .hero-summary-art {
+      flex: 0 0 82px;
+      width: 82px;
+      height: 82px;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      border: 1px solid var(--admin-line);
+      border-radius: 10px;
+      background: #050a12;
+      color: var(--admin-muted);
+      font-size: 10px;
+      text-align: center;
+    }
+
+    .hero-summary-art img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .hero-summary-copy {
+      min-width: 0;
+    }
+
+    .hero-summary-copy strong {
+      display: block;
+      font-size: 18px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .hero-summary-copy span {
+      display: block;
+      margin-top: 4px;
+      color: var(--admin-muted);
+      font-size: 11px;
+    }
+
+    .stats-area {
+      display: grid;
+      gap: 18px;
+    }
+
+    .stats-area.hidden {
+      display: none;
+    }
+
+    .section-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 18px;
+      flex-wrap: wrap;
+    }
+
+    .section-title h2 {
+      margin: 4px 0 0;
+      font-size: 22px;
+    }
+
+    .eyebrow {
+      color: var(--admin-purple);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .section-note {
+      color: var(--admin-muted);
+      font-size: 11px;
+    }
+
+    .weapon-name-field {
+      display: grid;
+      gap: 7px;
+      min-width: min(100%, 320px);
+      color: #c8cfdd;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns:
+        repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .stat-field {
+      display: grid;
+      align-content: start;
+      gap: 7px;
+      min-width: 0;
+      padding: 13px;
+      border: 1px solid var(--admin-line);
+      border-radius: 10px;
+      background: #09111f;
+    }
+
+    .stat-field label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      color: #d7ddeb;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .stat-field .unit {
+      color: var(--admin-purple);
+      font-size: 10px;
+      font-weight: 800;
+    }
+
+    .stat-field small {
+      min-height: 28px;
+      color: var(--admin-muted);
+      font-size: 10px;
+      line-height: 1.4;
+    }
+
+    .stat-field input,
+    .weapon-name-field input {
+      width: 100%;
+      min-height: 42px;
+      padding: 10px 12px;
+      border: 1px solid var(--admin-line);
+      border-radius: 8px;
+      background: #050c18;
+      color: white;
+      outline: none;
+    }
+
+    .stat-field input:focus,
+    .weapon-name-field input:focus {
+      border-color: var(--admin-purple);
+      box-shadow:
+        0 0 0 3px rgba(139, 92, 246, 0.12);
+    }
+
+    .preview-grid {
+      display: grid;
+      grid-template-columns:
+        repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .preview-stat {
+      min-width: 0;
+      padding: 13px;
+      border: 1px solid var(--admin-line);
+      border-radius: 10px;
+      background: #09111f;
+    }
+
+    .preview-stat span {
+      display: block;
+      color: var(--admin-muted);
+      font-size: 9px;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+    }
+
+    .preview-stat strong {
+      display: block;
+      margin-top: 5px;
+      font-size: 18px;
+      overflow-wrap: anywhere;
+    }
+
+    .stats-message {
+      min-height: 22px;
+      color: var(--admin-muted);
+      font-size: 13px;
+    }
+
+    .stats-message.error {
+      color: #ff8585;
+    }
+
+    .stats-message.ok {
+      color: #4ade80;
+    }
+
+    .stats-empty {
+      grid-column: 1 / -1;
+      padding: 22px;
+      border: 1px dashed var(--admin-line);
+      border-radius: 10px;
+      color: var(--admin-muted);
+      font-size: 12px;
+      text-align: center;
+    }
+
+    @media (max-width: 1120px) {
+      .stats-grid {
+        grid-template-columns:
+          repeat(2, minmax(0, 1fr));
+      }
+
+      .preview-grid {
+        grid-template-columns:
+          repeat(3, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 760px) {
+      .hero-selector-panel {
+        grid-template-columns: 1fr;
+      }
+
+      .stats-grid,
+      .preview-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-summary-art {
+        flex-basis: 70px;
+        width: 70px;
+        height: 70px;
+      }
+    }
+  </style>
 </head>
+
 <body>
-  <div class="stats-admin-page">
-    <aside class="sidebar">
-      <div class="brand">ECHO <span>ADMIN</span></div>
+  <div data-admin-content>
+    <section class="hero-stats-page">
 
-      <nav>
-        <a href="./index.html">Dashboard</a>
-        <a href="./heroes.html">Heróis</a>
-        <a class="active" href="./hero-stats.html">Status dos heróis</a>
-        <a href="./equipments.html">Equipamentos</a>
-        <a href="../index.html">Ver site</a>
-      </nav>
+      <header class="hero-stats-toolbar">
+        <div class="hero-stats-toolbar-copy">
+          <strong>
+            Status do herói e da arma
+          </strong>
 
-      <button id="logout" class="btn ghost">Sair</button>
-    </aside>
-
-    <main class="stats-admin-main">
-      <header class="stats-head">
-        <div>
-          <span class="eyebrow">Dados dinâmicos</span>
-          <h1>Status do herói e da arma</h1>
+          <span>
+            Cadastre os valores base usados pelo sistema dinâmico.
+          </span>
         </div>
 
-        <div class="stats-head-actions">
-          <a class="btn ghost" href="./heroes.html">Voltar aos heróis</a>
-          <button id="save-all" class="btn primary" type="button">Salvar alterações</button>
+        <div class="hero-stats-toolbar-actions">
+          <a
+            id="back-to-hero-editor"
+            class="admin-button"
+            href="./heroes.html"
+          >
+            Voltar ao herói
+          </a>
+
+          <button
+            id="save-all"
+            class="admin-button primary"
+            type="button"
+          >
+            Salvar alterações
+          </button>
         </div>
       </header>
 
       <section class="stats-panel hero-selector-panel">
-        <label>
-          Herói
-          <select id="hero-select">
-            <option value="">Selecione um herói</option>
-          </select>
-        </label>
+        <div class="hero-select-field">
+          <label for="hero-select">
+            Herói
+          </label>
 
-        <div id="hero-summary" class="hero-summary">
-          <div class="hero-summary-art" id="hero-art">Sem herói</div>
-          <div>
-            <strong id="hero-name">Nenhum herói selecionado</strong>
-            <span id="hero-slug">—</span>
+          <select
+            id="hero-select"
+            class="admin-select"
+          >
+            <option value="">
+              Selecione um herói
+            </option>
+          </select>
+        </div>
+
+        <div
+          id="hero-summary"
+          class="hero-summary"
+        >
+          <div
+            id="hero-art"
+            class="hero-summary-art"
+          >
+            Sem herói
+          </div>
+
+          <div class="hero-summary-copy">
+            <strong id="hero-name">
+              Nenhum herói selecionado
+            </strong>
+
+            <span id="hero-slug">
+              —
+            </span>
           </div>
         </div>
       </section>
 
-      <div id="message" class="stats-message"></div>
+      <div
+        id="message"
+        class="stats-message"
+        role="status"
+        aria-live="polite"
+      ></div>
 
-      <section id="stats-area" class="stats-area hidden">
+      <section
+        id="stats-area"
+        class="stats-area hidden"
+      >
+
+        <!-- STATUS DO HERÓI -->
+
         <article class="stats-panel">
           <div class="section-title">
             <div>
-              <span class="eyebrow">Base</span>
-              <h2>Status do herói</h2>
+              <span class="eyebrow">
+                Base
+              </span>
+
+              <h2>
+                Status do herói
+              </h2>
             </div>
-            <span class="section-note">Vida, armadura, visão e mobilidade</span>
+
+            <span class="section-note">
+              Vida, armadura, visão e mobilidade
+            </span>
           </div>
 
-          <div id="hero-stats-grid" class="stats-grid"></div>
+          <div
+            id="hero-stats-grid"
+            class="stats-grid"
+          ></div>
         </article>
+
+        <!-- STATUS DA ARMA -->
 
         <article class="stats-panel">
           <div class="section-title">
             <div>
-              <span class="eyebrow">Arma</span>
-              <h2>Status da arma</h2>
+              <span class="eyebrow">
+                Arma
+              </span>
+
+              <h2>
+                Status da arma
+              </h2>
             </div>
 
             <label class="weapon-name-field">
               Nome da arma
-              <input id="weapon-name" placeholder="Ex.: Rifle de Precisão">
+
+              <input
+                id="weapon-name"
+                type="text"
+                maxlength="100"
+                placeholder="Ex.: Rifle de Precisão"
+              >
             </label>
           </div>
 
-          <div id="weapon-stats-grid" class="stats-grid"></div>
+          <div
+            id="weapon-stats-grid"
+            class="stats-grid"
+          ></div>
         </article>
+
+        <!-- PRÉVIA -->
 
         <article class="stats-panel">
           <div class="section-title">
             <div>
-              <span class="eyebrow">Prévia</span>
-              <h2>Resumo dos valores cadastrados</h2>
+              <span class="eyebrow">
+                Prévia
+              </span>
+
+              <h2>
+                Resumo dos valores cadastrados
+              </h2>
             </div>
+
+            <span class="section-note">
+              Atualização em tempo real
+            </span>
           </div>
 
-          <div id="preview-grid" class="preview-grid"></div>
+          <div
+            id="preview-grid"
+            class="preview-grid"
+          >
+            <div class="stats-empty">
+              Nenhum valor cadastrado ainda.
+            </div>
+          </div>
         </article>
       </section>
-    </main>
+    </section>
   </div>
 
-  <script type="module" src="./js/hero-stats.js"></script>
+  <script type="module">
+    import {
+      initAdminShell
+    } from './js/admin-shell.js';
+
+    const params =
+      new URLSearchParams(location.search);
+
+    const heroId =
+      params.get('hero');
+
+    const shell =
+      await initAdminShell({
+        activeId: 'hero-stats',
+        pageTitle: 'Status dos heróis',
+        pageSubtitle: 'Dados dinâmicos'
+      });
+
+    if (shell) {
+      const backLink =
+        document.getElementById(
+          'back-to-hero-editor'
+        );
+
+      if (heroId && backLink) {
+        backLink.href =
+          `./hero-editor.html?id=${encodeURIComponent(heroId)}&tab=stats`;
+      }
+
+      await import(
+        './js/hero-stats.js'
+      );
+    }
+  </script>
 </body>
 </html>

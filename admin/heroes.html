@@ -2,40 +2,398 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  >
+
   <title>Heróis — Echo Arena Admin</title>
-  <link rel="stylesheet" href="./css/admin.css">
+
+  <link
+    rel="stylesheet"
+    href="./css/admin.css"
+  >
+
+  <link
+    rel="stylesheet"
+    href="./css/admin-shell.css"
+  >
+
+  <style>
+    .heroes-page {
+      display: grid;
+      gap: 18px;
+    }
+
+    .heroes-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .heroes-toolbar-copy strong {
+      display: block;
+      font-size: 18px;
+    }
+
+    .heroes-toolbar-copy span {
+      display: block;
+      margin-top: 5px;
+      color: var(--admin-muted);
+      font-size: 12px;
+    }
+
+    .heroes-toolbar-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .heroes-filters {
+      display: grid;
+      grid-template-columns:
+        minmax(220px, 1fr)
+        minmax(160px, 220px)
+        minmax(160px, 220px);
+      gap: 12px;
+      padding: 16px;
+      border: 1px solid var(--admin-line);
+      border-radius: 14px;
+      background: var(--admin-panel);
+    }
+
+    .heroes-filter-field {
+      display: grid;
+      gap: 7px;
+    }
+
+    .heroes-filter-field label {
+      color: #c8cfdd;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .heroes-list {
+      display: grid;
+      grid-template-columns:
+        repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .hero-card {
+      min-width: 0;
+      overflow: hidden;
+      border: 1px solid var(--admin-line);
+      border-radius: 14px;
+      background: var(--admin-panel);
+    }
+
+    .hero-card-media {
+      position: relative;
+      height: 250px;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      background:
+        radial-gradient(
+          circle at 50% 35%,
+          rgba(139, 92, 246, 0.18),
+          transparent 48%
+        ),
+        #07101f;
+    }
+
+    .hero-card-media img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .hero-card-media-empty {
+      color: var(--admin-muted);
+      font-size: 11px;
+    }
+
+    .hero-card-status {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      padding: 5px 9px;
+      border: 1px solid #28613c;
+      border-radius: 999px;
+      background: rgba(11, 47, 27, 0.92);
+      color: #7ef0a5;
+      font-size: 9px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .hero-card-status.is-inactive {
+      border-color: #70414a;
+      background: rgba(54, 22, 28, 0.94);
+      color: #ff9aaa;
+    }
+
+    .hero-card-body {
+      display: grid;
+      gap: 14px;
+      padding: 16px;
+    }
+
+    .hero-card-heading {
+      min-width: 0;
+    }
+
+    .hero-card-heading h2 {
+      margin: 0;
+      font-size: 19px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .hero-card-heading p {
+      margin: 5px 0 0;
+      color: var(--admin-muted);
+      font-size: 10px;
+      word-break: break-word;
+    }
+
+    .hero-card-meta {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .hero-card-meta-item {
+      min-width: 0;
+      padding: 9px;
+      border: 1px solid var(--admin-line);
+      border-radius: 9px;
+      background: #09111f;
+    }
+
+    .hero-card-meta-item span {
+      display: block;
+      color: var(--admin-muted);
+      font-size: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .hero-card-meta-item strong {
+      display: block;
+      margin-top: 4px;
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .hero-card-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .hero-card-actions .admin-button {
+      justify-content: center;
+      min-width: 0;
+      text-align: center;
+    }
+
+    .hero-card-actions .danger {
+      color: #ff9aaa;
+      border-color: #71303b;
+      background: #2a1016;
+    }
+
+    .heroes-message {
+      min-height: 22px;
+      color: var(--admin-muted);
+      font-size: 13px;
+    }
+
+    .heroes-message.error {
+      color: #ff8585;
+    }
+
+    .heroes-message.ok {
+      color: #4ade80;
+    }
+
+    .heroes-empty {
+      grid-column: 1 / -1;
+      padding: 36px;
+      border: 1px dashed var(--admin-line);
+      border-radius: 14px;
+      background: var(--admin-panel);
+      color: var(--admin-muted);
+      text-align: center;
+      font-size: 12px;
+    }
+
+    @media (max-width: 1150px) {
+      .heroes-list {
+        grid-template-columns:
+          repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 780px) {
+      .heroes-filters {
+        grid-template-columns: 1fr;
+      }
+
+      .heroes-list {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-card-media {
+        height: 310px;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .hero-card-actions {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-card-meta {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
 </head>
+
 <body>
-  <div class="admin-shell">
-    <aside class="sidebar">
-      <div class="brand">ECHO <span>ADMIN</span></div>
-      <nav>
-        <a href="./index.html">Dashboard</a>
-        <a class="active" href="./heroes.html">Heróis</a>
-        <a href="../index.html">Ver site</a>
-      </nav>
-      <button id="logout" class="btn ghost">Sair</button>
-    </aside>
+  <div data-admin-content>
+    <section class="heroes-page">
 
-    <main class="content">
-      <div class="page-head">
-        <div>
-          <span class="eyebrow">Conteúdo</span>
-          <h1>Heróis</h1>
+      <header class="heroes-toolbar">
+        <div class="heroes-toolbar-copy">
+          <strong>
+            Gerenciamento de heróis
+          </strong>
+
+          <span>
+            Consulte, edite, ative ou remova heróis cadastrados.
+          </span>
         </div>
-        <a class="btn primary" href="./hero-editor.html">Novo herói</a>
-      </div>
 
-      <div class="toolbar">
-        <input id="search" placeholder="Buscar herói...">
-      </div>
+        <div class="heroes-toolbar-actions">
+          <a
+            class="admin-button primary"
+            href="./hero-editor.html"
+          >
+            Novo herói
+          </a>
+        </div>
+      </header>
 
-      <section id="heroes-list" class="cards-list"></section>
-      <div id="message" class="message"></div>
-    </main>
+      <section class="heroes-filters">
+        <div class="heroes-filter-field">
+          <label for="search">
+            Buscar
+          </label>
+
+          <input
+            id="search"
+            class="admin-input"
+            type="search"
+            placeholder="Nome ou identificador..."
+            autocomplete="off"
+          >
+        </div>
+
+        <div class="heroes-filter-field">
+          <label for="status-filter">
+            Publicação
+          </label>
+
+          <select
+            id="status-filter"
+            class="admin-select"
+          >
+            <option value="all">
+              Todos
+            </option>
+
+            <option value="active">
+              Ativos
+            </option>
+
+            <option value="inactive">
+              Inativos
+            </option>
+          </select>
+        </div>
+
+        <div class="heroes-filter-field">
+          <label for="sort-filter">
+            Ordenar
+          </label>
+
+          <select
+            id="sort-filter"
+            class="admin-select"
+          >
+            <option value="display_order">
+              Ordem de exibição
+            </option>
+
+            <option value="name">
+              Nome
+            </option>
+
+            <option value="status">
+              Status
+            </option>
+          </select>
+        </div>
+      </section>
+
+      <div
+        id="message"
+        class="heroes-message"
+        role="status"
+        aria-live="polite"
+      ></div>
+
+      <section
+        id="heroes-list"
+        class="heroes-list"
+      >
+        <div class="heroes-empty">
+          Carregando heróis...
+        </div>
+      </section>
+    </section>
   </div>
 
-  <script type="module" src="./js/heroes.js"></script>
+  <script type="module">
+    import {
+      initAdminShell
+    } from './js/admin-shell.js';
+
+    const shell =
+      await initAdminShell({
+        activeId: 'heroes-list',
+        pageTitle: 'Heróis',
+        pageSubtitle: 'Gerenciamento de conteúdo'
+      });
+
+    if (shell) {
+      await import(
+        './js/heroes.js'
+      );
+    }
+  </script>
 </body>
 </html>
