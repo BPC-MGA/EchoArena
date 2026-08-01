@@ -125,7 +125,7 @@ export async function loadHeroHighlights(hero) {
   if (!hero?.id) {
     setText('sp-builds', '—');
     setText('sp-usage', '—');
-    setText('sp-tier', '—');
+    setText('sp-class', '—');
     return;
   }
 
@@ -142,7 +142,13 @@ export async function loadHeroHighlights(hero) {
     setText('sp-usage', result.total > 0 ? `${share.toFixed(1)}%` : '—');
   }
 
-  /* Tier só aparece se o herói realmente tiver esse dado. */
-  const tier = hero.tier ?? hero.tier_name ?? hero.current_tier ?? null;
-  setText('sp-tier', tier ? String(tier) : '—');
+  /* Classe do herói, vinda do cadastro no painel admin. */
+  const className =
+    hero.class_name ??
+    hero.hero_class_name ??
+    hero.classes?.name ??
+    hero.hero_classes?.name ??
+    null;
+
+  setText('sp-class', className ? String(className) : '—');
 }
