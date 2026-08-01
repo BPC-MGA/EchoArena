@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  >
+
+  <title>Usuários — Echo Arena Admin</title>
+
+  <link
+    rel="stylesheet"
+    href="./css/admin.css"
+  >
+
+  <link
+    rel="stylesheet"
+    href="./css/admin-shell.css"
+  >
+
+  <style>
+    .users-page {
+      display: grid;
+      gap: 18px;
+    }
+
+    .users-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .users-toolbar-copy strong {
+      display: block;
+      font-size: 18px;
+    }
+
+    .users-toolbar-copy span {
+      display: block;
+      margin-top: 5px;
+      color: var(--admin-muted);
+      font-size: 12px;
+    }
+
+    .users-summary {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .users-summary-card {
+      padding: 14px;
+      border: 1px solid var(--admin-line);
+      border-radius: 12px;
+      background: var(--admin-panel);
+    }
+
+    .users-summary-card span {
+      display: block;
+      color: var(--admin-muted);
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+    }
+
+    .users-summary-card strong {
+      display: block;
+      margin-top: 8px;
+      font-size: 26px;
+      line-height: 1;
+    }
+
+    .users-filters {
+      display: grid;
+      grid-template-columns:
+        minmax(220px, 1fr)
+        minmax(160px, 200px)
+        minmax(160px, 200px);
+      gap: 12px;
+      padding: 16px;
+      border: 1px solid var(--admin-line);
+      border-radius: 14px;
+      background: var(--admin-panel);
+    }
+
+    .users-filter-field {
+      display: grid;
+      gap: 7px;
+    }
+
+    .users-filter-field label {
+      color: #c8cfdd;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .users-message {
+      min-height: 22px;
+      color: var(--admin-muted);
+      font-size: 13px;
+    }
+
+    .users-message.error {
+      color: #ff8585;
+    }
+
+    .users-message.ok {
+      color: #4ade80;
+    }
+
+    .users-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .user-row {
+      display: grid;
+      grid-template-columns:
+        minmax(0, 1.4fr)
+        minmax(120px, 0.5fr)
+        minmax(140px, 0.6fr)
+        auto;
+      gap: 14px;
+      align-items: center;
+      min-width: 0;
+      padding: 14px 16px;
+      border: 1px solid var(--admin-line);
+      border-radius: 12px;
+      background: var(--admin-panel);
+    }
+
+    .user-row.is-blocked {
+      border-color: #71303b;
+      background: #1b0f16;
+    }
+
+    .user-identity {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .user-avatar {
+      flex: 0 0 42px;
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      border: 1px solid var(--admin-line);
+      border-radius: 10px;
+      background: #07101f;
+      color: var(--admin-muted);
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .user-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .user-identity-copy {
+      min-width: 0;
+    }
+
+    .user-identity-copy strong {
+      display: block;
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .user-identity-copy span {
+      display: block;
+      margin-top: 3px;
+      color: var(--admin-muted);
+      font-size: 10px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .user-badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      padding: 4px 9px;
+      border: 1px solid #3c3266;
+      border-radius: 999px;
+      background: #1d1638;
+      color: #c9b7ff;
+      font-size: 9px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .user-badge.admin {
+      border-color: #6f5618;
+      background: #2a2009;
+      color: #ffd76d;
+    }
+
+    .user-badge.blocked {
+      border-color: #71303b;
+      background: #2a1016;
+      color: #ff9aaa;
+    }
+
+    .user-badge.ok {
+      border-color: #28613c;
+      background: #0c2918;
+      color: #8bf0aa;
+    }
+
+    .user-status-copy {
+      min-width: 0;
+    }
+
+    .user-status-copy small {
+      display: block;
+      margin-top: 5px;
+      color: var(--admin-muted);
+      font-size: 9.5px;
+      line-height: 1.4;
+      word-break: break-word;
+    }
+
+    .user-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .user-actions .admin-button {
+      min-height: 34px;
+      padding: 7px 12px;
+      font-size: 10px;
+    }
+
+    .user-actions .danger {
+      color: #ff9aaa;
+      border-color: #71303b;
+      background: #2a1016;
+    }
+
+    .users-empty {
+      padding: 36px;
+      border: 1px dashed var(--admin-line);
+      border-radius: 14px;
+      background: var(--admin-panel);
+      color: var(--admin-muted);
+      text-align: center;
+      font-size: 12px;
+    }
+
+    @media (max-width: 1100px) {
+      .users-summary {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .user-row {
+        grid-template-columns: minmax(0, 1fr) auto;
+      }
+
+      .user-status-copy,
+      .user-role-cell {
+        grid-column: 1 / -1;
+      }
+    }
+
+    @media (max-width: 780px) {
+      .users-filters {
+        grid-template-columns: 1fr;
+      }
+
+      .user-row {
+        grid-template-columns: 1fr;
+      }
+
+      .user-actions {
+        justify-content: flex-start;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div data-admin-content>
+    <section class="users-page">
+
+      <header class="users-toolbar">
+        <div class="users-toolbar-copy">
+          <strong>
+            Gerenciamento de usuários
+          </strong>
+
+          <span>
+            Consulte perfis, altere papéis e controle bloqueios.
+          </span>
+        </div>
+      </header>
+
+      <section class="users-summary">
+        <div class="users-summary-card">
+          <span>Total</span>
+          <strong id="summary-total">—</strong>
+        </div>
+
+        <div class="users-summary-card">
+          <span>Administradores</span>
+          <strong id="summary-admins">—</strong>
+        </div>
+
+        <div class="users-summary-card">
+          <span>Bloqueados</span>
+          <strong id="summary-blocked">—</strong>
+        </div>
+
+        <div class="users-summary-card">
+          <span>Novos (30 dias)</span>
+          <strong id="summary-recent">—</strong>
+        </div>
+      </section>
+
+      <section class="users-filters">
+        <div class="users-filter-field">
+          <label for="search">
+            Buscar
+          </label>
+
+          <input
+            id="search"
+            class="admin-input"
+            type="search"
+            placeholder="Nome de usuário ou exibição..."
+            autocomplete="off"
+          >
+        </div>
+
+        <div class="users-filter-field">
+          <label for="role-filter">
+            Papel
+          </label>
+
+          <select
+            id="role-filter"
+            class="admin-select"
+          >
+            <option value="all">Todos</option>
+          </select>
+        </div>
+
+        <div class="users-filter-field">
+          <label for="status-filter">
+            Situação
+          </label>
+
+          <select
+            id="status-filter"
+            class="admin-select"
+          >
+            <option value="all">Todas</option>
+            <option value="active">Ativos</option>
+            <option value="blocked">Bloqueados</option>
+          </select>
+        </div>
+      </section>
+
+      <div
+        id="message"
+        class="users-message"
+        role="status"
+        aria-live="polite"
+      ></div>
+
+      <section
+        id="users-list"
+        class="users-list"
+      >
+        <div class="users-empty">
+          Carregando usuários...
+        </div>
+      </section>
+    </section>
+  </div>
+
+  <script type="module">
+    import {
+      initAdminShell
+    } from './js/admin-shell.js';
+
+    const shell =
+      await initAdminShell({
+        activeId: 'users',
+        pageTitle: 'Usuários',
+        pageSubtitle: 'Comunidade e moderação'
+      });
+
+    if (shell) {
+      await import(
+        './js/users.js'
+      );
+    }
+  </script>
+</body>
+</html>
