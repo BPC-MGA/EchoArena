@@ -402,10 +402,13 @@ export async function initAdminShell({
       return null;
     }
 
-    location.replace(
-      redirectTo
-    );
-
-    return null;
-  }
-}
+const hops = parseInt(sessionStorage.getItem('echoarena_admin_hops') || '0', 10);
+    if (hops < 3) {
+      sessionStorage.setItem('echoarena_admin_hops', String(hops + 1));
+      location.replace(redirectTo);
+    } else {
+      sessionStorage.removeItem('echoarena_admin_hops');
+      document.body.innerHTML =
+        '<pre style="padding:2rem;color:#ffb4bd;background:#0b1221">' +
+        'Loop interrompido. Veja o Console (F12).</pre>';
+    }
