@@ -1,13 +1,5 @@
-import {
-  listHeroes,
-  deleteHero,
-  setHeroEnabled
-} from './api.js';
-
-import {
-  getPublicMediaUrl,
-  removeGameMedia
-} from './admin-media.js';
+import { listHeroes, deleteHero, setHeroEnabled } from '../../js/api.js';
+import { getPublicMediaUrl, removeGameMedia } from '../../js/admin-media.js';
 
 const list =
   document.getElementById('heroes-list');
