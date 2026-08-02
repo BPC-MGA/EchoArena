@@ -1,4 +1,4 @@
-import { supabase } from '../../js/supabase.js';
+import { supabase } from './supabase.js';
 
 export async function countRows(table) {
   const { count, error } = await supabase
