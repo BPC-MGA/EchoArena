@@ -21,6 +21,7 @@ const DEFAULT_MENU = [
       { id: 'equipment-import', label: 'Importar por print', href: './equipment-import.html' }
     ]
   },
+  { id: 'classes', label: 'Classes', href: './classes.html' },
   { id: 'builds', label: 'Builds', href: './builds.html' },
   { id: 'comments', label: 'Comentários', href: './comments.html' },
   { id: 'users', label: 'Usuários', href: './users.html' },
@@ -300,6 +301,7 @@ function renderShell({
     .getElementById('admin-shell-logout')
     ?.addEventListener('click', async () => {
       await supabase.auth.signOut();
+      sessionStorage.removeItem('echoarena_admin_hops');
       location.href = './login.html';
     });
 }
@@ -327,6 +329,9 @@ export async function initAdminShell({
       pageTitle,
       pageSubtitle
     });
+
+    /* Chegou até aqui: sessão validada. Zera o contador de saltos. */
+    sessionStorage.removeItem('echoarena_admin_hops');
 
     return {
       admin,
@@ -402,16 +407,27 @@ export async function initAdminShell({
       return null;
     }
 
-const hops = parseInt(sessionStorage.getItem('echoarena_admin_hops') || '0', 10);
+    /* Quebra-loop: no máximo 3 redirecionamentos encadeados. */
+    const hops = parseInt(
+      sessionStorage.getItem('echoarena_admin_hops') || '0',
+      10
+    );
+
     if (hops < 3) {
       sessionStorage.setItem('echoarena_admin_hops', String(hops + 1));
       location.replace(redirectTo);
     } else {
       sessionStorage.removeItem('echoarena_admin_hops');
-      document.body.innerHTML =
-        '<pre style="padding:2rem;color:#ffb4bd;background:#0b1221">' +
-        'Loop interrompido. Veja o Console (F12).</pre>';
+
+      document.body.innerHTML = `
+        <pre style="padding:2rem;font:14px/1.6 monospace;color:#ffb4bd;background:#0b1221">Loop de autenticacao interrompido.
+
+Motivo: ${escapeHtml(error?.message || String(error))}
+
+Abra o Console (F12) para ver os detalhes.</pre>
+      `;
     }
+
     return null;
   }
 }
