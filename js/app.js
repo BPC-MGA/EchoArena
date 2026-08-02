@@ -405,9 +405,9 @@ function bindEvents() {
 
 /* =========================================================
    MODO MANUTENÇÃO
-   Consultado antes de qualquer renderização. Bloqueia todos
-   os visitantes, logados ou não. O painel administrativo fica
-   em /admin/ e não passa por aqui.
+   Verificado antes de qualquer renderização. O admin passa,
+   mas com faixa de aviso permanente — para não confundir
+   "eu consigo ver" com "o site está no ar".
 ========================================================= */
 
 /* O index.html nasce oculto por uma trava de inicialização.
@@ -417,6 +417,8 @@ function revealPage() {
 }
 
 function renderMaintenanceScreen(siteName = 'Echo Arena') {
+  document.title = `${siteName} — Manutenção`;
+
   document.body.innerHTML = `
     <div class="mnt-wrap">
       <div class="mnt-glow"></div>
@@ -456,8 +458,7 @@ function renderMaintenanceScreen(siteName = 'Echo Arena') {
       animation:mntPulse 2.4s ease-in-out infinite}
     .mnt-mark::after{content:"";position:absolute;inset:14px;background:#fff;opacity:.92;
       clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%)}
-    @keyframes mntPulse{0%,100%{transform:scale(1);box-shadow:0 0 26px #8b5cf655}
-      50%{transform:scale(1.06);box-shadow:0 0 40px #8b5cf699}}
+    @keyframes mntPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
     .mnt-card h1{margin:0;font-size:26px;font-weight:700;letter-spacing:.02em;
       text-transform:uppercase;color:#EDE9F7}
     .mnt-tag{margin:8px 0 0;font-size:11px;font-weight:700;letter-spacing:.16em;
@@ -478,6 +479,25 @@ function renderMaintenanceScreen(siteName = 'Echo Arena') {
   revealPage();
 }
 
+function renderAdminMaintenanceBanner() {
+  const bar = document.createElement('div');
+
+  bar.innerHTML =
+    '<strong>MODO MANUTENÇÃO ATIVO</strong> — ' +
+    'o site está fora do ar para todos os visitantes. ' +
+    'Você vê esta página por ser administrador.';
+
+  bar.setAttribute(
+    'style',
+    'position:sticky;top:0;z-index:999;padding:11px 16px;text-align:center;' +
+    'background:linear-gradient(90deg,#2a1016,#3a141d,#2a1016);' +
+    'border-bottom:2px solid #a13a4c;color:#ffb4bd;' +
+    'font-size:12.5px;letter-spacing:.03em;line-height:1.5'
+  );
+
+  document.body.prepend(bar);
+}
+
 async function checkMaintenance() {
   try {
     const { data, error } = await supabase.rpc('site_status');
@@ -488,12 +508,28 @@ async function checkMaintenance() {
 
     if (!status?.maintenance_mode) return false;
 
-    /* Ninguém acessa o site público em manutenção — nem admin.
-       A administração continua disponível em /admin/. */
+    /* Admin continua navegando, com aviso impossível de ignorar. */
+    const { data: sessionData } = await supabase.auth.getSession();
+    const userId = sessionData?.session?.user?.id;
+
+    if (userId) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (profile?.role === 'admin') {
+        revealPage();
+        renderAdminMaintenanceBanner();
+        return false;
+      }
+    }
+
     renderMaintenanceScreen(status.site_name || 'Echo Arena');
     return true;
   } catch (error) {
-    /* Falha na checagem não pode derrubar o site. */
+    /* Falha na verificação não pode derrubar o site. */
     console.warn('[manutenção] verificação indisponível:', error.message);
     return false;
   }
