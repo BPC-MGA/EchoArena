@@ -691,9 +691,17 @@ async function carregarConteudoSupabase() {
   const heroes = (heroesResult.data || []).map(hero => {
     const heroClass = classes.get(hero.class_id);
 
+    /* Deslocamento é percentual do quadro — mesmo valor
+       funciona no editor, no card e no círculo da build. */
+    const offsetX = `${Number(hero.image_offset_x ?? 0)}%`;
+    const offsetY = `${Number(hero.image_offset_y ?? 0)}%`;
+
+    const cardX = `${Number(hero.card_image_offset_x ?? 0)}%`;
+    const cardY = `${Number(hero.card_image_offset_y ?? 0)}%`;
+
     const mainSource = getMediaUrl(
-      hero.gif_path || hero.image_path || hero.card_image_path,
-      hero.gif_url || hero.image_url || hero.card_image_url
+      hero.image_path || hero.card_image_path || hero.gif_path,
+      hero.image_url || hero.card_image_url || hero.gif_url
     );
 
     const cardSource = getMediaUrl(
@@ -710,22 +718,23 @@ async function carregarConteudoSupabase() {
       cor: heroClass?.color || '#A855F7',
       media: {
         src: cardSource,
-        fit: hero.image_fit || 'cover',
-        pos: hero.image_position || '50% 20%',
-        scale: Number(hero.image_scale ?? 1),
-        x: `${Number(hero.image_offset_x ?? 0)}px`,
-        y: `${Number(hero.image_offset_y ?? 0)}px`
+        fit: 'cover',
+        pos: '50% 50%',
+        scale: Number(hero.card_image_scale ?? 1),
+        x: cardX,
+        y: cardY
       },
       destaque: {
         src: mainSource,
         fit: 'contain',
-        pos: hero.image_position || '50% 50%',
+        pos: '50% 50%',
         scale: Number(hero.image_scale ?? 1),
-        x: `${Number(hero.image_offset_x ?? 0)}px`,
-        y: `${Number(hero.image_offset_y ?? 0)}px`
+        x: offsetX,
+        y: offsetY
       }
     };
   });
+
 
   const equipments = (equipmentsResult.data || []).map(item => {
     const slot = slots.get(item.slot_id);
