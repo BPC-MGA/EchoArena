@@ -1,530 +1,516 @@
-import { supabase } from '../../js/supabase.js';
-import { requireAdmin } from './admin-auth.js';
-
-const DEFAULT_MENU = [
-  { id: 'dashboard', label: 'Dashboard', href: './index.html' },
-  {
-    id: 'heroes',
-    label: 'Heróis',
-    children: [
-      { id: 'heroes-list', label: 'Lista', href: './heroes.html' },
-      { id: 'hero-new', label: 'Novo herói', href: './hero-editor.html' },
-      { id: 'hero-stats', label: 'Status', href: './hero-stats.html' }
-    ]
-  },
-  {
-    id: 'equipments',
-    label: 'Equipamentos',
-    children: [
-      { id: 'equipments-list', label: 'Lista', href: './equipments.html' },
-      { id: 'equipment-new', label: 'Novo equipamento', href: './equipment-editor.html' },
-      { id: 'equipment-import', label: 'Importar por print', href: './equipment-import.html' }
-    ]
-  },
-  { id: 'classes', label: 'Classes', href: './classes.html' },
-  { id: 'builds', label: 'Builds', href: './builds.html' },
-  { id: 'comments', label: 'Comentários', href: './comments.html' },
-  { id: 'users', label: 'Usuários', href: './users.html' },
-  { id: 'site-texts', label: 'Textos do site', href: './site-texts.html' }
-];
-
-function escapeHtml(value = '') {
-  return String(value)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;');
-}
-
-function normalizePath(pathname) {
-  return pathname
-    .replace(/\/+/g, '/')
-    .replace(/\/$/, '')
-    .toLowerCase();
-}
-
-function currentFile() {
-  const path = normalizePath(location.pathname);
-  return path.split('/').pop() || 'index.html';
-}
-
-function isActiveItem(item, activeId) {
-  if (activeId && item.id === activeId) return true;
-
-  if (item.href) {
-    const target = item.href.split('/').pop()?.toLowerCase();
-    return target === currentFile();
-  }
-
-  return item.children?.some(child => isActiveItem(child, activeId)) ?? false;
-}
-
-function renderMenu(items, activeId) {
-  return items.map(item => {
-    const active = isActiveItem(item, activeId);
-
-    if (item.children?.length) {
-      const children = item.children.map(child => {
-        const childActive = isActiveItem(child, activeId);
-
-        return `
-          <a
-            class="admin-shell-subitem ${childActive ? 'is-active' : ''}"
-            href="${child.href}"
-            data-menu-id="${child.id}"
-          >
-            ${escapeHtml(child.label)}
-          </a>
-        `;
-      }).join('');
-
-      return `
-        <div class="admin-shell-group ${active ? 'is-open' : ''}">
-          <button
-            type="button"
-            class="admin-shell-group-trigger ${active ? 'is-active' : ''}"
-            aria-expanded="${active ? 'true' : 'false'}"
-          >
-            <span>${escapeHtml(item.label)}</span>
-            <span class="admin-shell-chevron">⌄</span>
-          </button>
-
-          <div class="admin-shell-submenu">
-            ${children}
-          </div>
-        </div>
-      `;
-    }
-
-    return `
-      <a
-        class="admin-shell-item ${active ? 'is-active' : ''}"
-        href="${item.href}"
-        data-menu-id="${item.id}"
-      >
-        ${escapeHtml(item.label)}
-      </a>
-    `;
-  }).join('');
-}
-
-async function getCurrentAdmin() {
-  const isCodespacesPreview =
-    location.hostname.endsWith('.app.github.dev');
-
-  // Apenas para testar localmente no Codespaces.
-  // Não afeta o GitHub Pages nem o site publicado.
-  if (isCodespacesPreview) {
-    const {
-      data: { session }
-    } = await supabase.auth.getSession();
-
-    return {
-      session: session ?? null,
-      email: session?.user?.email ?? 'preview@codespaces.local',
-      displayName:
-        session?.user?.user_metadata?.display_name ||
-        session?.user?.email ||
-        'Preview administrativo'
-    };
-  }
-
-  // Produção continua protegida.
-  const { session, profile } = await requireAdmin();
-
-  return {
-    session,
-    profile,
-    email: session.user.email ?? '',
-    displayName:
-      profile?.display_name ||
-      profile?.username ||
-      session.user.email ||
-      'Administrador'
-  };
-}
-
-function setPageTitle(title, subtitle) {
-  const titleElement = document.querySelector('[data-admin-page-title]');
-  const subtitleElement = document.querySelector('[data-admin-page-subtitle]');
-
-  if (titleElement && title) {
-    titleElement.textContent = title;
-  }
-
-  if (subtitleElement) {
-    subtitleElement.textContent = subtitle ?? '';
-  }
-}
-
-function bindNavigation() {
-  document.querySelectorAll('.admin-shell-group-trigger').forEach(button => {
-    button.addEventListener('click', () => {
-      const group = button.closest('.admin-shell-group');
-      const opened = group.classList.toggle('is-open');
-
-      button.setAttribute('aria-expanded', String(opened));
-    });
-  });
-
-  const mobileButton = document.getElementById('admin-shell-mobile-toggle');
-  const sidebar = document.getElementById('admin-shell-sidebar');
-  const backdrop = document.getElementById('admin-shell-backdrop');
-
-  const closeMobile = () => {
-    sidebar?.classList.remove('is-mobile-open');
-    backdrop?.classList.remove('is-visible');
-    document.body.classList.remove('admin-shell-lock');
-  };
-
-  mobileButton?.addEventListener('click', () => {
-    sidebar?.classList.toggle('is-mobile-open');
-    backdrop?.classList.toggle('is-visible');
-    document.body.classList.toggle('admin-shell-lock');
-  });
-
-  backdrop?.addEventListener('click', closeMobile);
-
-  window.addEventListener('resize', () => {
-    if (window.innerWidth > 900) {
-      closeMobile();
-    }
-  });
-}
+import { supabase } from './supabase.js';
 
 /* =========================================================
-   CONFIRMAÇÃO DE SAÍDA
-   Sair encerra a sessão administrativa. Se o site estiver em
-   manutenção, isso também derruba seu acesso ao site público.
+   CASCA COMPARTILHADA DO SITE PÚBLICO
+
+   Monta topbar, menu lateral, barra de status e modal de
+   autenticação em qualquer página. Cada página só escreve
+   o próprio conteúdo.
+
+   USO na página:
+
+     import { initSiteShell } from './js/site-shell.js';
+     const shell = await initSiteShell({ activeId: 'herois' });
+
+   O HTML da página é preservado por inteiro — inclusive painéis
+   laterais, modais e elementos fora de qualquer contêiner. Não é
+   preciso marcar nada.
+   ========================================================= */
+
+/* =========================================================
+   TRAVA DE PINTURA
+   O guard.js já esconde a página, mas ele some assim que
+   libera. Esta trava cobre o intervalo entre a liberação e
+   a montagem da casca, evitando o conteúdo cru piscar.
 ========================================================= */
 
-async function confirmAdminLogout() {
-  let maintenance = false;
+const PAINT_GUARD_ID = 'site-paint-guard';
 
-  try {
-    const { data } = await supabase.rpc('site_status');
-    const status = Array.isArray(data) ? data[0] : data;
-    maintenance = status?.maintenance_mode === true;
-  } catch (error) {
-    console.warn('[logout] estado do site indisponível:', error.message);
+(function hideUntilReady() {
+  if (document.getElementById(PAINT_GUARD_ID)) return;
+
+  const style = document.createElement('style');
+  style.id = PAINT_GUARD_ID;
+  style.textContent = 'body{visibility:hidden !important}';
+
+  (document.head || document.documentElement).appendChild(style);
+
+  setTimeout(revealPage, 8000);
+})();
+
+function revealPage() {
+  document.getElementById(PAINT_GUARD_ID)?.remove();
+}
+
+/* ---------------------------------------------------------
+   MENU — fonte única. Página nova? Acrescente aqui.
+--------------------------------------------------------- */
+const MAIN_NAV = [
+  { id: 'herois',       label: 'Heróis',       href: './herois.html' },
+  { id: 'classes',      label: 'Classes',      href: './classes.html' },
+  { id: 'builds',       label: 'Builds',       href: './builds.html' },
+  { id: 'equipamentos', label: 'Equipamentos', href: './equipamentos.html' },
+  { id: 'estatisticas', label: 'Estatísticas', href: './estatisticas.html' },
+  { id: 'composicoes',  label: 'Composições',  href: './composicoes.html' },
+  { id: 'tier-list',    label: 'Tier List',    href: './tier-list.html' }
+];
+
+const SIDE_NAV = [
+  { id: 'inicio',       label: 'Início',       href: './index.html',        icon: '⌂' },
+  { id: 'herois',       label: 'Heróis',       href: './herois.html',       icon: '👤' },
+  { id: 'builds',       label: 'Builds',       href: './builds.html',       icon: '⚙' },
+  { id: 'composicoes',  label: 'Composições',  href: './composicoes.html',  icon: '🛡' },
+  { id: 'estatisticas', label: 'Estatísticas', href: './estatisticas.html', icon: '📊' },
+  { id: 'equipamentos', label: 'Equipamentos', href: './equipamentos.html', icon: '⚔' },
+  { id: 'tier-list',    label: 'Tier List',    href: './tier-list.html',    icon: '🏆' },
+  { id: 'guias',        label: 'Guias',        href: './guias.html',        icon: '📄' },
+  { id: 'noticias',     label: 'Notícias',     href: './noticias.html',     icon: '📰' }
+];
+
+/* ---------------------------------------------------------
+   ESTADO
+--------------------------------------------------------- */
+const state = {
+  session: null,
+  role: null,
+  maintenance: false,
+  authMode: 'login'
+};
+
+/* ---------------------------------------------------------
+   UTILITÁRIOS
+--------------------------------------------------------- */
+const $ = (selector) => document.querySelector(selector);
+
+export function escapeHtml(value = '') {
+  return String(value).replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+  }[char]));
+}
+
+export function compactNumber(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '—';
+
+  return new Intl.NumberFormat('pt-BR', {
+    notation: number >= 10000 ? 'compact' : 'standard',
+    maximumFractionDigits: 1
+  }).format(number);
+}
+
+/* Cor da classe: vem do banco, com paleta estável por slug. */
+const CLASS_PALETTE = [
+  '#F4D77A', '#8FE9FF', '#B794FF', '#4ADE80',
+  '#F87171', '#FBBF24', '#67E8F9', '#F0A6D0'
+];
+
+export function classColor(item = {}) {
+  const stored = String(item.class_color || item.color || '').trim();
+  if (/^#[0-9a-f]{3,8}$/i.test(stored)) return stored;
+
+  const key = String(item.class_slug || item.slug || item.class_name || '');
+  let sum = 0;
+
+  for (let i = 0; i < key.length; i += 1) {
+    sum = (sum + key.charCodeAt(i)) % 997;
   }
+
+  return CLASS_PALETTE[sum % CLASS_PALETTE.length];
+}
+
+/* Mídia por destino, igual ao spotlight e aos cards. */
+export function mediaOf(hero = {}, slot = 'main') {
+  const chain = slot === 'card'
+    ? ['card', 'main', 'gif']
+    : slot === 'gif'
+      ? ['gif', 'main', 'card']
+      : ['main', 'card', 'gif'];
+
+  for (const key of chain) {
+    const source = hero[`${key}_source`];
+
+    if (source) {
+      return {
+        source,
+        mime_type: hero[`${key}_mime_type`] || '',
+        scale:     hero[`${key}_scale`] ?? 1,
+        offset_x:  hero[`${key}_offset_x`] ?? 0,
+        offset_y:  hero[`${key}_offset_y`] ?? 0,
+        anchor_x:  hero.anchor_x || '50%',
+        anchor_y:  hero.anchor_y || '50%'
+      };
+    }
+  }
+
+  return null;
+}
+
+export function mediaStyle(media, fit = 'cover') {
+  if (!media) return '';
+
+  return [
+    `--fit:${fit}`,
+    `--pos:${media.anchor_x || '50%'} ${media.anchor_y || '50%'}`,
+    `--scale:${Number(media.scale ?? 1)}`,
+    `--x:${Number(media.offset_x ?? 0)}%`,
+    `--y:${Number(media.offset_y ?? 0)}%`
+  ].join(';');
+}
+
+export function mediaInner(media, alt = '') {
+  if (!media?.source) return '';
+
+  const isVideo = (media.mime_type || '').startsWith('video/') ||
+                  /\.(mp4|webm)$/i.test(media.source);
+
+  return isVideo
+    ? `<video src="${escapeHtml(media.source)}" autoplay muted loop playsinline></video>`
+    : `<img src="${escapeHtml(media.source)}" alt="${escapeHtml(alt)}" loading="lazy">`;
+}
+
+/* ---------------------------------------------------------
+   MONTAGEM
+--------------------------------------------------------- */
+function renderShell({ activeId, withRail }) {
+  /* Preserva TODOS os nós da página, não só o contêiner marcado.
+     Painéis laterais, modais e qualquer elemento solto sobrevivem.
+     Mover nós (em vez de copiar innerHTML) também mantém os
+     listeners já registrados. */
+  const preserved = document.createDocumentFragment();
+
+  while (document.body.firstChild) {
+    preserved.appendChild(document.body.firstChild);
+  }
+
+  const mainNav = MAIN_NAV.map(item => `
+    <a href="${item.href}" class="${item.id === activeId ? 'on' : ''}">
+      ${escapeHtml(item.label)}
+    </a>
+  `).join('');
+
+  const sideNav = SIDE_NAV.map(item => `
+    <a href="${item.href}" class="${item.id === activeId ? 'on' : ''}">
+      <span class="ic">${item.icon}</span>${escapeHtml(item.label)}
+    </a>
+  `).join('');
+
+  document.body.innerHTML = `
+    <div class="topbar">
+      <a class="brand" href="./index.html">
+        <span class="mk"></span>ECHO<span>ARENA</span>
+      </a>
+
+      <nav class="mainnav">${mainNav}</nav>
+
+      <div class="srch">
+        <input id="global-search" placeholder="Buscar heróis, habilidades...">
+        <span class="kb">/</span>
+      </div>
+
+      <button class="btn-o" id="login-btn">Entrar</button>
+      <button class="btn-g" id="register-btn">Registrar</button>
+      <button class="burger" id="bg">☰</button>
+    </div>
+
+    <div class="shell ${withRail ? 'with-rail' : ''}">
+      <aside class="side" id="side">
+        <nav class="snav">${sideNav}</nav>
+
+        <div class="promo">
+          <div class="st">★</div>
+          <p>Salve suas builds, compare e domine o campo de batalha!</p>
+          <a class="cta" id="promo-register-btn">Criar conta</a>
+          <div class="lg">Já tem uma conta? <a id="promo-login-btn">Entrar</a></div>
+        </div>
+      </aside>
+
+      <main class="col" id="site-main"></main>
+    </div>
+
+    <div class="auth-modal" id="auth-modal" aria-hidden="true">
+      <div class="auth-card">
+        <div class="auth-head">
+          <h2 id="auth-title">Entrar</h2>
+          <button class="auth-close" id="auth-close" aria-label="Fechar">✕</button>
+        </div>
+
+        <form class="auth-form" id="auth-form">
+          <label id="name-field" hidden>
+            Nome de exibição
+            <input id="auth-name" type="text" minlength="2" maxlength="40" autocomplete="name">
+          </label>
+
+          <label>
+            E-mail
+            <input id="auth-email" type="email" required autocomplete="email">
+          </label>
+
+          <label>
+            Senha
+            <input id="auth-password" type="password" required minlength="8"
+                   autocomplete="current-password">
+          </label>
+
+          <button class="auth-submit" type="submit" id="auth-submit">Entrar</button>
+
+          <div class="auth-message" id="auth-message"></div>
+
+          <div class="auth-switch">
+            <span id="auth-switch-text">Ainda não tem conta?</span>
+            <button type="button" id="auth-switch-btn">Registrar</button>
+          </div>
+
+          <button type="button" id="forgot-password-btn" class="auth-switch">
+            Esqueci minha senha
+          </button>
+        </form>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('site-main').appendChild(preserved);
+  revealPage();
+}
+
+/* ---------------------------------------------------------
+   AUTENTICAÇÃO
+--------------------------------------------------------- */
+function showMessage(text, type = '') {
+  const element = $('#auth-message');
+  if (!element) return;
+  element.textContent = text;
+  element.className = `auth-message ${type}`.trim();
+}
+
+function setAuthMode(mode) {
+  state.authMode = mode;
+  const register = mode === 'register';
+
+  $('#auth-title').textContent = register ? 'Criar conta' : 'Entrar';
+  $('#auth-submit').textContent = register ? 'Registrar' : 'Entrar';
+  $('#auth-switch-text').textContent = register ? 'Já tem uma conta?' : 'Ainda não tem conta?';
+  $('#auth-switch-btn').textContent = register ? 'Entrar' : 'Registrar';
+  $('#name-field').hidden = !register;
+  $('#auth-password').autocomplete = register ? 'new-password' : 'current-password';
+  showMessage('');
+}
+
+export function openAuth(mode = 'login') {
+  setAuthMode(mode);
+  $('#auth-modal').classList.add('open');
+  $('#auth-modal').setAttribute('aria-hidden', 'false');
+  setTimeout(() => $('#auth-email').focus(), 0);
+}
+
+function closeAuth() {
+  $('#auth-modal').classList.remove('open');
+  $('#auth-modal').setAttribute('aria-hidden', 'true');
+  $('#auth-form').reset();
+  showMessage('');
+}
+
+async function handleAuthSubmit(event) {
+  event.preventDefault();
+  showMessage('Processando...');
+
+  const email = $('#auth-email').value.trim();
+  const password = $('#auth-password').value;
+  const displayName = $('#auth-name').value.trim();
+
+  if (state.authMode === 'register') {
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { display_name: displayName },
+        emailRedirectTo: window.location.origin + window.location.pathname
+      }
+    });
+
+    if (error) return showMessage(error.message, 'error');
+
+    showMessage(
+      'Conta criada. Enviamos um e-mail de confirmação — valide seu endereço ' +
+      'para liberar todos os recursos.',
+      'success'
+    );
+    return;
+  }
+
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) return showMessage(error.message, 'error');
+
+  closeAuth();
+}
+
+async function resetPassword() {
+  const email = $('#auth-email').value.trim();
+  if (!email) return showMessage('Digite seu e-mail primeiro.', 'error');
+
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + window.location.pathname
+  });
+
+  if (error) return showMessage(error.message, 'error');
+  showMessage('Enviamos o link de recuperação para seu e-mail.', 'success');
+}
+
+/* Sair sendo admin apaga privilégios — confirma antes. */
+function confirmLogout() {
+  if (state.role !== 'admin') return Promise.resolve(true);
 
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
-    overlay.id = 'admin-logout-modal';
+    overlay.id = 'logout-modal';
 
-    const extra = maintenance
-      ? `<div class="al-alert">
-           O site está <strong>em manutenção</strong>. Sem sessão de
-           administrador, nem o painel nem o site público abrem para você
-           até fazer login novamente.
-         </div>`
+    const extra = state.maintenance
+      ? `<div class="lg-alert">O site está <strong>em manutenção</strong>.
+           Ao sair, esta página deixa de abrir para você até novo login.</div>`
       : '';
 
     overlay.innerHTML = `
-      <div class="al-backdrop"></div>
-
-      <div class="al-card" role="dialog" aria-modal="true">
-        <div class="al-icon">&#9888;</div>
-
-        <h2>Encerrar sessão administrativa?</h2>
-
-        <p>
-          Alterações não salvas serão perdidas e você precisará entrar
-          novamente para voltar ao painel.
-        </p>
-
+      <div class="lg-backdrop"></div>
+      <div class="lg-card" role="dialog" aria-modal="true">
+        <div class="lg-icon">&#9888;</div>
+        <h2>Sair da conta de administrador?</h2>
+        <p>Você perde o acesso administrativo nesta aba e recursos protegidos
+           voltam a pedir login.</p>
         ${extra}
-
-        <div class="al-actions">
-          <button type="button" id="al-cancel">Permanecer no painel</button>
-          <button type="button" id="al-confirm" class="danger">Sair</button>
+        <div class="lg-actions">
+          <button type="button" id="lg-cancel">Continuar conectado</button>
+          <button type="button" id="lg-confirm" class="danger">Sair mesmo assim</button>
         </div>
       </div>
     `;
 
     const style = document.createElement('style');
-
     style.textContent = `
-      #admin-logout-modal{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;
-        padding:20px;font-family:Inter,system-ui,sans-serif}
-      #admin-logout-modal .al-backdrop{position:absolute;inset:0;background:rgba(3,7,15,.82);
-        backdrop-filter:blur(5px)}
-      #admin-logout-modal .al-card{position:relative;width:min(440px,100%);padding:26px;
-        border:1px solid #71303b;border-radius:18px;background:#12101f;
-        box-shadow:0 30px 80px rgba(0,0,0,.6);text-align:center}
-      #admin-logout-modal .al-icon{font-size:32px;line-height:1;margin-bottom:12px;color:#ffb4bd}
-      #admin-logout-modal h2{margin:0 0 10px;font-size:19px;color:#eef2f8}
-      #admin-logout-modal p{margin:0;color:#9aa4bb;font-size:12.5px;line-height:1.65}
-      #admin-logout-modal .al-alert{margin-top:14px;padding:12px 14px;border:1px solid #71303b;
-        border-radius:11px;background:#2a1016;color:#ffb4bd;font-size:12px;line-height:1.6}
-      #admin-logout-modal .al-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:20px}
-      #admin-logout-modal .al-actions button{padding:12px;border:1px solid #31245c;border-radius:10px;
-        background:#161331;color:#eef2f8;font:inherit;font-weight:700;font-size:12.5px;cursor:pointer}
-      #admin-logout-modal .al-actions button.danger{border-color:#71303b;background:#2a1016;color:#ff9aaa}
-      @media(max-width:420px){#admin-logout-modal .al-actions{grid-template-columns:1fr}}
+      #logout-modal{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:20px}
+      #logout-modal .lg-backdrop{position:absolute;inset:0;background:rgba(3,7,15,.82);backdrop-filter:blur(5px)}
+      #logout-modal .lg-card{position:relative;width:min(440px,100%);padding:26px;border:1px solid #71303b;
+        border-radius:18px;background:#130E24;box-shadow:0 30px 80px rgba(0,0,0,.6);text-align:center}
+      #logout-modal .lg-icon{font-size:32px;line-height:1;margin-bottom:12px;color:#ffb4bd}
+      #logout-modal h2{margin:0 0 10px;font-size:19px}
+      #logout-modal p{margin:0;color:#A79CC8;font-size:12.5px;line-height:1.65}
+      #logout-modal .lg-alert{margin-top:14px;padding:12px 14px;border:1px solid #71303b;border-radius:11px;
+        background:#2a1016;color:#ffb4bd;font-size:12px;line-height:1.6}
+      #logout-modal .lg-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:20px}
+      #logout-modal .lg-actions button{padding:12px;border:1px solid #31245C;border-radius:10px;
+        background:#181130;color:#EDE9F7;font:inherit;font-weight:700;font-size:12.5px;cursor:pointer}
+      #logout-modal .lg-actions button.danger{border-color:#71303b;background:#2a1016;color:#ff9aaa}
+      @media(max-width:420px){#logout-modal .lg-actions{grid-template-columns:1fr}}
     `;
 
     overlay.appendChild(style);
     document.body.appendChild(overlay);
 
-    function close(result) {
-      document.removeEventListener('keydown', onKey);
-      overlay.remove();
-      resolve(result);
-    }
+    const close = (result) => { overlay.remove(); resolve(result); };
 
-    function onKey(event) {
-      if (event.key === 'Escape') close(false);
-    }
-
-    overlay.querySelector('#al-confirm').addEventListener('click', () => close(true));
-    overlay.querySelector('#al-cancel').addEventListener('click', () => close(false));
-    overlay.querySelector('.al-backdrop').addEventListener('click', () => close(false));
-    document.addEventListener('keydown', onKey);
-
-    setTimeout(() => overlay.querySelector('#al-cancel')?.focus(), 30);
+    overlay.querySelector('#lg-confirm').onclick = () => close(true);
+    overlay.querySelector('#lg-cancel').onclick = () => close(false);
+    overlay.querySelector('.lg-backdrop').onclick = () => close(false);
   });
 }
 
-function renderShell({
-  admin,
-  activeId,
-  menuItems,
-  pageTitle,
-  pageSubtitle
-}) {
-  document.body.classList.add('admin-shell-body');
+async function loadAccountContext() {
+  state.role = null;
+  state.maintenance = false;
 
-  const existingContent = document.querySelector('[data-admin-content]');
+  const userId = state.session?.user?.id;
+  if (!userId) return;
 
-  const pageContent = existingContent
-    ? existingContent.innerHTML
-    : document.body.innerHTML;
+  try {
+    const [profileResult, statusResult] = await Promise.all([
+      supabase.from('profiles').select('role').eq('id', userId).maybeSingle(),
+      supabase.rpc('site_status')
+    ]);
 
-  document.body.innerHTML = `
-    <div class="admin-shell-app">
-      <div
-        id="admin-shell-backdrop"
-        class="admin-shell-backdrop"
-      ></div>
+    state.role = profileResult.data?.role ?? null;
 
-      <aside
-        id="admin-shell-sidebar"
-        class="admin-shell-sidebar"
-      >
-        <a
-          class="admin-shell-brand"
-          href="./index.html"
-        >
-          <span>ECHO</span>
-          <strong>ADMIN</strong>
-        </a>
+    const status = Array.isArray(statusResult.data)
+      ? statusResult.data[0]
+      : statusResult.data;
 
-        <nav class="admin-shell-nav">
-          ${renderMenu(menuItems, activeId)}
-        </nav>
-
-        <div class="admin-shell-sidebar-footer">
-          <a
-            class="admin-shell-site-link"
-            href="../index.html"
-          >
-            Ver site
-          </a>
-        </div>
-      </aside>
-
-      <section class="admin-shell-workspace">
-        <header class="admin-shell-topbar">
-          <button
-            id="admin-shell-mobile-toggle"
-            class="admin-shell-mobile-toggle"
-            type="button"
-            aria-label="Abrir menu"
-          >
-            ☰
-          </button>
-
-          <div class="admin-shell-heading">
-            <span data-admin-page-subtitle>
-              ${escapeHtml(pageSubtitle ?? '')}
-            </span>
-
-            <h1 data-admin-page-title>
-              ${escapeHtml(pageTitle ?? 'Painel administrativo')}
-            </h1>
-          </div>
-
-          <div class="admin-shell-user">
-            <div class="admin-shell-user-copy">
-              <strong>
-                ${escapeHtml(admin.displayName)}
-              </strong>
-
-              <span>
-                ${escapeHtml(admin.email)}
-              </span>
-            </div>
-
-            <button
-              id="admin-shell-logout"
-              class="admin-shell-logout"
-              type="button"
-            >
-              Sair
-            </button>
-          </div>
-        </header>
-
-        <main class="admin-shell-main">
-          <div
-            data-admin-content
-            class="admin-shell-content"
-          >
-            ${pageContent}
-          </div>
-        </main>
-      </section>
-    </div>
-  `;
-
-  bindNavigation();
-
-  document
-    .getElementById('admin-shell-logout')
-    ?.addEventListener('click', async () => {
-      if (!(await confirmAdminLogout())) return;
-
-      await supabase.auth.signOut();
-      sessionStorage.removeItem('echoarena_admin_hops');
-      location.href = './login.html';
-    });
+    state.maintenance = status?.maintenance_mode === true;
+  } catch (error) {
+    console.warn('[shell] contexto indisponível:', error.message);
+  }
 }
 
-export async function initAdminShell({
-  activeId = '',
-  pageTitle = 'Painel administrativo',
-  pageSubtitle = '',
-  menuItems = DEFAULT_MENU,
-  redirectTo = './login.html'
-} = {}) {
-  try {
-    const admin = await getCurrentAdmin();
+function updateAuthUI() {
+  const loginButton = $('#login-btn');
+  const registerButton = $('#register-btn');
+  if (!loginButton || !registerButton) return;
 
-    if (!admin) {
-      throw new Error(
-        'Não foi possível identificar a sessão administrativa.'
-      );
-    }
-
-    renderShell({
-      admin,
-      activeId,
-      menuItems,
-      pageTitle,
-      pageSubtitle
-    });
-
-    /* Chegou até aqui: sessão validada. Zera o contador de saltos. */
-    sessionStorage.removeItem('echoarena_admin_hops');
-
-    return {
-      admin,
-      setPageTitle,
-      supabase
+  if (state.session?.user) {
+    loginButton.textContent = 'Sair';
+    loginButton.onclick = async () => {
+      if (await confirmLogout()) await supabase.auth.signOut();
     };
-  } catch (error) {
-    console.error(
-      'Falha ao iniciar o painel:',
-      error
-    );
 
-    const isCodespacesPreview =
-      location.hostname.endsWith('.app.github.dev');
+    registerButton.textContent = state.session.user.email || 'Minha conta';
+    registerButton.disabled = true;
+  } else {
+    loginButton.textContent = 'Entrar';
+    loginButton.onclick = () => openAuth('login');
 
-    /*
-     * No Codespaces, não redireciona automaticamente.
-     * Mostra o erro para conseguirmos corrigir.
-     */
-    if (isCodespacesPreview) {
-      document.body.classList.remove(
-        'admin-shell-body'
-      );
+    registerButton.textContent = 'Registrar';
+    registerButton.disabled = false;
+    registerButton.onclick = () => openAuth('register');
+  }
+}
 
-      document.body.innerHTML = `
-        <main
-          style="
-            max-width: 900px;
-            margin: 40px auto;
-            padding: 24px;
-            font-family: Arial, sans-serif;
-            color: #ffffff;
-            background: #111a2e;
-            border: 1px solid #33415f;
-            border-radius: 14px;
-          "
-        >
-          <h1 style="margin-top:0;">
-            Falha ao carregar o painel
-          </h1>
+function bindShellEvents() {
+  $('#auth-close').onclick = closeAuth;
 
-          <p>
-            O Admin Shell encontrou um erro antes de montar a página.
-          </p>
+  $('#auth-modal').onclick = (event) => {
+    if (event.target.id === 'auth-modal') closeAuth();
+  };
 
-          <pre
-            style="
-              padding:16px;
-              overflow:auto;
-              white-space:pre-wrap;
-              color:#ffb4bd;
-              background:#080d18;
-              border-radius:10px;
-            "
-          >${escapeHtml(
-            error?.message ||
-            String(error)
-          )}</pre>
+  $('#auth-form').addEventListener('submit', handleAuthSubmit);
 
-          <p style="color:#aab4c8;">
-            Consulte também o Console do navegador para ver os detalhes.
-          </p>
+  $('#auth-switch-btn').onclick = () =>
+    setAuthMode(state.authMode === 'login' ? 'register' : 'login');
 
-          <a
-            href="./login.html"
-            style="color:#b79cff;"
-          >
-            Abrir página de login
-          </a>
-        </main>
-      `;
+  $('#forgot-password-btn').onclick = resetPassword;
+  $('#promo-login-btn').onclick = () => openAuth('login');
+  $('#promo-register-btn').onclick = () => openAuth('register');
+  $('#bg').onclick = () => $('#side').classList.toggle('open');
+}
 
-      return null;
-    }
-
-    /* Quebra-loop: no máximo 3 redirecionamentos encadeados. */
-    const hops = parseInt(
-      sessionStorage.getItem('echoarena_admin_hops') || '0',
-      10
-    );
-
-    if (hops < 3) {
-      sessionStorage.setItem('echoarena_admin_hops', String(hops + 1));
-      location.replace(redirectTo);
-    } else {
-      sessionStorage.removeItem('echoarena_admin_hops');
-
-      document.body.innerHTML = `
-        <pre style="padding:2rem;font:14px/1.6 monospace;color:#ffb4bd;background:#0b1221">Loop de autenticacao interrompido.
-
-Motivo: ${escapeHtml(error?.message || String(error))}
-
-Abra o Console (F12) para ver os detalhes.</pre>
-      `;
-    }
-
+/* ---------------------------------------------------------
+   API PÚBLICA
+--------------------------------------------------------- */
+export async function initSiteShell({ activeId = '', withRail = false } = {}) {
+  /* O porteiro já substituiu a página. */
+  if (window.__ECHO_BLOCKED) {
+    revealPage();
     return null;
   }
+
+  renderShell({ activeId, withRail });
+  bindShellEvents();
+
+  const { data } = await supabase.auth.getSession();
+  state.session = data.session;
+
+  await loadAccountContext();
+  updateAuthUI();
+
+  supabase.auth.onAuthStateChange(async (_event, session) => {
+    state.session = session;
+    await loadAccountContext();
+    updateAuthUI();
+  });
+
+  return {
+    state,
+    supabase,
+    openAuth,
+    requireLogin() {
+      if (state.session?.user) return true;
+      openAuth('login');
+      return false;
+    }
+  };
 }
