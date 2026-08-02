@@ -1,562 +1,361 @@
-import { supabase } from '../../js/supabase.js';
-import { requireAdmin } from './admin-auth.js';
-
 /* =========================================================
-   TRAVA DE PINTURA
-   Esconde a página no instante em que o módulo é avaliado,
-   antes de o navegador desenhar o conteúdo cru. Só revela
-   quando a casca terminou de montar — ou depois de um tempo
-   máximo, para uma falha nunca deixar a tela em branco.
-========================================================= */
+   ECHO ARENA — CASCA DO PAINEL ADMINISTRATIVO
+   Layout, barra lateral, topo e área de conteúdo.
+   As variáveis e componentes base ficam em admin.css.
+   ========================================================= */
 
-const PAINT_GUARD_ID = 'admin-paint-guard';
-
-(function hideUntilReady() {
-  if (document.getElementById(PAINT_GUARD_ID)) return;
-
-  const style = document.createElement('style');
-  style.id = PAINT_GUARD_ID;
-  style.textContent = 'body{visibility:hidden !important}';
-
-  (document.head || document.documentElement).appendChild(style);
-
-  setTimeout(revealPage, 8000);
-})();
-
-function revealPage() {
-  document.getElementById(PAINT_GUARD_ID)?.remove();
+body.admin-shell-body{
+  margin:0;
+  background:var(--admin-bg,#070b14);
+  color:var(--admin-text,#f5f7ff);
 }
 
-const DEFAULT_MENU = [
-  { id: 'dashboard', label: 'Dashboard', href: './index.html' },
-  {
-    id: 'heroes',
-    label: 'Heróis',
-    children: [
-      { id: 'heroes-list', label: 'Lista', href: './heroes.html' },
-      { id: 'hero-new', label: 'Novo herói', href: './hero-editor.html' },
-      { id: 'hero-stats', label: 'Status', href: './hero-stats.html' }
-    ]
-  },
-  {
-    id: 'equipments',
-    label: 'Equipamentos',
-    children: [
-      { id: 'equipments-list', label: 'Lista', href: './equipments.html' },
-      { id: 'equipment-new', label: 'Novo equipamento', href: './equipment-editor.html' },
-      { id: 'equipment-import', label: 'Importar por print', href: './equipment-import.html' }
-    ]
-  },
-  { id: 'classes', label: 'Classes', href: './classes.html' },
-  { id: 'builds', label: 'Builds', href: './builds.html' },
-  { id: 'comments', label: 'Comentários', href: './comments.html' },
-  { id: 'users', label: 'Usuários', href: './users.html' },
-  { id: 'site-texts', label: 'Textos do site', href: './site-texts.html' }
-];
+body.admin-shell-lock{overflow:hidden}
 
-function escapeHtml(value = '') {
-  return String(value)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;');
+/* ---------------------------------------------------------
+   ESTRUTURA
+--------------------------------------------------------- */
+
+.admin-shell-app{
+  display:grid;
+  grid-template-columns:250px minmax(0,1fr);
+  min-height:100vh;
 }
 
-function normalizePath(pathname) {
-  return pathname
-    .replace(/\/+/g, '/')
-    .replace(/\/$/, '')
-    .toLowerCase();
+.admin-shell-workspace{
+  display:flex;
+  flex-direction:column;
+  min-width:0;
 }
 
-function currentFile() {
-  const path = normalizePath(location.pathname);
-  return path.split('/').pop() || 'index.html';
+/* ---------------------------------------------------------
+   BARRA LATERAL
+--------------------------------------------------------- */
+
+.admin-shell-sidebar{
+  position:sticky;
+  top:0;
+  align-self:start;
+  display:flex;
+  flex-direction:column;
+  gap:22px;
+  height:100vh;
+  padding:22px 16px;
+  overflow-y:auto;
+  border-right:1px solid var(--admin-line,#26344f);
+  background:var(--admin-panel,#0f1728);
 }
 
-function isActiveItem(item, activeId) {
-  if (activeId && item.id === activeId) return true;
+.admin-shell-brand{
+  display:flex;
+  align-items:baseline;
+  gap:7px;
+  padding:0 8px 4px;
+  font-size:21px;
+  font-weight:800;
+  letter-spacing:.02em;
+  color:var(--admin-text,#f5f7ff);
+  text-decoration:none;
+}
 
-  if (item.href) {
-    const target = item.href.split('/').pop()?.toLowerCase();
-    return target === currentFile();
+.admin-shell-brand:hover{color:var(--admin-text,#f5f7ff)}
+.admin-shell-brand strong{color:var(--admin-purple-light,#b99eff)}
+
+.admin-shell-nav{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+}
+
+/* itens simples */
+.admin-shell-item{
+  display:block;
+  padding:11px 14px;
+  border:1px solid transparent;
+  border-radius:10px;
+  color:var(--admin-muted,#9da8bd);
+  font-size:13px;
+  font-weight:600;
+  text-decoration:none;
+  transition:background .15s ease,color .15s ease;
+}
+
+.admin-shell-item:hover{
+  background:var(--admin-panel-2,#111c31);
+  color:var(--admin-text,#f5f7ff);
+}
+
+.admin-shell-item.is-active{
+  background:linear-gradient(180deg,var(--admin-purple,#8b5cf6),var(--admin-purple-dark,#6d28d9));
+  border-color:transparent;
+  color:#fff;
+  box-shadow:0 8px 22px -12px rgba(139,92,246,.9);
+}
+
+/* grupos com submenu */
+.admin-shell-group{display:flex;flex-direction:column}
+
+.admin-shell-group-trigger{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  width:100%;
+  padding:11px 14px;
+  border:0;
+  border-radius:10px;
+  background:transparent;
+  color:var(--admin-muted,#9da8bd);
+  font-family:inherit;
+  font-size:13px;
+  font-weight:600;
+  text-align:left;
+  cursor:pointer;
+  transition:background .15s ease,color .15s ease;
+}
+
+.admin-shell-group-trigger:hover{
+  background:var(--admin-panel-2,#111c31);
+  color:var(--admin-text,#f5f7ff);
+}
+
+.admin-shell-group-trigger.is-active{color:var(--admin-text,#f5f7ff)}
+
+.admin-shell-chevron{
+  font-size:13px;
+  line-height:1;
+  transition:transform .2s ease;
+}
+
+.admin-shell-group.is-open .admin-shell-chevron{transform:rotate(180deg)}
+
+.admin-shell-submenu{
+  display:grid;
+  grid-template-rows:0fr;
+  margin-left:12px;
+  padding-left:10px;
+  border-left:1px solid var(--admin-line,#26344f);
+  overflow:hidden;
+  transition:grid-template-rows .2s ease;
+}
+
+.admin-shell-group.is-open .admin-shell-submenu{grid-template-rows:1fr}
+
+.admin-shell-submenu > *{min-height:0}
+
+.admin-shell-subitem{
+  display:block;
+  padding:9px 12px;
+  margin-top:2px;
+  border-radius:8px;
+  color:var(--admin-faint,#65718a);
+  font-size:12.5px;
+  font-weight:500;
+  text-decoration:none;
+  transition:background .15s ease,color .15s ease;
+}
+
+.admin-shell-subitem:hover{
+  background:var(--admin-panel-2,#111c31);
+  color:var(--admin-text,#f5f7ff);
+}
+
+.admin-shell-subitem.is-active{
+  background:var(--admin-panel-2,#111c31);
+  color:var(--admin-purple-light,#b99eff);
+  font-weight:700;
+}
+
+/* rodapé da lateral */
+.admin-shell-sidebar-footer{
+  padding-top:16px;
+  border-top:1px solid var(--admin-line,#26344f);
+}
+
+.admin-shell-site-link{
+  display:block;
+  padding:11px;
+  border:1px solid var(--admin-line-2,#33415f);
+  border-radius:10px;
+  background:var(--admin-panel-2,#111c31);
+  color:var(--admin-muted,#9da8bd);
+  font-size:12px;
+  font-weight:700;
+  text-align:center;
+  text-decoration:none;
+  transition:background .15s ease,color .15s ease;
+}
+
+.admin-shell-site-link:hover{
+  background:#17213a;
+  color:var(--admin-text,#f5f7ff);
+}
+
+/* ---------------------------------------------------------
+   TOPO
+--------------------------------------------------------- */
+
+.admin-shell-topbar{
+  position:sticky;
+  top:0;
+  z-index:20;
+  display:flex;
+  align-items:center;
+  gap:16px;
+  padding:16px 28px;
+  border-bottom:1px solid var(--admin-line,#26344f);
+  background:rgba(7,11,20,.92);
+  backdrop-filter:blur(8px);
+}
+
+.admin-shell-mobile-toggle{
+  display:none;
+  width:40px;
+  height:40px;
+  flex:0 0 40px;
+  border:1px solid var(--admin-line-2,#33415f);
+  border-radius:10px;
+  background:var(--admin-panel-2,#111c31);
+  color:var(--admin-text,#f5f7ff);
+  font-size:17px;
+  cursor:pointer;
+}
+
+.admin-shell-heading{flex:1;min-width:0}
+
+.admin-shell-heading span{
+  display:block;
+  color:var(--admin-purple-light,#b99eff);
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+}
+
+.admin-shell-heading h1{
+  margin:4px 0 0;
+  font-size:30px;
+  font-weight:700;
+  line-height:1.1;
+  word-break:break-word;
+}
+
+.admin-shell-user{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  flex:0 0 auto;
+}
+
+.admin-shell-user-copy{
+  min-width:0;
+  text-align:right;
+}
+
+.admin-shell-user-copy strong{
+  display:block;
+  font-size:13px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  max-width:190px;
+}
+
+.admin-shell-user-copy span{
+  display:block;
+  margin-top:2px;
+  color:var(--admin-faint,#65718a);
+  font-size:11px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  max-width:190px;
+}
+
+.admin-shell-logout{
+  min-height:40px;
+  padding:10px 16px;
+  border:1px solid var(--admin-line-2,#33415f);
+  border-radius:10px;
+  background:var(--admin-panel-2,#111c31);
+  color:var(--admin-text,#f5f7ff);
+  font-family:inherit;
+  font-size:12.5px;
+  font-weight:700;
+  cursor:pointer;
+  transition:background .15s ease;
+}
+
+.admin-shell-logout:hover{background:#17213a}
+
+/* ---------------------------------------------------------
+   CONTEÚDO
+--------------------------------------------------------- */
+
+.admin-shell-main{
+  flex:1;
+  min-width:0;
+  padding:28px;
+}
+
+.admin-shell-content{min-width:0}
+
+/* ---------------------------------------------------------
+   FUNDO MÓVEL
+--------------------------------------------------------- */
+
+.admin-shell-backdrop{
+  position:fixed;
+  inset:0;
+  z-index:40;
+  display:none;
+  background:rgba(3,7,15,.72);
+  backdrop-filter:blur(3px);
+}
+
+.admin-shell-backdrop.is-visible{display:block}
+
+/* ---------------------------------------------------------
+   RESPONSIVO
+--------------------------------------------------------- */
+
+@media(max-width:1200px){
+  .admin-shell-app{grid-template-columns:220px minmax(0,1fr)}
+  .admin-shell-main{padding:22px}
+  .admin-shell-topbar{padding:15px 22px}
+  .admin-shell-heading h1{font-size:26px}
+}
+
+@media(max-width:900px){
+  .admin-shell-app{grid-template-columns:minmax(0,1fr)}
+
+  .admin-shell-sidebar{
+    position:fixed;
+    top:0;
+    bottom:0;
+    left:0;
+    z-index:50;
+    width:min(280px,84vw);
+    height:100vh;
+    transform:translateX(-100%);
+    transition:transform .22s ease;
+    box-shadow:0 0 60px rgba(0,0,0,.5);
   }
 
-  return item.children?.some(child => isActiveItem(child, activeId)) ?? false;
+  .admin-shell-sidebar.is-mobile-open{transform:translateX(0)}
+
+  .admin-shell-mobile-toggle{display:grid;place-items:center}
+
+  .admin-shell-user-copy{display:none}
+
+  .admin-shell-topbar{padding:13px 16px}
+  .admin-shell-main{padding:16px}
+  .admin-shell-heading h1{font-size:22px}
 }
 
-function renderMenu(items, activeId) {
-  return items.map(item => {
-    const active = isActiveItem(item, activeId);
-
-    if (item.children?.length) {
-      const children = item.children.map(child => {
-        const childActive = isActiveItem(child, activeId);
-
-        return `
-          <a
-            class="admin-shell-subitem ${childActive ? 'is-active' : ''}"
-            href="${child.href}"
-            data-menu-id="${child.id}"
-          >
-            ${escapeHtml(child.label)}
-          </a>
-        `;
-      }).join('');
-
-      return `
-        <div class="admin-shell-group ${active ? 'is-open' : ''}">
-          <button
-            type="button"
-            class="admin-shell-group-trigger ${active ? 'is-active' : ''}"
-            aria-expanded="${active ? 'true' : 'false'}"
-          >
-            <span>${escapeHtml(item.label)}</span>
-            <span class="admin-shell-chevron">⌄</span>
-          </button>
-
-          <div class="admin-shell-submenu">
-            ${children}
-          </div>
-        </div>
-      `;
-    }
-
-    return `
-      <a
-        class="admin-shell-item ${active ? 'is-active' : ''}"
-        href="${item.href}"
-        data-menu-id="${item.id}"
-      >
-        ${escapeHtml(item.label)}
-      </a>
-    `;
-  }).join('');
-}
-
-async function getCurrentAdmin() {
-  const isCodespacesPreview =
-    location.hostname.endsWith('.app.github.dev');
-
-  // Apenas para testar localmente no Codespaces.
-  // Não afeta o GitHub Pages nem o site publicado.
-  if (isCodespacesPreview) {
-    const {
-      data: { session }
-    } = await supabase.auth.getSession();
-
-    return {
-      session: session ?? null,
-      email: session?.user?.email ?? 'preview@codespaces.local',
-      displayName:
-        session?.user?.user_metadata?.display_name ||
-        session?.user?.email ||
-        'Preview administrativo'
-    };
-  }
-
-  // Produção continua protegida.
-  const { session, profile } = await requireAdmin();
-
-  return {
-    session,
-    profile,
-    email: session.user.email ?? '',
-    displayName:
-      profile?.display_name ||
-      profile?.username ||
-      session.user.email ||
-      'Administrador'
-  };
-}
-
-function setPageTitle(title, subtitle) {
-  const titleElement = document.querySelector('[data-admin-page-title]');
-  const subtitleElement = document.querySelector('[data-admin-page-subtitle]');
-
-  if (titleElement && title) {
-    titleElement.textContent = title;
-  }
-
-  if (subtitleElement) {
-    subtitleElement.textContent = subtitle ?? '';
-  }
-}
-
-function bindNavigation() {
-  document.querySelectorAll('.admin-shell-group-trigger').forEach(button => {
-    button.addEventListener('click', () => {
-      const group = button.closest('.admin-shell-group');
-      const opened = group.classList.toggle('is-open');
-
-      button.setAttribute('aria-expanded', String(opened));
-    });
-  });
-
-  const mobileButton = document.getElementById('admin-shell-mobile-toggle');
-  const sidebar = document.getElementById('admin-shell-sidebar');
-  const backdrop = document.getElementById('admin-shell-backdrop');
-
-  const closeMobile = () => {
-    sidebar?.classList.remove('is-mobile-open');
-    backdrop?.classList.remove('is-visible');
-    document.body.classList.remove('admin-shell-lock');
-  };
-
-  mobileButton?.addEventListener('click', () => {
-    sidebar?.classList.toggle('is-mobile-open');
-    backdrop?.classList.toggle('is-visible');
-    document.body.classList.toggle('admin-shell-lock');
-  });
-
-  backdrop?.addEventListener('click', closeMobile);
-
-  window.addEventListener('resize', () => {
-    if (window.innerWidth > 900) {
-      closeMobile();
-    }
-  });
-}
-
-/* =========================================================
-   CONFIRMAÇÃO DE SAÍDA
-   Sair encerra a sessão administrativa. Se o site estiver em
-   manutenção, isso também derruba seu acesso ao site público.
-========================================================= */
-
-async function confirmAdminLogout() {
-  let maintenance = false;
-
-  try {
-    const { data } = await supabase.rpc('site_status');
-    const status = Array.isArray(data) ? data[0] : data;
-    maintenance = status?.maintenance_mode === true;
-  } catch (error) {
-    console.warn('[logout] estado do site indisponível:', error.message);
-  }
-
-  return new Promise((resolve) => {
-    const overlay = document.createElement('div');
-    overlay.id = 'admin-logout-modal';
-
-    const extra = maintenance
-      ? `<div class="al-alert">
-           O site está <strong>em manutenção</strong>. Sem sessão de
-           administrador, nem o painel nem o site público abrem para você
-           até fazer login novamente.
-         </div>`
-      : '';
-
-    overlay.innerHTML = `
-      <div class="al-backdrop"></div>
-
-      <div class="al-card" role="dialog" aria-modal="true">
-        <div class="al-icon">&#9888;</div>
-
-        <h2>Encerrar sessão administrativa?</h2>
-
-        <p>
-          Alterações não salvas serão perdidas e você precisará entrar
-          novamente para voltar ao painel.
-        </p>
-
-        ${extra}
-
-        <div class="al-actions">
-          <button type="button" id="al-cancel">Permanecer no painel</button>
-          <button type="button" id="al-confirm" class="danger">Sair</button>
-        </div>
-      </div>
-    `;
-
-    const style = document.createElement('style');
-
-    style.textContent = `
-      #admin-logout-modal{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;
-        padding:20px;font-family:Inter,system-ui,sans-serif}
-      #admin-logout-modal .al-backdrop{position:absolute;inset:0;background:rgba(3,7,15,.82);
-        backdrop-filter:blur(5px)}
-      #admin-logout-modal .al-card{position:relative;width:min(440px,100%);padding:26px;
-        border:1px solid #71303b;border-radius:18px;background:#12101f;
-        box-shadow:0 30px 80px rgba(0,0,0,.6);text-align:center}
-      #admin-logout-modal .al-icon{font-size:32px;line-height:1;margin-bottom:12px;color:#ffb4bd}
-      #admin-logout-modal h2{margin:0 0 10px;font-size:19px;color:#eef2f8}
-      #admin-logout-modal p{margin:0;color:#9aa4bb;font-size:12.5px;line-height:1.65}
-      #admin-logout-modal .al-alert{margin-top:14px;padding:12px 14px;border:1px solid #71303b;
-        border-radius:11px;background:#2a1016;color:#ffb4bd;font-size:12px;line-height:1.6}
-      #admin-logout-modal .al-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:20px}
-      #admin-logout-modal .al-actions button{padding:12px;border:1px solid #31245c;border-radius:10px;
-        background:#161331;color:#eef2f8;font:inherit;font-weight:700;font-size:12.5px;cursor:pointer}
-      #admin-logout-modal .al-actions button.danger{border-color:#71303b;background:#2a1016;color:#ff9aaa}
-      @media(max-width:420px){#admin-logout-modal .al-actions{grid-template-columns:1fr}}
-    `;
-
-    overlay.appendChild(style);
-    document.body.appendChild(overlay);
-
-    function close(result) {
-      document.removeEventListener('keydown', onKey);
-      overlay.remove();
-      resolve(result);
-    }
-
-    function onKey(event) {
-      if (event.key === 'Escape') close(false);
-    }
-
-    overlay.querySelector('#al-confirm').addEventListener('click', () => close(true));
-    overlay.querySelector('#al-cancel').addEventListener('click', () => close(false));
-    overlay.querySelector('.al-backdrop').addEventListener('click', () => close(false));
-    document.addEventListener('keydown', onKey);
-
-    setTimeout(() => overlay.querySelector('#al-cancel')?.focus(), 30);
-  });
-}
-
-function renderShell({
-  admin,
-  activeId,
-  menuItems,
-  pageTitle,
-  pageSubtitle
-}) {
-  document.body.classList.add('admin-shell-body');
-
-  /* Preserva TODOS os nós da página, não só o contêiner marcado.
-     Painéis laterais e modais soltos sobrevivem, e os listeners
-     já registrados continuam válidos porque movemos os nós. */
-  const preserved = document.createDocumentFragment();
-
-  while (document.body.firstChild) {
-    preserved.appendChild(document.body.firstChild);
-  }
-
-  document.body.innerHTML = `
-    <div class="admin-shell-app">
-      <div
-        id="admin-shell-backdrop"
-        class="admin-shell-backdrop"
-      ></div>
-
-      <aside
-        id="admin-shell-sidebar"
-        class="admin-shell-sidebar"
-      >
-        <a
-          class="admin-shell-brand"
-          href="./index.html"
-        >
-          <span>ECHO</span>
-          <strong>ADMIN</strong>
-        </a>
-
-        <nav class="admin-shell-nav">
-          ${renderMenu(menuItems, activeId)}
-        </nav>
-
-        <div class="admin-shell-sidebar-footer">
-          <a
-            class="admin-shell-site-link"
-            href="../index.html"
-          >
-            Ver site
-          </a>
-        </div>
-      </aside>
-
-      <section class="admin-shell-workspace">
-        <header class="admin-shell-topbar">
-          <button
-            id="admin-shell-mobile-toggle"
-            class="admin-shell-mobile-toggle"
-            type="button"
-            aria-label="Abrir menu"
-          >
-            ☰
-          </button>
-
-          <div class="admin-shell-heading">
-            <span data-admin-page-subtitle>
-              ${escapeHtml(pageSubtitle ?? '')}
-            </span>
-
-            <h1 data-admin-page-title>
-              ${escapeHtml(pageTitle ?? 'Painel administrativo')}
-            </h1>
-          </div>
-
-          <div class="admin-shell-user">
-            <div class="admin-shell-user-copy">
-              <strong>
-                ${escapeHtml(admin.displayName)}
-              </strong>
-
-              <span>
-                ${escapeHtml(admin.email)}
-              </span>
-            </div>
-
-            <button
-              id="admin-shell-logout"
-              class="admin-shell-logout"
-              type="button"
-            >
-              Sair
-            </button>
-          </div>
-        </header>
-
-        <main class="admin-shell-main">
-          <div
-            id="admin-shell-content"
-            data-admin-content
-            class="admin-shell-content"
-          ></div>
-        </main>
-      </section>
-    </div>
-  `;
-
-  document.getElementById('admin-shell-content').appendChild(preserved);
-
-  bindNavigation();
-  revealPage();
-
-  document
-    .getElementById('admin-shell-logout')
-    ?.addEventListener('click', async () => {
-      if (!(await confirmAdminLogout())) return;
-
-      await supabase.auth.signOut();
-      sessionStorage.removeItem('echoarena_admin_hops');
-      location.href = './login.html';
-    });
-}
-
-export async function initAdminShell({
-  activeId = '',
-  pageTitle = 'Painel administrativo',
-  pageSubtitle = '',
-  menuItems = DEFAULT_MENU,
-  redirectTo = './login.html'
-} = {}) {
-  try {
-    const admin = await getCurrentAdmin();
-
-    if (!admin) {
-      throw new Error(
-        'Não foi possível identificar a sessão administrativa.'
-      );
-    }
-
-    renderShell({
-      admin,
-      activeId,
-      menuItems,
-      pageTitle,
-      pageSubtitle
-    });
-
-    /* Chegou até aqui: sessão validada. Zera o contador de saltos. */
-    sessionStorage.removeItem('echoarena_admin_hops');
-
-    return {
-      admin,
-      setPageTitle,
-      supabase
-    };
-  } catch (error) {
-    console.error(
-      'Falha ao iniciar o painel:',
-      error
-    );
-
-    const isCodespacesPreview =
-      location.hostname.endsWith('.app.github.dev');
-
-    /*
-     * No Codespaces, não redireciona automaticamente.
-     * Mostra o erro para conseguirmos corrigir.
-     */
-    if (isCodespacesPreview) {
-      document.body.classList.remove(
-        'admin-shell-body'
-      );
-
-      document.body.innerHTML = `
-        <main
-          style="
-            max-width: 900px;
-            margin: 40px auto;
-            padding: 24px;
-            font-family: Arial, sans-serif;
-            color: #ffffff;
-            background: #111a2e;
-            border: 1px solid #33415f;
-            border-radius: 14px;
-          "
-        >
-          <h1 style="margin-top:0;">
-            Falha ao carregar o painel
-          </h1>
-
-          <p>
-            O Admin Shell encontrou um erro antes de montar a página.
-          </p>
-
-          <pre
-            style="
-              padding:16px;
-              overflow:auto;
-              white-space:pre-wrap;
-              color:#ffb4bd;
-              background:#080d18;
-              border-radius:10px;
-            "
-          >${escapeHtml(
-            error?.message ||
-            String(error)
-          )}</pre>
-
-          <p style="color:#aab4c8;">
-            Consulte também o Console do navegador para ver os detalhes.
-          </p>
-
-          <a
-            href="./login.html"
-            style="color:#b79cff;"
-          >
-            Abrir página de login
-          </a>
-        </main>
-      `;
-
-      revealPage();
-      return null;
-    }
-
-    /* Quebra-loop: no máximo 3 redirecionamentos encadeados. */
-    const hops = parseInt(
-      sessionStorage.getItem('echoarena_admin_hops') || '0',
-      10
-    );
-
-    if (hops < 3) {
-      sessionStorage.setItem('echoarena_admin_hops', String(hops + 1));
-      location.replace(redirectTo);
-    } else {
-      sessionStorage.removeItem('echoarena_admin_hops');
-
-      document.body.innerHTML = `
-        <pre style="padding:2rem;font:14px/1.6 monospace;color:#ffb4bd;background:#0b1221">Loop de autenticacao interrompido.
-
-Motivo: ${escapeHtml(error?.message || String(error))}
-
-Abra o Console (F12) para ver os detalhes.</pre>
-      `;
-    }
-
-    return null;
-  }
+@media(max-width:520px){
+  .admin-shell-heading span{font-size:9px}
+  .admin-shell-heading h1{font-size:19px}
+  .admin-shell-logout{padding:9px 12px;font-size:11.5px}
 }
