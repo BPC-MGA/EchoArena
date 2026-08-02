@@ -358,7 +358,9 @@ function injectStyles() {
       font-size: 12px;
       color: #c8cfdd;
     }
-
+    #binary-threshold-control[hidden] {
+  display: none !important;
+}
     #ocr-toolbar .ocr-slider input {
       width: 100px;
     }
@@ -2537,7 +2539,162 @@ function cropCanvasRegion(
 
   return canvas;
 }
+function renderPreview() {
+  const shot = currentShot();
 
+  if (!shot?.image) {
+    return;
+  }
+
+  const canvas = $('ocr-canvas');
+  const box = $('ocr-crop-box');
+  const preview = $('ocr-preview');
+
+  if (!canvas || !box || !preview) {
+    return;
+  }
+
+  const image = shot.image;
+
+  if (
+    !image.naturalWidth ||
+    !image.naturalHeight
+  ) {
+    console.warn(
+      '[OCR] A imagem ainda não possui dimensões válidas.'
+    );
+
+    return;
+  }
+
+  const context = canvas.getContext('2d');
+
+  if (!context) {
+    console.warn(
+      '[OCR] Não foi possível criar o contexto do canvas principal.'
+    );
+
+    return;
+  }
+
+  /*
+   * Define as dimensões internas reais do canvas.
+   *
+   * O CSS mantém a exibição responsiva com width: 100%.
+   */
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+
+  context.clearRect(
+    0,
+    0,
+    canvas.width,
+    canvas.height
+  );
+
+  context.drawImage(
+    image,
+    0,
+    0,
+    canvas.width,
+    canvas.height
+  );
+
+  /*
+   * Reposiciona visualmente o recorte existente.
+   */
+  const relative = effectiveCrop(shot);
+
+  if (relative) {
+    const rect =
+      canvas.getBoundingClientRect();
+
+    box.style.display = 'block';
+
+    box.style.left =
+      `${relative.x * rect.width}px`;
+
+    box.style.top =
+      `${relative.y * rect.height}px`;
+
+    box.style.width =
+      `${relative.w * rect.width}px`;
+
+    box.style.height =
+      `${relative.h * rect.height}px`;
+  } else {
+    box.style.display = 'none';
+  }
+
+  /*
+   * Gera a imagem pré-processada exibida em
+   * "Como o leitor enxerga".
+   */
+  try {
+    const processed =
+      buildProcessedCanvas(shot);
+
+    if (
+      !processed ||
+      !processed.width ||
+      !processed.height
+    ) {
+      throw new Error(
+        'A imagem processada ficou vazia.'
+      );
+    }
+
+    preview.width =
+      processed.width;
+
+    preview.height =
+      processed.height;
+
+    const previewContext =
+      preview.getContext('2d');
+
+    if (!previewContext) {
+      throw new Error(
+        'Não foi possível criar o contexto da prévia.'
+      );
+    }
+
+    previewContext.clearRect(
+      0,
+      0,
+      preview.width,
+      preview.height
+    );
+
+    previewContext.drawImage(
+      processed,
+      0,
+      0,
+      preview.width,
+      preview.height
+    );
+  } catch (error) {
+    console.warn(
+      '[OCR] Não foi possível montar a prévia:',
+      error
+    );
+
+    /*
+     * Evita deixar um resultado antigo visível.
+     */
+    const previewContext =
+      preview.getContext('2d');
+
+    if (previewContext) {
+      previewContext.clearRect(
+        0,
+        0,
+        preview.width,
+        preview.height
+      );
+    }
+  }
+}
 /* =========================================================
    AVISOS
 ========================================================= */
