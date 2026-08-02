@@ -405,8 +405,9 @@ function bindEvents() {
 
 /* =========================================================
    MODO MANUTENÇÃO
-   Consultado antes de qualquer renderização. Admin passa
-   direto e vê apenas uma faixa de aviso no topo.
+   Consultado antes de qualquer renderização. Bloqueia todos
+   os visitantes, logados ou não. O painel administrativo fica
+   em /admin/ e não passa por aqui.
 ========================================================= */
 
 function renderMaintenanceScreen(siteName = 'Echo Arena') {
@@ -470,22 +471,6 @@ function renderMaintenanceScreen(siteName = 'Echo Arena') {
   document.head.appendChild(style);
 }
 
-function renderAdminMaintenanceBanner() {
-  const bar = document.createElement('div');
-
-  bar.textContent =
-    'Modo manutenção ATIVO — visitantes não conseguem acessar o site.';
-
-  bar.setAttribute(
-    'style',
-    'position:sticky;top:0;z-index:999;padding:9px 16px;text-align:center;' +
-    'background:#2a1016;border-bottom:1px solid #71303b;color:#ff9aaa;' +
-    'font-size:12px;font-weight:700;letter-spacing:.04em'
-  );
-
-  document.body.prepend(bar);
-}
-
 async function checkMaintenance() {
   try {
     const { data, error } = await supabase.rpc('site_status');
@@ -496,23 +481,8 @@ async function checkMaintenance() {
 
     if (!status?.maintenance_mode) return false;
 
-    /* Admin continua navegando, com aviso visível. */
-    const { data: sessionData } = await supabase.auth.getSession();
-    const userId = sessionData?.session?.user?.id;
-
-    if (userId) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', userId)
-        .maybeSingle();
-
-      if (profile?.role === 'admin') {
-        renderAdminMaintenanceBanner();
-        return false;
-      }
-    }
-
+    /* Ninguém acessa o site público em manutenção — nem admin.
+       A administração continua disponível em /admin/. */
     renderMaintenanceScreen(status.site_name || 'Echo Arena');
     return true;
   } catch (error) {
