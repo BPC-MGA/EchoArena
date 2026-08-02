@@ -193,6 +193,101 @@ function bindNavigation() {
   });
 }
 
+/* =========================================================
+   CONFIRMAÇÃO DE SAÍDA
+   Sair encerra a sessão administrativa. Se o site estiver em
+   manutenção, isso também derruba seu acesso ao site público.
+========================================================= */
+
+async function confirmAdminLogout() {
+  let maintenance = false;
+
+  try {
+    const { data } = await supabase.rpc('site_status');
+    const status = Array.isArray(data) ? data[0] : data;
+    maintenance = status?.maintenance_mode === true;
+  } catch (error) {
+    console.warn('[logout] estado do site indisponível:', error.message);
+  }
+
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.id = 'admin-logout-modal';
+
+    const extra = maintenance
+      ? `<div class="al-alert">
+           O site está <strong>em manutenção</strong>. Sem sessão de
+           administrador, nem o painel nem o site público abrem para você
+           até fazer login novamente.
+         </div>`
+      : '';
+
+    overlay.innerHTML = `
+      <div class="al-backdrop"></div>
+
+      <div class="al-card" role="dialog" aria-modal="true">
+        <div class="al-icon">&#9888;</div>
+
+        <h2>Encerrar sessão administrativa?</h2>
+
+        <p>
+          Alterações não salvas serão perdidas e você precisará entrar
+          novamente para voltar ao painel.
+        </p>
+
+        ${extra}
+
+        <div class="al-actions">
+          <button type="button" id="al-cancel">Permanecer no painel</button>
+          <button type="button" id="al-confirm" class="danger">Sair</button>
+        </div>
+      </div>
+    `;
+
+    const style = document.createElement('style');
+
+    style.textContent = `
+      #admin-logout-modal{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;
+        padding:20px;font-family:Inter,system-ui,sans-serif}
+      #admin-logout-modal .al-backdrop{position:absolute;inset:0;background:rgba(3,7,15,.82);
+        backdrop-filter:blur(5px)}
+      #admin-logout-modal .al-card{position:relative;width:min(440px,100%);padding:26px;
+        border:1px solid #71303b;border-radius:18px;background:#12101f;
+        box-shadow:0 30px 80px rgba(0,0,0,.6);text-align:center}
+      #admin-logout-modal .al-icon{font-size:32px;line-height:1;margin-bottom:12px;color:#ffb4bd}
+      #admin-logout-modal h2{margin:0 0 10px;font-size:19px;color:#eef2f8}
+      #admin-logout-modal p{margin:0;color:#9aa4bb;font-size:12.5px;line-height:1.65}
+      #admin-logout-modal .al-alert{margin-top:14px;padding:12px 14px;border:1px solid #71303b;
+        border-radius:11px;background:#2a1016;color:#ffb4bd;font-size:12px;line-height:1.6}
+      #admin-logout-modal .al-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:20px}
+      #admin-logout-modal .al-actions button{padding:12px;border:1px solid #31245c;border-radius:10px;
+        background:#161331;color:#eef2f8;font:inherit;font-weight:700;font-size:12.5px;cursor:pointer}
+      #admin-logout-modal .al-actions button.danger{border-color:#71303b;background:#2a1016;color:#ff9aaa}
+      @media(max-width:420px){#admin-logout-modal .al-actions{grid-template-columns:1fr}}
+    `;
+
+    overlay.appendChild(style);
+    document.body.appendChild(overlay);
+
+    function close(result) {
+      document.removeEventListener('keydown', onKey);
+      overlay.remove();
+      resolve(result);
+    }
+
+    function onKey(event) {
+      if (event.key === 'Escape') close(false);
+    }
+
+    overlay.querySelector('#al-confirm').addEventListener('click', () => close(true));
+    overlay.querySelector('#al-cancel').addEventListener('click', () => close(false));
+    overlay.querySelector('.al-backdrop').addEventListener('click', () => close(false));
+    document.addEventListener('keydown', onKey);
+
+    setTimeout(() => overlay.querySelector('#al-cancel')?.focus(), 30);
+  });
+}
+
 function renderShell({
   admin,
   activeId,
@@ -300,6 +395,8 @@ function renderShell({
   document
     .getElementById('admin-shell-logout')
     ?.addEventListener('click', async () => {
+      if (!(await confirmAdminLogout())) return;
+
       await supabase.auth.signOut();
       sessionStorage.removeItem('echoarena_admin_hops');
       location.href = './login.html';
