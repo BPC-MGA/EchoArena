@@ -25,8 +25,10 @@
   'use strict';
 
   var SUPABASE_URL = 'https://suwlxuwhkoilesdlyqll.supabase.co';
-  var PROJECT_REF  = 'suwlxuwhkoilesdlyqll';
-  var ANON_KEY     = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN1d2x4dXdoa29pbGVzZGx5cWxsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU1MTc0NDMsImV4cCI6MjEwMTA5MzQ0M30.7cQf-XwKUHX-P8AHiJpiczZvuS8hXac6UbERwAiWAz4';
+  var ANON_KEY     = 'sb_publishable_z2QOcUx2s3otTuOMNo0VoQ_9wz-yQAt';
+
+  /* Mesma chave definida em js/supabase.js. Se mudar lá, mude aqui. */
+  var STORAGE_KEY  = 'echo-arena-auth';
 
   var TIMEOUT_MS = 5000;
   var GUARD_ID = 'echo-boot-guard';
@@ -73,7 +75,7 @@
      Evita depender do SDK, que carrega depois. */
   function accessToken() {
     try {
-      var raw = localStorage.getItem('sb-' + PROJECT_REF + '-auth-token');
+      var raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return null;
 
       var parsed = JSON.parse(raw);
@@ -118,6 +120,9 @@
   /* ---------- 3. telas ---------- */
 
   function showMaintenance(siteName) {
+    /* Avisa os módulos da página que não há mais o que montar. */
+    window.__ECHO_BLOCKED = true;
+
     var name = escapeHtml(siteName || 'Echo Arena');
 
     whenBodyReady(function () {
