@@ -8,33 +8,49 @@ import { requireAdmin, logoutAdmin } from './admin-auth.js';
    conjunto inteiro de uma vez:
 
      1. Você seleciona todos os prints juntos
-     2. Marca o recorte UMA vez — vale para todos, porque o
-        painel do jogo fica sempre na mesma posição
+     2. Marca o recorte UMA vez
      3. Um único motor de OCR processa a fila inteira
      4. Os resultados são fundidos em um só equipamento
 
+   Agora também oferece:
+
+     - Progresso da extração
+     - Arquivo atualmente processado
+     - Tempo decorrido
+     - Cancelamento da coleta
+     - Reinício da coleta
+     - Resultado individual de cada imagem
+     - Registro individual de erros
+     - Continuação da fila quando uma imagem falha
+     - Preservação dos resultados concluídos ao cancelar
+
    Nada é salvo automaticamente: tudo passa pela revisão.
-   ========================================================= */
+========================================================= */
 
 await requireAdmin();
-document.getElementById('logout').onclick = logoutAdmin;
+
+const logoutButton = document.getElementById('logout');
+
+if (logoutButton) {
+  logoutButton.onclick = logoutAdmin;
+}
 
 /* =========================================================
    VOCABULÁRIO DO JOGO
 ========================================================= */
 
 const RARITIES = [
-  { slug: 'comum',      label: 'Comum' },
-  { slug: 'raro',       label: 'Raro' },
-  { slug: 'epico',      label: 'Épico' },
-  { slug: 'lendario',   label: 'Lendário' },
-  { slug: 'mitico',     label: 'Mítico' },
-  { slug: 'supremo',    label: 'Supremo' },
-  { slug: 'grandioso',  label: 'Grandioso' },
-  { slug: 'celestial',  label: 'Celestial' },
-  { slug: 'estelar',    label: 'Estelar' },
-  { slug: 'imortal',    label: 'Imortal' },
-  { slug: 'divino',     label: 'Divino' }
+  { slug: 'comum', label: 'Comum' },
+  { slug: 'raro', label: 'Raro' },
+  { slug: 'epico', label: 'Épico' },
+  { slug: 'lendario', label: 'Lendário' },
+  { slug: 'mitico', label: 'Mítico' },
+  { slug: 'supremo', label: 'Supremo' },
+  { slug: 'grandioso', label: 'Grandioso' },
+  { slug: 'celestial', label: 'Celestial' },
+  { slug: 'estelar', label: 'Estelar' },
+  { slug: 'imortal', label: 'Imortal' },
+  { slug: 'divino', label: 'Divino' }
 ];
 
 const STATS = [
@@ -86,7 +102,7 @@ const STATS = [
    ELEMENTOS
 ========================================================= */
 
-const $ = (id) => document.getElementById(id);
+const $ = id => document.getElementById(id);
 
 const fileInput = $('screenshot');
 const zone = $('dropzone');
@@ -97,16 +113,97 @@ const sendButton = $('send-editor');
 const extractButton = $('extract');
 const reviewButton = $('review');
 
+if (!fileInput) {
+  throw new Error('O campo de seleção de imagens #screenshot não foi encontrado.');
+}
+
+if (!zone) {
+  throw new Error('A área de upload #dropzone não foi encontrada.');
+}
+
+if (!raw) {
+  throw new Error('O campo #raw-text não foi encontrado.');
+}
+
+if (!status) {
+  throw new Error('O elemento #ocr-status não foi encontrado.');
+}
+
+if (!reviewArea) {
+  throw new Error('A área #review-area não foi encontrada.');
+}
+
+if (!sendButton) {
+  throw new Error('O botão #send-editor não foi encontrado.');
+}
+
+if (!extractButton) {
+  throw new Error('O botão #extract não foi encontrado.');
+}
+
+if (!reviewButton) {
+  throw new Error('O botão #review não foi encontrado.');
+}
+
 fileInput.multiple = true;
 
 /* =========================================================
    ESTADO
 ========================================================= */
 
-/* shots: [{ name, image, crop, text, parsed }] */
+/*
+  shots:
+
+  [{
+    label,
+    image,
+    url,
+    crop,
+    text,
+    parsed,
+    status,
+    error,
+    durationMs
+  }]
+*/
+
 let shots = [];
 let activeIndex = 0;
 let merged = null;
+
+/*
+  extractionTask mantém a Promise da execução atual.
+
+  Isso impede que o usuário inicie duas extrações ao mesmo
+  tempo por cliques repetidos.
+*/
+
+let extractionTask = null;
+
+/*
+  extractionRun controla a execução ativa.
+
+  id:
+  identifica a execução atual. Quando uma nova execução começa,
+  o identificador muda e resultados atrasados da anterior são
+  descartados.
+
+  worker:
+  guarda o worker do Tesseract que está ativo.
+
+  cancelled:
+  informa se o usuário pediu o cancelamento.
+*/
+
+const extractionRun = {
+  id: 0,
+  running: false,
+  cancelled: false,
+  worker: null,
+  startedAt: 0,
+  finishedElapsedMs: 0,
+  timer: null
+};
 
 const options = {
   invert: true,
@@ -144,22 +241,33 @@ function similarity(a, b) {
 
   const rows = a.length + 1;
   const cols = b.length + 1;
-  const matrix = Array.from({ length: rows }, (_, i) => [i, ...Array(cols - 1).fill(0)]);
 
-  for (let j = 0; j < cols; j += 1) matrix[0][j] = j;
+  const matrix = Array.from(
+    { length: rows },
+    (_, index) => [index, ...Array(cols - 1).fill(0)]
+  );
 
-  for (let i = 1; i < rows; i += 1) {
-    for (let j = 1; j < cols; j += 1) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      matrix[i][j] = Math.min(
-        matrix[i - 1][j] + 1,
-        matrix[i][j - 1] + 1,
-        matrix[i - 1][j - 1] + cost
+  for (let column = 0; column < cols; column += 1) {
+    matrix[0][column] = column;
+  }
+
+  for (let row = 1; row < rows; row += 1) {
+    for (let column = 1; column < cols; column += 1) {
+      const cost = a[row - 1] === b[column - 1] ? 0 : 1;
+
+      matrix[row][column] = Math.min(
+        matrix[row - 1][column] + 1,
+        matrix[row][column - 1] + 1,
+        matrix[row - 1][column - 1] + cost
       );
     }
   }
 
-  return 1 - matrix[a.length][b.length] / Math.max(a.length, b.length);
+  return (
+    1 -
+    matrix[a.length][b.length] /
+      Math.max(a.length, b.length)
+  );
 }
 
 /* =========================================================
@@ -173,75 +281,525 @@ function injectStyles() {
   style.id = 'imp-style';
 
   style.textContent = `
-    #ocr-toolbar{margin-top:12px}
-    #ocr-toolbar .ocr-row{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
-    #ocr-toolbar .ocr-check{display:flex;align-items:center;gap:7px;font-size:12px;color:#c8cfdd}
-    #ocr-toolbar .ocr-check input{width:17px;height:17px;margin:0}
-    #ocr-toolbar .ocr-slider{display:flex;align-items:center;gap:8px;font-size:12px;color:#c8cfdd}
-    #ocr-toolbar .ocr-slider input{width:100px}
-    #ocr-toolbar .ocr-slider output{min-width:28px;color:#9da8bd;font-size:11px}
-    #ocr-toolbar .ocr-hint{margin-top:10px;color:#9da8bd;font-size:11.5px;line-height:1.6}
+    #ocr-toolbar {
+      margin-top: 12px;
+    }
 
-    #ocr-strip{display:flex;gap:8px;margin-top:12px;padding-bottom:6px;
-      overflow-x:auto;scrollbar-width:thin}
-    #ocr-strip .thumb{position:relative;flex:0 0 84px;height:60px;border-radius:9px;
-      overflow:hidden;border:2px solid #26344f;background:#05080f;cursor:pointer}
-    #ocr-strip .thumb.is-active{border-color:#8b5cf6}
-    #ocr-strip .thumb.is-done{border-color:#28613c}
-    #ocr-strip .thumb img{width:100%;height:100%;object-fit:cover;opacity:.75}
-    #ocr-strip .thumb .tag{position:absolute;left:0;right:0;bottom:0;padding:2px 4px;
-      background:rgba(5,8,15,.85);color:#c8cfdd;font-size:8.5px;text-align:center;
-      white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    #ocr-toolbar .ocr-row {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
 
-    #ocr-canvas-wrap{position:relative;margin-top:12px;overflow:hidden;
-      border:1px solid #26344f;border-radius:11px;background:#05080f}
-    #ocr-canvas{display:block;width:100%;cursor:crosshair;user-select:none;touch-action:none}
-    #ocr-crop-box{position:absolute;border:2px dashed #b99eff;
-      background:rgba(139,92,246,.15);pointer-events:none;display:none}
+    #ocr-toolbar .ocr-check {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12px;
+      color: #c8cfdd;
+    }
 
-    #ocr-preview-wrap{margin-top:12px}
-    #ocr-preview-wrap h4{margin-bottom:7px;color:#9da8bd;font-size:10.5px;
-      font-weight:800;letter-spacing:.1em;text-transform:uppercase}
-    #ocr-preview{display:block;width:100%;border:1px solid #26344f;
-      border-radius:11px;background:#fff}
+    #ocr-toolbar .ocr-check input {
+      width: 17px;
+      height: 17px;
+      margin: 0;
+    }
 
-    .ocr-warn{margin-top:10px;padding:11px 13px;border:1px solid #6f5618;
-      border-radius:10px;background:#2a2009;color:#ffd76d;font-size:11.5px;line-height:1.6}
+    #ocr-toolbar .ocr-slider {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: #c8cfdd;
+    }
 
-    .imp-card{margin-bottom:16px;padding:18px;border:1px solid #26344f;
-      border-radius:14px;background:#0f1728}
-    .imp-card h3{display:flex;align-items:baseline;gap:10px;margin-bottom:14px;font-size:16px}
-    .imp-card h3 small{color:#65718a;font-size:11px;font-weight:500}
-    .imp-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-    .imp-grid label{display:block;color:#c8cfdd;font-size:12px;font-weight:600}
-    .imp-grid label.full{grid-column:1/-1}
-    .imp-grid input,.imp-grid textarea{margin-top:6px}
+    #ocr-toolbar .ocr-slider input {
+      width: 100px;
+    }
 
-    .imp-rarity{margin-bottom:12px;padding:13px;border:1px solid #26344f;
-      border-radius:11px;background:#09111f}
-    .imp-rarity-head{display:flex;justify-content:space-between;align-items:center;
-      gap:12px;margin-bottom:10px}
-    .imp-rarity-head strong{font-size:13px;text-transform:uppercase;letter-spacing:.05em}
-    .imp-rarity-head .eq-btn{min-height:32px;padding:6px 11px;font-size:10.5px}
-    .imp-source{color:#65718a;font-size:10px}
-    .imp-stats{display:grid;gap:8px}
-    .imp-stat{display:grid;grid-template-columns:minmax(0,1.6fr) 110px minmax(0,1fr) 38px;
-      gap:8px;align-items:center}
-    .imp-stat select,.imp-stat input{min-height:38px;font-size:12px}
-    .imp-stat-raw{color:#65718a;font-size:10.5px;white-space:nowrap;
-      overflow:hidden;text-overflow:ellipsis}
-    .imp-stat .eq-btn,.imp-bonus .eq-btn{min-height:38px;padding:0;font-size:12px}
-    .imp-bonus{display:grid;grid-template-columns:90px minmax(0,1fr) minmax(0,1.6fr) 38px;
-      gap:8px;margin-bottom:8px}
-    .imp-bonus input{min-height:38px;font-size:12px}
+    #ocr-toolbar .ocr-slider output {
+      min-width: 28px;
+      color: #9da8bd;
+      font-size: 11px;
+    }
 
-    .imp-missing{margin-top:10px;padding:10px 12px;border:1px dashed #6f5618;
-      border-radius:10px;color:#ffd76d;font-size:11px;line-height:1.6}
+    #ocr-toolbar .ocr-hint {
+      margin-top: 10px;
+      color: #9da8bd;
+      font-size: 11.5px;
+      line-height: 1.6;
+    }
 
-    @media(max-width:820px){
-      .imp-grid{grid-template-columns:1fr}
-      .imp-stat,.imp-bonus{grid-template-columns:1fr}
-      .imp-stat-raw{white-space:normal}
+    #ocr-strip {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+      padding-bottom: 6px;
+      overflow-x: auto;
+      scrollbar-width: thin;
+    }
+
+    #ocr-strip .thumb {
+      position: relative;
+      flex: 0 0 84px;
+      height: 60px;
+      border-radius: 9px;
+      overflow: hidden;
+      border: 2px solid #26344f;
+      background: #05080f;
+      cursor: pointer;
+      transition:
+        border-color .18s ease,
+        transform .18s ease;
+    }
+
+    #ocr-strip .thumb:hover {
+      transform: translateY(-1px);
+    }
+
+    #ocr-strip .thumb.is-active {
+      border-color: #8b5cf6;
+    }
+
+    #ocr-strip .thumb.is-done {
+      border-color: #28613c;
+    }
+
+    #ocr-strip .thumb.is-warning {
+      border-color: #8a6819;
+    }
+
+    #ocr-strip .thumb.is-error {
+      border-color: #a33e49;
+    }
+
+    #ocr-strip .thumb.is-processing {
+      border-color: #9d7cff;
+    }
+
+    #ocr-strip .thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      opacity: .75;
+    }
+
+    #ocr-strip .thumb .tag {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding: 2px 4px;
+      background: rgba(5, 8, 15, .85);
+      color: #c8cfdd;
+      font-size: 8.5px;
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    #ocr-canvas-wrap {
+      position: relative;
+      margin-top: 12px;
+      overflow: hidden;
+      border: 1px solid #26344f;
+      border-radius: 11px;
+      background: #05080f;
+    }
+
+    #ocr-canvas {
+      display: block;
+      width: 100%;
+      cursor: crosshair;
+      user-select: none;
+      touch-action: none;
+    }
+
+    #ocr-crop-box {
+      position: absolute;
+      border: 2px dashed #b99eff;
+      background: rgba(139, 92, 246, .15);
+      pointer-events: none;
+      display: none;
+    }
+
+    #ocr-preview-wrap {
+      margin-top: 12px;
+    }
+
+    #ocr-preview-wrap h4 {
+      margin-bottom: 7px;
+      color: #9da8bd;
+      font-size: 10.5px;
+      font-weight: 800;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    #ocr-preview {
+      display: block;
+      width: 100%;
+      border: 1px solid #26344f;
+      border-radius: 11px;
+      background: #fff;
+    }
+
+    .ocr-warn {
+      margin-top: 10px;
+      padding: 11px 13px;
+      border: 1px solid #6f5618;
+      border-radius: 10px;
+      background: #2a2009;
+      color: #ffd76d;
+      font-size: 11.5px;
+      line-height: 1.6;
+    }
+
+    #ocr-extraction-panel {
+      margin-top: 14px;
+      padding: 14px;
+      border: 1px solid #26344f;
+      border-radius: 12px;
+      background: #09111f;
+    }
+
+    .ocr-progress-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 9px;
+    }
+
+    .ocr-progress-head strong {
+      min-width: 0;
+      color: #e6eaf2;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .ocr-progress-head span {
+      flex: 0 0 auto;
+      color: #aeb7ca;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .ocr-progress-track {
+      height: 10px;
+      overflow: hidden;
+      border: 1px solid #26344f;
+      border-radius: 999px;
+      background: #05080f;
+    }
+
+    #ocr-progress-bar {
+      width: 0;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #6d4aff, #a78bfa);
+      transition: width .25s ease;
+    }
+
+    .ocr-progress-meta {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .ocr-progress-meta div {
+      padding: 8px 9px;
+      border: 1px solid #1f2b42;
+      border-radius: 8px;
+      background: #07101d;
+    }
+
+    .ocr-progress-meta small {
+      display: block;
+      margin-bottom: 3px;
+      color: #65718a;
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+    }
+
+    .ocr-progress-meta strong {
+      color: #d7ddeb;
+      font-size: 12px;
+    }
+
+    .ocr-extraction-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 11px;
+    }
+
+    .ocr-extraction-actions .eq-btn:disabled {
+      opacity: .45;
+      cursor: not-allowed;
+    }
+
+    #ocr-file-results {
+      display: grid;
+      gap: 7px;
+      max-height: 300px;
+      margin-top: 12px;
+      overflow: auto;
+      scrollbar-width: thin;
+    }
+
+    .ocr-file-result {
+      display: grid;
+      grid-template-columns: 22px minmax(0, 1fr) auto;
+      gap: 9px;
+      align-items: start;
+      padding: 9px 10px;
+      border: 1px solid #1f2b42;
+      border-radius: 9px;
+      background: #07101d;
+    }
+
+    .ocr-file-result.is-processing {
+      border-color: #7254c9;
+      background: #110d23;
+    }
+
+    .ocr-file-result.is-success {
+      border-color: #28583a;
+    }
+
+    .ocr-file-result.is-warning {
+      border-color: #6f5618;
+    }
+
+    .ocr-file-result.is-error {
+      border-color: #75353d;
+      background: #210d12;
+    }
+
+    .ocr-file-result.is-cancelled {
+      border-color: #5d6471;
+    }
+
+    .ocr-file-icon {
+      padding-top: 1px;
+      text-align: center;
+      font-size: 13px;
+    }
+
+    .ocr-file-info {
+      min-width: 0;
+    }
+
+    .ocr-file-name {
+      color: #d7ddeb;
+      font-size: 11.5px;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .ocr-file-message {
+      margin-top: 3px;
+      color: #7f8aa0;
+      font-size: 10px;
+      line-height: 1.45;
+      word-break: break-word;
+    }
+
+    .ocr-file-time {
+      color: #65718a;
+      font-size: 9.5px;
+      white-space: nowrap;
+    }
+
+    .ocr-file-result.is-error .ocr-file-message {
+      color: #ff9da5;
+    }
+
+    .ocr-file-result.is-warning .ocr-file-message {
+      color: #ffd76d;
+    }
+
+    .ocr-file-result.is-success .ocr-file-message {
+      color: #8fd3a6;
+    }
+
+    .ocr-file-result.is-processing .ocr-file-message {
+      color: #c5b5ff;
+    }
+
+    .imp-card {
+      margin-bottom: 16px;
+      padding: 18px;
+      border: 1px solid #26344f;
+      border-radius: 14px;
+      background: #0f1728;
+    }
+
+    .imp-card h3 {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      margin-bottom: 14px;
+      font-size: 16px;
+    }
+
+    .imp-card h3 small {
+      color: #65718a;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .imp-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .imp-grid label {
+      display: block;
+      color: #c8cfdd;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .imp-grid label.full {
+      grid-column: 1 / -1;
+    }
+
+    .imp-grid input,
+    .imp-grid textarea {
+      margin-top: 6px;
+    }
+
+    .imp-rarity {
+      margin-bottom: 12px;
+      padding: 13px;
+      border: 1px solid #26344f;
+      border-radius: 11px;
+      background: #09111f;
+    }
+
+    .imp-rarity-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .imp-rarity-head strong {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+
+    .imp-rarity-head .eq-btn {
+      min-height: 32px;
+      padding: 6px 11px;
+      font-size: 10.5px;
+    }
+
+    .imp-source {
+      color: #65718a;
+      font-size: 10px;
+    }
+
+    .imp-stats {
+      display: grid;
+      gap: 8px;
+    }
+
+    .imp-stat {
+      display: grid;
+      grid-template-columns:
+        minmax(0, 1.6fr)
+        110px
+        minmax(0, 1fr)
+        38px;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .imp-stat select,
+    .imp-stat input {
+      min-height: 38px;
+      font-size: 12px;
+    }
+
+    .imp-stat-raw {
+      color: #65718a;
+      font-size: 10.5px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .imp-stat .eq-btn,
+    .imp-bonus .eq-btn {
+      min-height: 38px;
+      padding: 0;
+      font-size: 12px;
+    }
+
+    .imp-bonus {
+      display: grid;
+      grid-template-columns:
+        90px
+        minmax(0, 1fr)
+        minmax(0, 1.6fr)
+        38px;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .imp-bonus input {
+      min-height: 38px;
+      font-size: 12px;
+    }
+
+    .imp-missing {
+      margin-top: 10px;
+      padding: 10px 12px;
+      border: 1px dashed #6f5618;
+      border-radius: 10px;
+      color: #ffd76d;
+      font-size: 11px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 820px) {
+      .imp-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .imp-stat,
+      .imp-bonus {
+        grid-template-columns: 1fr;
+      }
+
+      .imp-stat-raw {
+        white-space: normal;
+      }
+
+      .ocr-progress-meta {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .ocr-file-result {
+        grid-template-columns: 22px minmax(0, 1fr);
+      }
+
+      .ocr-file-time {
+        grid-column: 2;
+      }
     }
   `;
 
@@ -268,52 +826,94 @@ function buildToolbar() {
 
       <label class="ocr-slider">
         Contraste
-        <input type="range" id="opt-threshold" min="20" max="85" value="55">
+        <input
+          type="range"
+          id="opt-threshold"
+          min="20"
+          max="85"
+          value="55"
+        >
         <output id="opt-threshold-value">55</output>
       </label>
 
       <label class="ocr-slider">
         Escala
-        <input type="range" id="opt-scale" min="2" max="5" step="1" value="3">
+        <input
+          type="range"
+          id="opt-scale"
+          min="2"
+          max="5"
+          step="1"
+          value="3"
+        >
         <output id="opt-scale-value">3×</output>
       </label>
 
-      <button type="button" class="eq-btn" id="opt-reset-crop">Limpar recorte</button>
+      <button
+        type="button"
+        class="eq-btn"
+        id="opt-reset-crop"
+      >
+        Limpar recorte
+      </button>
     </div>
 
     <p class="ocr-hint">
-      Marque com o mouse <strong>apenas o painel de efeitos</strong> em um print.
-      Como o jogo desenha o painel sempre no mesmo lugar, o mesmo recorte vale
-      para os outros — leia todos de uma vez.
+      Marque com o mouse <strong>apenas o painel de efeitos</strong>
+      em um print. Como o jogo desenha o painel sempre no mesmo
+      lugar, o mesmo recorte vale para os outros.
     </p>
   `;
 
   zone.parentElement.insertBefore(bar, zone.nextSibling);
 
-  $('opt-invert').addEventListener('change', (event) => {
+  $('opt-invert')?.addEventListener('change', event => {
     options.invert = event.target.checked;
     renderPreview();
   });
 
-  $('opt-shared').addEventListener('change', (event) => {
+  $('opt-shared')?.addEventListener('change', event => {
     options.sharedCrop = event.target.checked;
+    renderPreview();
   });
 
-  $('opt-threshold').addEventListener('input', (event) => {
+  $('opt-threshold')?.addEventListener('input', event => {
     options.threshold = Number(event.target.value);
-    $('opt-threshold-value').textContent = event.target.value;
+
+    const output = $('opt-threshold-value');
+
+    if (output) {
+      output.textContent = event.target.value;
+    }
+
     renderPreview();
   });
 
-  $('opt-scale').addEventListener('input', (event) => {
+  $('opt-scale')?.addEventListener('input', event => {
     options.scale = Number(event.target.value);
-    $('opt-scale-value').textContent = `${event.target.value}×`;
+
+    const output = $('opt-scale-value');
+
+    if (output) {
+      output.textContent = `${event.target.value}×`;
+    }
+
+    renderPreview();
   });
 
-  $('opt-reset-crop').addEventListener('click', () => {
-    shots.forEach(shot => { shot.crop = null; });
-    $('ocr-crop-box').style.display = 'none';
+  $('opt-reset-crop')?.addEventListener('click', () => {
+    shots.forEach(shot => {
+      shot.crop = null;
+    });
+
+    const cropBox = $('ocr-crop-box');
+
+    if (cropBox) {
+      cropBox.style.display = 'none';
+    }
+
     renderPreview();
+    showWarnings();
   });
 }
 
@@ -325,6 +925,7 @@ function buildWorkArea() {
 
   const wrap = document.createElement('div');
   wrap.id = 'ocr-canvas-wrap';
+
   wrap.innerHTML = `
     <canvas id="ocr-canvas"></canvas>
     <div id="ocr-crop-box"></div>
@@ -332,39 +933,466 @@ function buildWorkArea() {
 
   const preview = document.createElement('div');
   preview.id = 'ocr-preview-wrap';
+
   preview.innerHTML = `
     <h4>Como o leitor enxerga</h4>
     <canvas id="ocr-preview"></canvas>
   `;
 
   const toolbar = $('ocr-toolbar');
+
+  if (!toolbar?.parentElement) {
+    throw new Error('Não foi possível posicionar a área de OCR.');
+  }
+
   toolbar.parentElement.insertBefore(strip, toolbar.nextSibling);
   strip.parentElement.insertBefore(wrap, strip.nextSibling);
   wrap.parentElement.insertBefore(preview, wrap.nextSibling);
 
-  strip.addEventListener('click', (event) => {
+  strip.addEventListener('click', event => {
     const thumb = event.target.closest('.thumb');
+
     if (!thumb) return;
 
-    activeIndex = Number(thumb.dataset.index);
+    const nextIndex = Number(thumb.dataset.index);
+
+    if (!Number.isInteger(nextIndex)) return;
+    if (!shots[nextIndex]) return;
+
+    activeIndex = nextIndex;
+
     renderStrip();
     renderPreview();
+    showWarnings();
   });
 
   bindCropSelection();
 }
 
+function buildExtractionPanel() {
+  if ($('ocr-extraction-panel')) return;
+
+  const panel = document.createElement('div');
+  panel.id = 'ocr-extraction-panel';
+
+  panel.innerHTML = `
+    <div class="ocr-progress-head">
+      <strong id="ocr-progress-title">
+        Extração ainda não iniciada
+      </strong>
+
+      <span id="ocr-progress-percent">0%</span>
+    </div>
+
+    <div
+      class="ocr-progress-track"
+      role="progressbar"
+      aria-label="Progresso da extração"
+      aria-valuemin="0"
+      aria-valuemax="100"
+      aria-valuenow="0"
+    >
+      <div id="ocr-progress-bar"></div>
+    </div>
+
+    <div class="ocr-progress-meta">
+      <div>
+        <small>Processados</small>
+        <strong id="ocr-count-processed">0 / 0</strong>
+      </div>
+
+      <div>
+        <small>Concluídos</small>
+        <strong id="ocr-count-success">0</strong>
+      </div>
+
+      <div>
+        <small>Avisos / erros</small>
+        <strong id="ocr-count-errors">0</strong>
+      </div>
+
+      <div>
+        <small>Tempo</small>
+        <strong id="ocr-elapsed">00:00</strong>
+      </div>
+    </div>
+
+    <div class="ocr-extraction-actions">
+      <button
+        type="button"
+        class="eq-btn"
+        id="ocr-cancel"
+        disabled
+      >
+        Cancelar coleta
+      </button>
+
+      <button
+        type="button"
+        class="eq-btn"
+        id="ocr-restart"
+        disabled
+      >
+        Reiniciar coleta
+      </button>
+    </div>
+
+    <div id="ocr-file-results"></div>
+  `;
+
+  const preview = $('ocr-preview-wrap');
+
+  if (preview?.parentElement) {
+    preview.parentElement.insertBefore(panel, preview.nextSibling);
+  } else if (status.parentElement) {
+    status.parentElement.insertBefore(panel, status);
+  }
+
+  $('ocr-cancel')?.addEventListener('click', async () => {
+    await cancelExtraction();
+  });
+
+  $('ocr-restart')?.addEventListener('click', async () => {
+    await restartExtraction();
+  });
+
+  updateExtractionPanel();
+}
+
 function renderStrip() {
   const strip = $('ocr-strip');
+
   if (!strip) return;
 
-  strip.innerHTML = shots.map((shot, index) => `
-    <div class="thumb ${index === activeIndex ? 'is-active' : ''} ${shot.text ? 'is-done' : ''}"
-         data-index="${index}">
-      <img src="${shot.url}" alt="">
-      <span class="tag">${escapeHtml(shot.label || `#${index + 1}`)}</span>
-    </div>
-  `).join('');
+  strip.innerHTML = shots.map((shot, index) => {
+    const classes = ['thumb'];
+
+    if (index === activeIndex) {
+      classes.push('is-active');
+    }
+
+    if (shot.status === 'success') {
+      classes.push('is-done');
+    }
+
+    if (shot.status === 'warning') {
+      classes.push('is-warning');
+    }
+
+    if (shot.status === 'error') {
+      classes.push('is-error');
+    }
+
+    if (shot.status === 'processing') {
+      classes.push('is-processing');
+    }
+
+    return `
+      <div
+        class="${classes.join(' ')}"
+        data-index="${index}"
+      >
+        <img src="${shot.url}" alt="">
+
+        <span class="tag">
+          ${escapeHtml(shot.label || `#${index + 1}`)}
+        </span>
+      </div>
+    `;
+  }).join('');
+}
+
+/* =========================================================
+   PAINEL DE PROGRESSO
+========================================================= */
+
+function formatDuration(milliseconds = 0) {
+  const totalSeconds = Math.max(
+    0,
+    Math.floor(milliseconds / 1000)
+  );
+
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return (
+    `${String(minutes).padStart(2, '0')}:` +
+    `${String(seconds).padStart(2, '0')}`
+  );
+}
+
+function getExtractionSummary() {
+  const processed = shots.filter(shot =>
+    ['success', 'warning', 'error'].includes(shot.status)
+  ).length;
+
+  const success = shots.filter(
+    shot => shot.status === 'success'
+  ).length;
+
+  const warnings = shots.filter(
+    shot => shot.status === 'warning'
+  ).length;
+
+  const errors = shots.filter(
+    shot => shot.status === 'error'
+  ).length;
+
+  const cancelled = shots.filter(
+    shot => shot.status === 'cancelled'
+  ).length;
+
+  return {
+    processed,
+    success,
+    warnings,
+    errors,
+    cancelled,
+    problems: warnings + errors,
+    total: shots.length
+  };
+}
+
+function shotResultInfo(shot) {
+  switch (shot.status) {
+    case 'processing':
+      return {
+        icon: '⏳',
+        className: 'is-processing',
+        message: 'Extraindo e interpretando o texto...'
+      };
+
+    case 'success': {
+      const rarityCount = Object.keys(
+        shot.parsed?.variants || {}
+      ).length;
+
+      const bonusCount =
+        shot.parsed?.bonuses?.length || 0;
+
+      return {
+        icon: '✓',
+        className: 'is-success',
+        message:
+          `${rarityCount} raridade(s) e ` +
+          `${bonusCount} bônus reconhecido(s).`
+      };
+    }
+
+    case 'warning':
+      return {
+        icon: '!',
+        className: 'is-warning',
+        message:
+          shot.error ||
+          'Texto lido, mas nenhum dado estruturado foi reconhecido.'
+      };
+
+    case 'error':
+      return {
+        icon: '✕',
+        className: 'is-error',
+        message:
+          shot.error ||
+          'Não foi possível processar este arquivo.'
+      };
+
+    case 'cancelled':
+      return {
+        icon: '■',
+        className: 'is-cancelled',
+        message:
+          shot.error ||
+          'Não processado porque a coleta foi cancelada.'
+      };
+
+    default:
+      return {
+        icon: '•',
+        className: '',
+        message: 'Aguardando processamento.'
+      };
+  }
+}
+
+function renderExtractionResults() {
+  const container = $('ocr-file-results');
+
+  if (!container) return;
+
+  if (!shots.length) {
+    container.innerHTML = '';
+    return;
+  }
+
+  container.innerHTML = shots.map(shot => {
+    const info = shotResultInfo(shot);
+
+    return `
+      <div class="ocr-file-result ${info.className}">
+        <div class="ocr-file-icon">
+          ${info.icon}
+        </div>
+
+        <div class="ocr-file-info">
+          <div
+            class="ocr-file-name"
+            title="${escapeHtml(shot.label)}"
+          >
+            ${escapeHtml(shot.label)}
+          </div>
+
+          <div class="ocr-file-message">
+            ${escapeHtml(info.message)}
+          </div>
+        </div>
+
+        <div class="ocr-file-time">
+          ${
+            shot.durationMs
+              ? formatDuration(shot.durationMs)
+              : ''
+          }
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function updateExtractionPanel(customTitle = '') {
+  const panel = $('ocr-extraction-panel');
+
+  if (!panel) return;
+
+  const summary = getExtractionSummary();
+
+  /*
+    Arquivos cancelados não entram como processados.
+
+    Quando toda a coleta é cancelada antes de terminar, a barra
+    mostra apenas o que realmente chegou a ser processado.
+  */
+
+  const percent = summary.total
+    ? Math.round(
+        (summary.processed / summary.total) * 100
+      )
+    : 0;
+
+  const current = shots.find(
+    shot => shot.status === 'processing'
+  );
+
+  let title = customTitle;
+
+  if (!title) {
+    if (extractionRun.running && current) {
+      title = `Processando ${current.label}`;
+    } else if (extractionRun.cancelled) {
+      title = 'Coleta cancelada';
+    } else if (
+      summary.processed === summary.total &&
+      summary.total > 0
+    ) {
+      title = summary.problems
+        ? 'Coleta concluída com avisos'
+        : 'Coleta concluída';
+    } else if (summary.total > 0) {
+      title = 'Pronto para iniciar a extração';
+    } else {
+      title = 'Extração ainda não iniciada';
+    }
+  }
+
+  const titleElement = $('ocr-progress-title');
+  const percentElement = $('ocr-progress-percent');
+  const progressBar = $('ocr-progress-bar');
+  const processedElement = $('ocr-count-processed');
+  const successElement = $('ocr-count-success');
+  const errorElement = $('ocr-count-errors');
+  const elapsedElement = $('ocr-elapsed');
+  const cancelButton = $('ocr-cancel');
+  const restartButton = $('ocr-restart');
+
+  if (titleElement) {
+    titleElement.textContent = title;
+  }
+
+  if (percentElement) {
+    percentElement.textContent = `${percent}%`;
+  }
+
+  if (progressBar) {
+    progressBar.style.width = `${percent}%`;
+  }
+
+  const track = panel.querySelector('.ocr-progress-track');
+
+  if (track) {
+    track.setAttribute(
+      'aria-valuenow',
+      String(percent)
+    );
+  }
+
+  if (processedElement) {
+    processedElement.textContent =
+      `${summary.processed} / ${summary.total}`;
+  }
+
+  if (successElement) {
+    successElement.textContent =
+      String(summary.success);
+  }
+
+  if (errorElement) {
+    errorElement.textContent =
+      String(summary.problems);
+  }
+
+  let elapsed = extractionRun.finishedElapsedMs;
+
+  if (
+    extractionRun.running &&
+    extractionRun.startedAt
+  ) {
+    elapsed =
+      Date.now() - extractionRun.startedAt;
+  }
+
+  if (elapsedElement) {
+    elapsedElement.textContent =
+      formatDuration(elapsed);
+  }
+
+  if (cancelButton) {
+    cancelButton.disabled =
+      !extractionRun.running;
+  }
+
+  if (restartButton) {
+    restartButton.disabled =
+      extractionRun.running || !shots.length;
+  }
+
+  renderExtractionResults();
+}
+
+function startElapsedTimer() {
+  stopElapsedTimer();
+
+  extractionRun.timer = window.setInterval(() => {
+    if (!extractionRun.running) return;
+
+    updateExtractionPanel();
+  }, 500);
+}
+
+function stopElapsedTimer() {
+  if (!extractionRun.timer) return;
+
+  clearInterval(extractionRun.timer);
+  extractionRun.timer = null;
 }
 
 /* =========================================================
@@ -377,11 +1405,17 @@ function currentShot() {
 
 function effectiveCrop(shot) {
   if (!shot) return null;
-  if (shot.crop) return shot.crop;
+
+  if (shot.crop) {
+    return shot.crop;
+  }
 
   if (options.sharedCrop) {
     const reference = shots.find(item => item.crop);
-    if (reference) return reference.crop;
+
+    if (reference) {
+      return reference.crop;
+    }
   }
 
   return null;
@@ -391,18 +1425,24 @@ function bindCropSelection() {
   const canvas = $('ocr-canvas');
   const box = $('ocr-crop-box');
 
+  if (!canvas || !box) return;
+
   let dragging = false;
   let startX = 0;
   let startY = 0;
 
-  canvas.addEventListener('pointerdown', (event) => {
+  canvas.addEventListener('pointerdown', event => {
     const shot = currentShot();
+
     if (!shot) return;
+    if (extractionRun.running) return;
 
     dragging = true;
+
     canvas.setPointerCapture(event.pointerId);
 
     const rect = canvas.getBoundingClientRect();
+
     startX = event.clientX - rect.left;
     startY = event.clientY - rect.top;
 
@@ -413,49 +1453,75 @@ function bindCropSelection() {
     box.style.height = '0px';
   });
 
-  canvas.addEventListener('pointermove', (event) => {
+  canvas.addEventListener('pointermove', event => {
     if (!dragging) return;
 
     const rect = canvas.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
 
-    box.style.left = `${Math.min(startX, x)}px`;
-    box.style.top = `${Math.min(startY, y)}px`;
-    box.style.width = `${Math.abs(x - startX)}px`;
-    box.style.height = `${Math.abs(y - startY)}px`;
+    box.style.left =
+      `${Math.min(startX, x)}px`;
+
+    box.style.top =
+      `${Math.min(startY, y)}px`;
+
+    box.style.width =
+      `${Math.abs(x - startX)}px`;
+
+    box.style.height =
+      `${Math.abs(y - startY)}px`;
   });
 
   function finish() {
     if (!dragging) return;
+
     dragging = false;
 
     const shot = currentShot();
+
     if (!shot) return;
 
     const rect = canvas.getBoundingClientRect();
-    const ratio = shot.image.naturalWidth / rect.width;
 
-    const left = parseFloat(box.style.left);
-    const top = parseFloat(box.style.top);
-    const width = parseFloat(box.style.width);
-    const height = parseFloat(box.style.height);
+    if (!rect.width || !rect.height) {
+      box.style.display = 'none';
+      return;
+    }
+
+    const left =
+      parseFloat(box.style.left) || 0;
+
+    const top =
+      parseFloat(box.style.top) || 0;
+
+    const width =
+      parseFloat(box.style.width) || 0;
+
+    const height =
+      parseFloat(box.style.height) || 0;
 
     if (width < 20 || height < 20) {
       shot.crop = null;
       box.style.display = 'none';
     } else {
-      /* Guarda em proporção (0 a 1) para funcionar mesmo se
-         os prints tiverem resoluções diferentes. */
+      /*
+        Guarda o recorte em proporção entre 0 e 1.
+
+        Isso permite reaplicar o mesmo recorte em imagens com
+        resoluções diferentes.
+      */
+
       shot.crop = {
-        x: (left * ratio) / shot.image.naturalWidth,
-        y: (top * ratio) / shot.image.naturalHeight,
-        w: (width * ratio) / shot.image.naturalWidth,
-        h: (height * ratio) / shot.image.naturalHeight
+        x: left / rect.width,
+        y: top / rect.height,
+        w: width / rect.width,
+        h: height / rect.height
       };
     }
 
     renderPreview();
+    showWarnings();
   }
 
   canvas.addEventListener('pointerup', finish);
@@ -472,6 +1538,16 @@ function buildProcessedCanvas(shot) {
   const image = shot.image;
   const relative = effectiveCrop(shot);
 
+  if (
+    !image ||
+    !image.naturalWidth ||
+    !image.naturalHeight
+  ) {
+    throw new Error(
+      'A imagem não possui dimensões válidas.'
+    );
+  }
+
   const area = relative
     ? {
         x: relative.x * image.naturalWidth,
@@ -479,40 +1555,121 @@ function buildProcessedCanvas(shot) {
         w: relative.w * image.naturalWidth,
         h: relative.h * image.naturalHeight
       }
-    : { x: 0, y: 0, w: image.naturalWidth, h: image.naturalHeight };
+    : {
+        x: 0,
+        y: 0,
+        w: image.naturalWidth,
+        h: image.naturalHeight
+      };
+
+  if (
+    !Number.isFinite(area.x) ||
+    !Number.isFinite(area.y) ||
+    !Number.isFinite(area.w) ||
+    !Number.isFinite(area.h) ||
+    area.w <= 0 ||
+    area.h <= 0
+  ) {
+    throw new Error(
+      'O recorte possui dimensões inválidas.'
+    );
+  }
+
+  const boundedArea = {
+    x: Math.max(
+      0,
+      Math.min(area.x, image.naturalWidth - 1)
+    ),
+    y: Math.max(
+      0,
+      Math.min(area.y, image.naturalHeight - 1)
+    ),
+    w: Math.max(
+      1,
+      Math.min(
+        area.w,
+        image.naturalWidth - Math.max(0, area.x)
+      )
+    ),
+    h: Math.max(
+      1,
+      Math.min(
+        area.h,
+        image.naturalHeight - Math.max(0, area.y)
+      )
+    )
+  };
 
   const scale = options.scale;
 
   const canvas = document.createElement('canvas');
-  canvas.width = Math.max(1, Math.round(area.w * scale));
-  canvas.height = Math.max(1, Math.round(area.h * scale));
 
-  const context = canvas.getContext('2d', { willReadFrequently: true });
+  canvas.width = Math.max(
+    1,
+    Math.round(boundedArea.w * scale)
+  );
+
+  canvas.height = Math.max(
+    1,
+    Math.round(boundedArea.h * scale)
+  );
+
+  const context = canvas.getContext(
+    '2d',
+    { willReadFrequently: true }
+  );
+
+  if (!context) {
+    throw new Error(
+      'Não foi possível criar o contexto de imagem.'
+    );
+  }
 
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = 'high';
 
   context.drawImage(
     image,
-    area.x, area.y, area.w, area.h,
-    0, 0, canvas.width, canvas.height
+    boundedArea.x,
+    boundedArea.y,
+    boundedArea.w,
+    boundedArea.h,
+    0,
+    0,
+    canvas.width,
+    canvas.height
   );
 
-  const buffer = context.getImageData(0, 0, canvas.width, canvas.height);
+  const buffer = context.getImageData(
+    0,
+    0,
+    canvas.width,
+    canvas.height
+  );
+
   const data = buffer.data;
   const cut = (options.threshold / 100) * 255;
 
-  for (let i = 0; i < data.length; i += 4) {
-    let value = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+  for (
+    let index = 0;
+    index < data.length;
+    index += 4
+  ) {
+    let value =
+      data[index] * 0.299 +
+      data[index + 1] * 0.587 +
+      data[index + 2] * 0.114;
 
-    if (options.invert) value = 255 - value;
+    if (options.invert) {
+      value = 255 - value;
+    }
 
     value = value > cut ? 255 : 0;
 
-    data[i] = value;
-    data[i + 1] = value;
-    data[i + 2] = value;
-    data[i + 3] = 255;
+    data[index] = value;
+    data[index + 1] = value;
+    data[index + 2] = value;
+    data[index + 3] = 255;
   }
 
   context.putImageData(buffer, 0, 0);
@@ -522,38 +1679,87 @@ function buildProcessedCanvas(shot) {
 
 function renderPreview() {
   const shot = currentShot();
+
   if (!shot) return;
 
   const canvas = $('ocr-canvas');
+  const box = $('ocr-crop-box');
+  const preview = $('ocr-preview');
+
+  if (!canvas || !box || !preview) return;
+
   const context = canvas.getContext('2d');
+
+  if (!context) return;
 
   canvas.width = shot.image.naturalWidth;
   canvas.height = shot.image.naturalHeight;
-  context.drawImage(shot.image, 0, 0);
 
-  /* Desenha o recorte herdado, se houver. */
-  const box = $('ocr-crop-box');
+  context.clearRect(
+    0,
+    0,
+    canvas.width,
+    canvas.height
+  );
+
+  context.drawImage(
+    shot.image,
+    0,
+    0
+  );
+
   const relative = effectiveCrop(shot);
 
   if (relative) {
     const rect = canvas.getBoundingClientRect();
 
     box.style.display = 'block';
-    box.style.left = `${relative.x * rect.width}px`;
-    box.style.top = `${relative.y * rect.height}px`;
-    box.style.width = `${relative.w * rect.width}px`;
-    box.style.height = `${relative.h * rect.height}px`;
+    box.style.left =
+      `${relative.x * rect.width}px`;
+
+    box.style.top =
+      `${relative.y * rect.height}px`;
+
+    box.style.width =
+      `${relative.w * rect.width}px`;
+
+    box.style.height =
+      `${relative.h * rect.height}px`;
   } else {
     box.style.display = 'none';
   }
 
-  const processed = buildProcessedCanvas(shot);
-  if (!processed) return;
+  try {
+    const processed = buildProcessedCanvas(shot);
 
-  const preview = $('ocr-preview');
-  preview.width = processed.width;
-  preview.height = processed.height;
-  preview.getContext('2d').drawImage(processed, 0, 0);
+    if (!processed) return;
+
+    preview.width = processed.width;
+    preview.height = processed.height;
+
+    const previewContext =
+      preview.getContext('2d');
+
+    if (!previewContext) return;
+
+    previewContext.clearRect(
+      0,
+      0,
+      preview.width,
+      preview.height
+    );
+
+    previewContext.drawImage(
+      processed,
+      0,
+      0
+    );
+  } catch (error) {
+    console.warn(
+      '[OCR] Não foi possível montar a prévia:',
+      error
+    );
+  }
 }
 
 /* =========================================================
@@ -561,29 +1767,49 @@ function renderPreview() {
 ========================================================= */
 
 function showWarnings() {
-  document.querySelectorAll('.ocr-warn').forEach(item => item.remove());
+  document
+    .querySelectorAll('.ocr-warn')
+    .forEach(item => item.remove());
 
   const warnings = [];
   const shot = currentShot();
 
-  if (shot && !effectiveCrop(shot)) {
-    const ratio = shot.image.naturalWidth / shot.image.naturalHeight;
+  if (
+    shot &&
+    !effectiveCrop(shot)
+  ) {
+    const ratio =
+      shot.image.naturalWidth /
+      shot.image.naturalHeight;
 
-    if (ratio > 2.2 || shot.image.naturalWidth > 2200) {
+    if (
+      ratio > 2.2 ||
+      shot.image.naturalWidth > 2200
+    ) {
       warnings.push(
-        'A imagem parece conter vários painéis juntos. Marque com o mouse ' +
-        'apenas o painel de efeitos de um item.'
+        'A imagem parece conter vários painéis juntos. ' +
+        'Marque com o mouse apenas o painel de efeitos ' +
+        'de um item.'
       );
     }
   }
 
   if (!warnings.length) return;
+  if (!status.parentElement) return;
 
-  const container = document.createElement('div');
+  const container =
+    document.createElement('div');
+
   container.className = 'ocr-warn';
-  container.innerHTML = warnings.map(escapeHtml).join('<br><br>');
 
-  status.parentElement.insertBefore(container, status);
+  container.innerHTML = warnings
+    .map(escapeHtml)
+    .join('<br><br>');
+
+  status.parentElement.insertBefore(
+    container,
+    status
+  );
 }
 
 /* =========================================================
@@ -592,16 +1818,26 @@ function showWarnings() {
 
 function matchRarity(line) {
   const clean = normalize(line);
-  if (!clean || clean.length > 22) return null;
 
-  const letters = clean.replace(/[^a-z]/g, '');
-  if (letters.length < 4) return null;
+  if (!clean || clean.length > 22) {
+    return null;
+  }
+
+  const letters =
+    clean.replace(/[^a-z]/g, '');
+
+  if (letters.length < 4) {
+    return null;
+  }
 
   let best = null;
   let bestScore = 0;
 
   for (const rarity of RARITIES) {
-    const score = similarity(letters, normalize(rarity.label));
+    const score = similarity(
+      letters,
+      normalize(rarity.label)
+    );
 
     if (score > bestScore) {
       bestScore = score;
@@ -609,26 +1845,47 @@ function matchRarity(line) {
     }
   }
 
-  return bestScore >= 0.72 ? best : null;
+  return bestScore >= 0.72
+    ? best
+    : null;
 }
 
 function matchStat(line) {
   const clean = normalize(line);
 
-  const numberMatch = clean.match(/([+-]?\s*\d+(?:[.,]\d+)?)\s*(%?)/);
-  if (!numberMatch) return null;
+  const numberMatch = clean.match(
+    /([+-]?\s*\d+(?:[.,]\d+)?)\s*(%?)/
+  );
 
-  const value = Number(String(numberMatch[1]).replace(/\s/g, '').replace(',', '.'));
-  if (!Number.isFinite(value)) return null;
+  if (!numberMatch) {
+    return null;
+  }
 
-  const isPercent = numberMatch[2] === '%' || clean.includes('%');
+  const value = Number(
+    String(numberMatch[1])
+      .replace(/\s/g, '')
+      .replace(',', '.')
+  );
+
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+
+  const isPercent =
+    numberMatch[2] === '%' ||
+    clean.includes('%');
 
   let best = null;
   let bestScore = 0;
 
   for (const stat of STATS) {
-    const hits = stat.keywords.filter(word => clean.includes(word)).length;
-    const score = hits / stat.keywords.length + (stat.percent === isPercent ? 0.12 : 0);
+    const hits = stat.keywords.filter(
+      word => clean.includes(word)
+    ).length;
+
+    const score =
+      hits / stat.keywords.length +
+      (stat.percent === isPercent ? 0.12 : 0);
 
     if (score > bestScore) {
       bestScore = score;
@@ -637,7 +1894,13 @@ function matchStat(line) {
   }
 
   if (!best || bestScore < 0.5) {
-    return { key: null, label: line.trim(), value, percent: isPercent, raw: line.trim() };
+    return {
+      key: null,
+      label: line.trim(),
+      value,
+      percent: isPercent,
+      raw: line.trim()
+    };
   }
 
   return {
@@ -651,10 +1914,17 @@ function matchStat(line) {
 
 function matchSetBonusHeader(line) {
   const clean = normalize(line);
-  if (!clean.includes('equipamento')) return null;
 
-  const numberMatch = clean.match(/(\d+)/);
-  return numberMatch ? Number(numberMatch[1]) : null;
+  if (!clean.includes('equipamento')) {
+    return null;
+  }
+
+  const numberMatch =
+    clean.match(/(\d+)/);
+
+  return numberMatch
+    ? Number(numberMatch[1])
+    : null;
 }
 
 function parseText(text) {
@@ -673,16 +1943,33 @@ function parseText(text) {
   for (const line of lines.slice(0, 12)) {
     const clean = normalize(line);
 
-    if (!result.setName && clean.includes('conjunto')) {
+    if (
+      !result.setName &&
+      clean.includes('conjunto')
+    ) {
       result.setName = line
-        .replace(/conjunto\s*(de\s*equipamento[s]?)?/i, '')
-        .replace(/\(\s*\d+\s*\/\s*\d+\s*\)/, '')
+        .replace(
+          /conjunto\s*(de\s*equipamento[s]?)?/i,
+          ''
+        )
+        .replace(
+          /\(\s*\d+\s*\/\s*\d+\s*\)/,
+          ''
+        )
         .trim();
+
       continue;
     }
 
-    if (!result.name && line.length >= 4 && !matchRarity(line) && !matchStat(line)) {
-      result.name = line.replace(/\s{2,}/g, ' ').trim();
+    if (
+      !result.name &&
+      line.length >= 4 &&
+      !matchRarity(line) &&
+      !matchStat(line)
+    ) {
+      result.name = line
+        .replace(/\s{2,}/g, ' ')
+        .trim();
     }
   }
 
@@ -695,11 +1982,16 @@ function parseText(text) {
     if (rarity) {
       currentRarity = rarity.slug;
       currentBonus = null;
-      if (!result.variants[currentRarity]) result.variants[currentRarity] = [];
+
+      if (!result.variants[currentRarity]) {
+        result.variants[currentRarity] = [];
+      }
+
       continue;
     }
 
-    const pieces = matchSetBonusHeader(line);
+    const pieces =
+      matchSetBonusHeader(line);
 
     if (pieces) {
       currentBonus = {
@@ -710,26 +2002,36 @@ function parseText(text) {
 
       result.bonuses.push(currentBonus);
       currentRarity = null;
+
       continue;
     }
 
     const stat = matchStat(line);
+
     if (!stat) continue;
 
     if (currentBonus) {
-      currentBonus.description = currentBonus.description
-        ? `${currentBonus.description} · ${stat.raw}`
-        : stat.raw;
+      currentBonus.description =
+        currentBonus.description
+          ? `${currentBonus.description} · ${stat.raw}`
+          : stat.raw;
+
       continue;
     }
 
     if (currentRarity) {
-      result.variants[currentRarity].push(stat);
+      result.variants[currentRarity]
+        .push(stat);
     }
   }
 
-  for (const [slug, attrs] of Object.entries(result.variants)) {
-    if (!attrs.length) delete result.variants[slug];
+  for (
+    const [slug, attributes]
+    of Object.entries(result.variants)
+  ) {
+    if (!attributes.length) {
+      delete result.variants[slug];
+    }
   }
 
   return result;
@@ -737,26 +2039,36 @@ function parseText(text) {
 
 /* =========================================================
    FUSÃO DOS PRINTS
-
-   Cada print traz uma raridade expandida. Juntamos tudo num
-   equipamento só, escolhendo o valor mais frequente quando
-   houver divergência entre leituras.
 ========================================================= */
 
 function mostFrequent(values) {
   const tally = new Map();
 
-  values.filter(Boolean).forEach(value => {
-    const clean = String(value).trim();
-    if (!clean) return;
-    tally.set(clean, (tally.get(clean) ?? 0) + 1);
-  });
+  values
+    .filter(Boolean)
+    .forEach(value => {
+      const clean =
+        String(value).trim();
+
+      if (!clean) return;
+
+      tally.set(
+        clean,
+        (tally.get(clean) ?? 0) + 1
+      );
+    });
 
   let best = '';
   let bestCount = 0;
 
   for (const [value, count] of tally) {
-    if (count > bestCount || (count === bestCount && value.length > best.length)) {
+    if (
+      count > bestCount ||
+      (
+        count === bestCount &&
+        value.length > best.length
+      )
+    ) {
       best = value;
       bestCount = count;
     }
@@ -766,11 +2078,21 @@ function mostFrequent(values) {
 }
 
 function mergeShots() {
-  const readable = shots.filter(shot => shot.parsed);
+  const readable = shots.filter(
+    shot => shot.parsed
+  );
 
   const result = {
-    name: mostFrequent(readable.map(shot => shot.parsed.name)),
-    setName: mostFrequent(readable.map(shot => shot.parsed.setName)),
+    name: mostFrequent(
+      readable.map(
+        shot => shot.parsed.name
+      )
+    ),
+    setName: mostFrequent(
+      readable.map(
+        shot => shot.parsed.setName
+      )
+    ),
     description: '',
     recommendation: '',
     variants: {},
@@ -778,33 +2100,64 @@ function mergeShots() {
     sources: {}
   };
 
-  /* Atributos por raridade: o print que trouxe mais atributos
-     reconhecidos para aquela raridade vence. */
   for (const shot of readable) {
-    for (const [slug, attrs] of Object.entries(shot.parsed.variants)) {
-      const known = attrs.filter(attr => attr.key).length;
-      const current = result.variants[slug];
-      const currentKnown = current ? current.filter(attr => attr.key).length : -1;
+    for (
+      const [slug, attributes]
+      of Object.entries(
+        shot.parsed.variants
+      )
+    ) {
+      const known = attributes.filter(
+        attribute => attribute.key
+      ).length;
+
+      const current =
+        result.variants[slug];
+
+      const currentKnown = current
+        ? current.filter(
+            attribute => attribute.key
+          ).length
+        : -1;
 
       if (known > currentKnown) {
-        result.variants[slug] = attrs;
-        result.sources[slug] = shot.label;
+        result.variants[slug] =
+          attributes;
+
+        result.sources[slug] =
+          shot.label;
       }
     }
   }
 
-  /* Bônus: junta sem repetir a mesma quantidade de peças. */
   const seen = new Set();
 
   for (const shot of readable) {
-    for (const bonus of shot.parsed.bonuses) {
-      if (seen.has(bonus.required_pieces)) continue;
-      seen.add(bonus.required_pieces);
+    for (
+      const bonus
+      of shot.parsed.bonuses
+    ) {
+      if (
+        seen.has(
+          bonus.required_pieces
+        )
+      ) {
+        continue;
+      }
+
+      seen.add(
+        bonus.required_pieces
+      );
+
       result.bonuses.push(bonus);
     }
   }
 
-  result.bonuses.sort((a, b) => a.required_pieces - b.required_pieces);
+  result.bonuses.sort(
+    (first, second) =>
+      first.required_pieces -
+      second.required_pieces
+  );
 
   return result;
 }
@@ -813,67 +2166,155 @@ function mergeShots() {
    REVISÃO
 ========================================================= */
 
-function statRow(attr, rarity) {
-  const options = STATS.map(stat => `
-    <option value="${stat.key}" ${stat.key === attr.key ? 'selected' : ''}>
+function statRow(attribute, rarity) {
+  const statOptions = STATS.map(stat => `
+    <option
+      value="${stat.key}"
+      ${
+        stat.key === attribute.key
+          ? 'selected'
+          : ''
+      }
+    >
       ${escapeHtml(stat.label)}
     </option>
   `).join('');
 
   return `
-    <div class="imp-stat" data-rarity="${escapeHtml(rarity)}">
+    <div
+      class="imp-stat"
+      data-rarity="${escapeHtml(rarity)}"
+    >
       <select class="admin-select imp-stat-key">
-        <option value="">— não reconhecido —</option>
-        ${options}
+        <option value="">
+          — não reconhecido —
+        </option>
+
+        ${statOptions}
       </select>
 
-      <input class="admin-input imp-stat-value" type="number" step="0.01"
-             value="${Number.isFinite(attr.value) ? attr.value : ''}">
+      <input
+        class="admin-input imp-stat-value"
+        type="number"
+        step="0.01"
+        value="${
+          Number.isFinite(attribute.value)
+            ? attribute.value
+            : ''
+        }"
+      >
 
-      <span class="imp-stat-raw" title="${escapeHtml(attr.raw || '')}">
-        ${escapeHtml(attr.raw || '')}
+      <span
+        class="imp-stat-raw"
+        title="${escapeHtml(attribute.raw || '')}"
+      >
+        ${escapeHtml(attribute.raw || '')}
       </span>
 
-      <button type="button" class="eq-btn imp-remove" title="Remover">✕</button>
+      <button
+        type="button"
+        class="eq-btn imp-remove"
+        title="Remover"
+      >
+        ✕
+      </button>
     </div>
   `;
 }
 
 function renderReview(data) {
-  const found = RARITIES.filter(rarity => data.variants[rarity.slug]);
-  const missing = RARITIES.filter(rarity => !data.variants[rarity.slug]);
+  const found = RARITIES.filter(
+    rarity => data.variants[rarity.slug]
+  );
+
+  const missing = RARITIES.filter(
+    rarity => !data.variants[rarity.slug]
+  );
 
   const rarityBlocks = found.map(rarity => {
-    const attrs = data.variants[rarity.slug];
-    const source = data.sources?.[rarity.slug];
+    const attributes =
+      data.variants[rarity.slug];
+
+    const source =
+      data.sources?.[rarity.slug];
 
     return `
-      <div class="imp-rarity" data-rarity="${rarity.slug}">
+      <div
+        class="imp-rarity"
+        data-rarity="${rarity.slug}"
+      >
         <div class="imp-rarity-head">
           <div>
-            <strong>${escapeHtml(rarity.label)}</strong>
-            ${source ? `<div class="imp-source">de ${escapeHtml(source)}</div>` : ''}
+            <strong>
+              ${escapeHtml(rarity.label)}
+            </strong>
+
+            ${
+              source
+                ? `
+                  <div class="imp-source">
+                    de ${escapeHtml(source)}
+                  </div>
+                `
+                : ''
+            }
           </div>
 
-          <button type="button" class="eq-btn imp-add" data-rarity="${rarity.slug}">
+          <button
+            type="button"
+            class="eq-btn imp-add"
+            data-rarity="${rarity.slug}"
+          >
             Adicionar atributo
           </button>
         </div>
 
         <div class="imp-stats">
-          ${attrs.map(attr => statRow(attr, rarity.slug)).join('')}
+          ${attributes
+            .map(
+              attribute =>
+                statRow(
+                  attribute,
+                  rarity.slug
+                )
+            )
+            .join('')}
         </div>
       </div>
     `;
   }).join('');
 
-  const bonusRows = (data.bonuses || []).map(bonus => `
+  const bonusRows = (
+    data.bonuses || []
+  ).map(bonus => `
     <div class="imp-bonus">
-      <input class="admin-input" type="number" min="1" max="6"
-             value="${bonus.required_pieces}" title="Peças">
-      <input class="admin-input" value="${escapeHtml(bonus.title)}" title="Título">
-      <input class="admin-input" value="${escapeHtml(bonus.description)}" title="Descrição">
-      <button type="button" class="eq-btn imp-bonus-remove">✕</button>
+      <input
+        class="admin-input"
+        type="number"
+        min="1"
+        max="6"
+        value="${bonus.required_pieces}"
+        title="Peças"
+      >
+
+      <input
+        class="admin-input"
+        value="${escapeHtml(bonus.title)}"
+        title="Título"
+      >
+
+      <input
+        class="admin-input"
+        value="${escapeHtml(bonus.description)}"
+        title="Descrição"
+      >
+
+      <button
+        type="button"
+        class="eq-btn imp-bonus-remove"
+      >
+        ✕
+      </button>
     </div>
   `).join('');
 
@@ -882,75 +2323,180 @@ function renderReview(data) {
       <h3>Identificação</h3>
 
       <div class="imp-grid">
-        <label>Nome
-          <input class="admin-input" id="r-name" value="${escapeHtml(data.name)}">
+        <label>
+          Nome
+
+          <input
+            class="admin-input"
+            id="r-name"
+            value="${escapeHtml(data.name)}"
+          >
         </label>
 
-        <label>Conjunto
-          <input class="admin-input" id="r-set" value="${escapeHtml(data.setName)}">
+        <label>
+          Conjunto
+
+          <input
+            class="admin-input"
+            id="r-set"
+            value="${escapeHtml(data.setName)}"
+          >
         </label>
 
-        <label class="full">Descrição
-          <textarea class="admin-textarea" id="r-desc" rows="3">${escapeHtml(data.description)}</textarea>
+        <label class="full">
+          Descrição
+
+          <textarea
+            class="admin-textarea"
+            id="r-desc"
+            rows="3"
+          >${escapeHtml(data.description)}</textarea>
         </label>
 
-        <label class="full">Recomendação
-          <textarea class="admin-textarea" id="r-rec" rows="3">${escapeHtml(data.recommendation)}</textarea>
+        <label class="full">
+          Recomendação
+
+          <textarea
+            class="admin-textarea"
+            id="r-rec"
+            rows="3"
+          >${escapeHtml(data.recommendation)}</textarea>
         </label>
       </div>
     </div>
 
     <div class="imp-card">
-      <h3>Raridades
-        <small>${found.length} de ${RARITIES.length} reconhecidas</small>
+      <h3>
+        Raridades
+
+        <small>
+          ${found.length} de
+          ${RARITIES.length} reconhecidas
+        </small>
       </h3>
 
-      ${rarityBlocks || '<div class="admin-empty">Nenhuma raridade reconhecida. Refaça o recorte ou ajuste o contraste.</div>'}
+      ${
+        rarityBlocks ||
+        `
+          <div class="admin-empty">
+            Nenhuma raridade reconhecida.
+            Refaça o recorte ou ajuste o contraste.
+          </div>
+        `
+      }
 
-      ${missing.length ? `
-        <div class="imp-missing">
-          Faltando: ${missing.map(rarity => escapeHtml(rarity.label)).join(', ')}.
-          Adicione os prints correspondentes e leia de novo.
-        </div>
-      ` : ''}
+      ${
+        missing.length
+          ? `
+            <div class="imp-missing">
+              Faltando:
+              ${missing
+                .map(
+                  rarity =>
+                    escapeHtml(rarity.label)
+                )
+                .join(', ')}.
+
+              Adicione os prints correspondentes
+              e leia novamente.
+            </div>
+          `
+          : ''
+      }
     </div>
 
     <div class="imp-card">
       <h3>Bônus do conjunto</h3>
+
       <div id="imp-bonuses">
-        ${bonusRows || '<div class="admin-empty">Nenhum bônus reconhecido.</div>'}
+        ${
+          bonusRows ||
+          `
+            <div class="admin-empty">
+              Nenhum bônus reconhecido.
+            </div>
+          `
+        }
       </div>
     </div>
   `;
 
   bindReviewEvents();
+
   sendButton.disabled = false;
 }
 
 function bindReviewEvents() {
-  reviewArea.querySelectorAll('.imp-remove').forEach(button => {
-    button.addEventListener('click', () => button.closest('.imp-stat').remove());
-  });
-
-  reviewArea.querySelectorAll('.imp-bonus-remove').forEach(button => {
-    button.addEventListener('click', () => button.closest('.imp-bonus').remove());
-  });
-
-  reviewArea.querySelectorAll('.imp-add').forEach(button => {
-    button.addEventListener('click', () => {
-      const rarity = button.dataset.rarity;
-      const list = reviewArea.querySelector(`.imp-rarity[data-rarity="${rarity}"] .imp-stats`);
-
-      const wrapper = document.createElement('div');
-      wrapper.innerHTML = statRow({ key: null, value: 0, raw: '' }, rarity);
-
-      const node = wrapper.firstElementChild;
-      list.appendChild(node);
-
-      node.querySelector('.imp-remove')
-        .addEventListener('click', () => node.remove());
+  reviewArea
+    .querySelectorAll('.imp-remove')
+    .forEach(button => {
+      button.addEventListener(
+        'click',
+        () => {
+          button
+            .closest('.imp-stat')
+            ?.remove();
+        }
+      );
     });
-  });
+
+  reviewArea
+    .querySelectorAll('.imp-bonus-remove')
+    .forEach(button => {
+      button.addEventListener(
+        'click',
+        () => {
+          button
+            .closest('.imp-bonus')
+            ?.remove();
+        }
+      );
+    });
+
+  reviewArea
+    .querySelectorAll('.imp-add')
+    .forEach(button => {
+      button.addEventListener(
+        'click',
+        () => {
+          const rarity =
+            button.dataset.rarity;
+
+          const list =
+            reviewArea.querySelector(
+              `.imp-rarity[data-rarity="${rarity}"] .imp-stats`
+            );
+
+          if (!list) return;
+
+          const wrapper =
+            document.createElement('div');
+
+          wrapper.innerHTML = statRow(
+            {
+              key: null,
+              value: 0,
+              raw: ''
+            },
+            rarity
+          );
+
+          const node =
+            wrapper.firstElementChild;
+
+          if (!node) return;
+
+          list.appendChild(node);
+
+          node
+            .querySelector('.imp-remove')
+            ?.addEventListener(
+              'click',
+              () => node.remove()
+            );
+        }
+      );
+    });
 }
 
 /* =========================================================
@@ -958,85 +2504,402 @@ function bindReviewEvents() {
 ========================================================= */
 
 function loadImage(file) {
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    const url = URL.createObjectURL(file);
+  return new Promise(
+    (resolve, reject) => {
+      const image = new Image();
+      const url =
+        URL.createObjectURL(file);
 
-    image.onload = () => resolve({ image, url });
-    image.onerror = () => reject(new Error(`Não foi possível abrir ${file.name}`));
-    image.src = url;
-  });
+      image.onload = () => {
+        resolve({
+          image,
+          url
+        });
+      };
+
+      image.onerror = () => {
+        URL.revokeObjectURL(url);
+
+        reject(
+          new Error(
+            `Não foi possível abrir ${file.name}`
+          )
+        );
+      };
+
+      image.src = url;
+    }
+  );
 }
 
-fileInput.addEventListener('change', async () => {
-  const files = [...(fileInput.files || [])];
-  if (!files.length) return;
-
-  status.textContent = `Carregando ${files.length} imagem(ns)...`;
-
-  injectStyles();
-
-  const loaded = [];
-
-  for (const file of files) {
-    try {
-      const { image, url } = await loadImage(file);
-
-      loaded.push({
-        label: file.name.replace(/\.[^.]+$/, '').slice(0, 24),
-        image,
-        url,
-        crop: null,
-        text: '',
-        parsed: null
-      });
-    } catch (error) {
-      console.warn('[import]', error.message);
+function releaseShotUrls() {
+  for (const shot of shots) {
+    if (shot.url) {
+      URL.revokeObjectURL(shot.url);
     }
   }
+}
 
-  if (!loaded.length) {
-    status.textContent = 'Nenhuma imagem pôde ser aberta.';
+fileInput.addEventListener(
+  'change',
+  async () => {
+    const files = [
+      ...(fileInput.files || [])
+    ];
+
+    if (!files.length) return;
+
+    if (extractionRun.running) {
+      await cancelExtraction();
+    }
+
+    status.textContent =
+      `Carregando ${files.length} imagem(ns)...`;
+
+    injectStyles();
+
+    const loaded = [];
+    const loadErrors = [];
+
+    for (const file of files) {
+      try {
+        const {
+          image,
+          url
+        } = await loadImage(file);
+
+        loaded.push({
+          label: file.name
+            .replace(/\.[^.]+$/, '')
+            .slice(0, 48),
+
+          image,
+          url,
+          crop: null,
+          text: '',
+          parsed: null,
+          status: 'pending',
+          error: '',
+          durationMs: 0
+        });
+      } catch (error) {
+        console.warn(
+          '[import]',
+          error.message
+        );
+
+        loadErrors.push(
+          error.message
+        );
+      }
+    }
+
+    if (!loaded.length) {
+      status.textContent =
+        'Nenhuma imagem pôde ser aberta.';
+
+      return;
+    }
+
+    releaseShotUrls();
+
+    shots = loaded;
+    activeIndex = 0;
+    merged = null;
+
+    extractionRun.cancelled = false;
+    extractionRun.startedAt = 0;
+    extractionRun.finishedElapsedMs = 0;
+
+    raw.value = '';
+    reviewArea.innerHTML = '';
+
+    sendButton.disabled = true;
+    reviewButton.disabled = false;
+    extractButton.disabled = false;
+
+    zone.style.display = 'none';
+
+    buildToolbar();
+    buildWorkArea();
+    buildExtractionPanel();
+
+    renderStrip();
+    renderPreview();
+    showWarnings();
+    updateExtractionPanel();
+
+    let message =
+      `${shots.length} print(s) carregado(s). ` +
+      'Marque o painel de efeitos em um deles — ' +
+      'o recorte vale para todos.';
+
+    if (loadErrors.length) {
+      message +=
+        ` ${loadErrors.length} arquivo(s) ` +
+        'não puderam ser abertos.';
+    }
+
+    status.textContent = message;
+  }
+);
+
+/* =========================================================
+   CONTROLE DA EXTRAÇÃO
+========================================================= */
+
+function resetExtractionState() {
+  for (const shot of shots) {
+    shot.text = '';
+    shot.parsed = null;
+    shot.status = 'pending';
+    shot.error = '';
+    shot.durationMs = 0;
+  }
+
+  raw.value = '';
+  merged = null;
+
+  reviewArea.innerHTML = '';
+  sendButton.disabled = true;
+
+  extractionRun.cancelled = false;
+  extractionRun.startedAt = 0;
+  extractionRun.finishedElapsedMs = 0;
+
+  renderStrip();
+
+  updateExtractionPanel(
+    'Pronto para iniciar uma nova coleta'
+  );
+}
+
+async function terminateExtractionWorker() {
+  const worker =
+    extractionRun.worker;
+
+  if (!worker) return;
+
+  extractionRun.worker = null;
+
+  try {
+    await worker.terminate();
+  } catch (error) {
+    console.warn(
+      '[OCR] Falha ao encerrar worker:',
+      error
+    );
+  }
+}
+
+async function cancelExtraction() {
+  if (!extractionRun.running) return;
+
+  extractionRun.cancelled = true;
+
+  status.textContent =
+    'Cancelando a coleta...';
+
+  updateExtractionPanel(
+    'Cancelando a coleta...'
+  );
+
+  await terminateExtractionWorker();
+
+  if (extractionTask) {
+    try {
+      await extractionTask;
+    } catch {
+      /*
+        O erro provocado pela interrupção do worker é tratado
+        dentro da própria função runExtraction().
+      */
+    }
+  }
+}
+
+async function restartExtraction() {
+  if (!shots.length) {
+    status.textContent =
+      'Selecione os prints primeiro.';
+
     return;
   }
 
-  shots = loaded;
-  activeIndex = 0;
-  merged = null;
+  if (extractionRun.running) {
+    await cancelExtraction();
+  }
 
-  zone.style.display = 'none';
+  resetExtractionState();
 
-  buildToolbar();
-  buildWorkArea();
-  renderStrip();
-  renderPreview();
-  showWarnings();
+  extractionTask = runExtraction()
+    .catch(error => {
+      console.error(
+        '[OCR] Erro não tratado:',
+        error
+      );
+    })
+    .finally(() => {
+      extractionTask = null;
+    });
 
-  status.textContent =
-    `${shots.length} print(s) carregado(s). Marque o painel de efeitos em um ` +
-    'deles — o recorte vale para todos.';
-});
+  await extractionTask;
+}
 
 /* =========================================================
    EXTRAÇÃO EM LOTE
 ========================================================= */
 
-extractButton.addEventListener('click', async () => {
-  if (!shots.length) {
-    status.textContent = 'Selecione os prints primeiro.';
+function classifyShotResult(shot) {
+  const text =
+    String(shot.text || '').trim();
+
+  const rarityCount =
+    Object.keys(
+      shot.parsed?.variants || {}
+    ).length;
+
+  const bonusCount =
+    shot.parsed?.bonuses?.length || 0;
+
+  if (!text) {
+    shot.status = 'warning';
+
+    shot.error =
+      'O OCR não encontrou texto. Verifique o recorte, ' +
+      'o contraste ou a qualidade da imagem.';
+
     return;
   }
 
+  if (!rarityCount && !bonusCount) {
+    shot.status = 'warning';
+
+    shot.error =
+      'O texto foi extraído, mas nenhuma raridade ou ' +
+      'bônus pôde ser identificado.';
+
+    return;
+  }
+
+  shot.status = 'success';
+  shot.error = '';
+}
+
+function buildRawText() {
+  raw.value = shots
+    .filter(
+      shot =>
+        shot.text ||
+        shot.error
+    )
+    .map(shot => {
+      const header =
+        `===== ${shot.label} =====`;
+
+      if (shot.text) {
+        let content =
+          `${header}\n${shot.text}`;
+
+        if (
+          shot.status === 'warning' &&
+          shot.error
+        ) {
+          content +=
+            `\n\n[AVISO] ${shot.error}`;
+        }
+
+        return content;
+      }
+
+      if (shot.status === 'cancelled') {
+        return (
+          `${header}\n` +
+          `[CANCELADO] ${shot.error}`
+        );
+      }
+
+      return (
+        `${header}\n` +
+        `[ERRO] ${
+          shot.error ||
+          'Não foi possível processar.'
+        }`
+      );
+    })
+    .join('\n\n');
+}
+
+async function runExtraction() {
+  if (!shots.length) {
+    status.textContent =
+      'Selecione os prints primeiro.';
+
+    return;
+  }
+
+  if (extractionRun.running) {
+    status.textContent =
+      'Já existe uma coleta em andamento.';
+
+    return;
+  }
+
+  if (
+    typeof Tesseract === 'undefined' ||
+    typeof Tesseract.createWorker !== 'function'
+  ) {
+    status.textContent =
+      'O leitor Tesseract não foi carregado na página.';
+
+    updateExtractionPanel(
+      'Tesseract não carregado'
+    );
+
+    return;
+  }
+
+  const runId =
+    ++extractionRun.id;
+
+  extractionRun.running = true;
+  extractionRun.cancelled = false;
+  extractionRun.startedAt = Date.now();
+  extractionRun.finishedElapsedMs = 0;
+
   extractButton.disabled = true;
+  reviewButton.disabled = true;
+  fileInput.disabled = true;
+
+  startElapsedTimer();
+
+  updateExtractionPanel(
+    'Preparando o leitor...'
+  );
 
   let worker = null;
 
   try {
-    status.textContent = 'Preparando o leitor...';
+    status.textContent =
+      'Preparando o leitor OCR...';
 
-    /* Um único motor para a fila inteira: o idioma é carregado
-       uma vez só, em vez de a cada imagem. */
-    worker = await Tesseract.createWorker('por');
+    worker =
+      await Tesseract.createWorker('por');
+
+    if (
+      extractionRun.cancelled ||
+      runId !== extractionRun.id
+    ) {
+      try {
+        await worker.terminate();
+      } catch {
+        // Worker já pode ter sido encerrado.
+      }
+
+      return;
+    }
+
+    extractionRun.worker = worker;
 
     await worker.setParameters({
       tessedit_pageseg_mode: '6',
@@ -1047,110 +2910,462 @@ extractButton.addEventListener('click', async () => {
         '0123456789+-%.,/() '
     });
 
-    const chunks = [];
+    for (
+      let index = 0;
+      index < shots.length;
+      index += 1
+    ) {
+      if (
+        extractionRun.cancelled ||
+        runId !== extractionRun.id
+      ) {
+        break;
+      }
 
-    for (let index = 0; index < shots.length; index += 1) {
       const shot = shots[index];
+      const startedAt =
+        performance.now();
 
-      status.textContent = `Lendo ${index + 1} de ${shots.length} — ${shot.label}`;
+      shot.status = 'processing';
+      shot.error = '';
+      shot.durationMs = 0;
 
-      const canvas = buildProcessedCanvas(shot);
-      const { data } = await worker.recognize(canvas);
+      status.textContent =
+        `Lendo ${index + 1} de ` +
+        `${shots.length} — ${shot.label}`;
 
-      shot.text = (data.text || '').trim();
-      shot.parsed = parseText(shot.text);
-
-      chunks.push(`===== ${shot.label} =====\n${shot.text}`);
+      updateExtractionPanel(
+        `Lendo ${index + 1} de ` +
+        `${shots.length} — ${shot.label}`
+      );
 
       renderStrip();
+
+      try {
+        const canvas =
+          buildProcessedCanvas(shot);
+
+        if (
+          !canvas ||
+          !canvas.width ||
+          !canvas.height
+        ) {
+          throw new Error(
+            'O recorte gerou uma imagem vazia.'
+          );
+        }
+
+        const result =
+          await worker.recognize(canvas);
+
+        if (
+          extractionRun.cancelled ||
+          runId !== extractionRun.id
+        ) {
+          shot.status = 'cancelled';
+
+          shot.error =
+            'Processamento interrompido pelo usuário.';
+
+          break;
+        }
+
+        shot.text = String(
+          result?.data?.text || ''
+        ).trim();
+
+        shot.parsed =
+          parseText(shot.text);
+
+        classifyShotResult(shot);
+      } catch (error) {
+        if (
+          extractionRun.cancelled ||
+          runId !== extractionRun.id
+        ) {
+          shot.status = 'cancelled';
+
+          shot.error =
+            'Processamento interrompido pelo usuário.';
+
+          break;
+        }
+
+        console.error(
+          `[OCR] Falha em ${shot.label}:`,
+          error
+        );
+
+        shot.status = 'error';
+
+        shot.error =
+          error?.message ||
+          'Erro desconhecido durante o reconhecimento da imagem.';
+
+        shot.text = '';
+        shot.parsed = null;
+      } finally {
+        shot.durationMs =
+          performance.now() - startedAt;
+
+        buildRawText();
+        renderStrip();
+        updateExtractionPanel();
+      }
     }
 
-    raw.value = chunks.join('\n\n');
+    if (extractionRun.cancelled) {
+      for (const shot of shots) {
+        if (shot.status === 'pending') {
+          shot.status = 'cancelled';
 
-    const recognized = new Set();
+          shot.error =
+            'Não processado porque a coleta foi cancelada.';
+        }
+      }
+
+      buildRawText();
+      renderStrip();
+
+      const summary =
+        getExtractionSummary();
+
+      status.textContent =
+        `Coleta cancelada. ` +
+        `${summary.processed} de ` +
+        `${summary.total} arquivo(s) ` +
+        'chegaram a ser processados. ' +
+        'Os resultados concluídos foram preservados.';
+
+      updateExtractionPanel(
+        'Coleta cancelada'
+      );
+
+      return;
+    }
+
+    const recognized =
+      new Set();
+
     shots.forEach(shot => {
-      Object.keys(shot.parsed?.variants || {}).forEach(slug => recognized.add(slug));
+      Object.keys(
+        shot.parsed?.variants || {}
+      ).forEach(slug => {
+        recognized.add(slug);
+      });
     });
 
+    const summary =
+      getExtractionSummary();
+
     status.textContent =
-      `Leitura concluída. ${recognized.size} de ${RARITIES.length} raridades ` +
-      'reconhecidas. Monte a revisão para conferir.';
+      `Leitura concluída. ` +
+      `${summary.success} arquivo(s) concluído(s), ` +
+      `${summary.warnings} com aviso e ` +
+      `${summary.errors} com erro. ` +
+      `${recognized.size} de ` +
+      `${RARITIES.length} raridades reconhecidas.`;
+
+    updateExtractionPanel(
+      summary.problems
+        ? 'Coleta concluída com avisos'
+        : 'Coleta concluída com sucesso'
+    );
   } catch (error) {
+    if (extractionRun.cancelled) {
+      status.textContent =
+        'Coleta cancelada. Os resultados já ' +
+        'concluídos foram preservados.';
+
+      updateExtractionPanel(
+        'Coleta cancelada'
+      );
+
+      return;
+    }
+
     console.error('[OCR]', error);
-    status.textContent = `Falha na leitura: ${error.message}`;
+
+    status.textContent =
+      'Não foi possível iniciar ou continuar ' +
+      `o leitor: ${
+        error?.message ||
+        'erro desconhecido'
+      }`;
+
+    updateExtractionPanel(
+      'Falha geral no leitor OCR'
+    );
   } finally {
-    if (worker) await worker.terminate();
-    extractButton.disabled = false;
+    stopElapsedTimer();
+
+    if (
+      extractionRun.startedAt &&
+      !extractionRun.finishedElapsedMs
+    ) {
+      extractionRun.finishedElapsedMs =
+        Date.now() -
+        extractionRun.startedAt;
+    }
+
+    if (
+      extractionRun.worker === worker
+    ) {
+      extractionRun.worker = null;
+
+      try {
+        await worker?.terminate();
+      } catch (error) {
+        console.warn(
+          '[OCR] Falha ao finalizar worker:',
+          error
+        );
+      }
+    }
+
+    if (runId === extractionRun.id) {
+      extractionRun.running = false;
+
+      extractButton.disabled = false;
+      reviewButton.disabled = false;
+      fileInput.disabled = false;
+
+      updateExtractionPanel();
+    }
   }
-});
+}
+
+extractButton.addEventListener(
+  'click',
+  () => {
+    if (!shots.length) {
+      status.textContent =
+        'Selecione os prints primeiro.';
+
+      return;
+    }
+
+    if (
+      extractionTask ||
+      extractionRun.running
+    ) {
+      status.textContent =
+        'Já existe uma coleta em andamento.';
+
+      return;
+    }
+
+    /*
+      Ao clicar novamente em Extrair dados, os resultados
+      anteriores são zerados.
+
+      As imagens e os recortes permanecem.
+    */
+
+    resetExtractionState();
+
+    extractionTask = runExtraction()
+      .catch(error => {
+        console.error(
+          '[OCR] Erro não tratado:',
+          error
+        );
+      })
+      .finally(() => {
+        extractionTask = null;
+      });
+  }
+);
 
 /* =========================================================
    REVISÃO E ENVIO
 ========================================================= */
 
-reviewButton.addEventListener('click', () => {
-  if (!shots.some(shot => shot.parsed)) {
-    /* Permite revisar texto colado manualmente. */
-    merged = parseText(raw.value);
-    merged.description = '';
-    merged.recommendation = '';
-    merged.sources = {};
-  } else {
-    merged = mergeShots();
+reviewButton.addEventListener(
+  'click',
+  () => {
+    if (extractionRun.running) {
+      status.textContent =
+        'Aguarde o término da coleta ou cancele ' +
+        'antes de montar a revisão.';
+
+      return;
+    }
+
+    if (
+      !shots.some(
+        shot => shot.parsed
+      )
+    ) {
+      /*
+        Permite revisar texto colado manualmente.
+      */
+
+      merged =
+        parseText(raw.value);
+
+      merged.description = '';
+      merged.recommendation = '';
+      merged.sources = {};
+    } else {
+      merged = mergeShots();
+    }
+
+    renderReview(merged);
+
+    const count =
+      Object.keys(
+        merged.variants
+      ).length;
+
+    status.textContent = count
+      ? (
+          `Revisão montada com ${count} raridade(s). ` +
+          'Confira antes de enviar.'
+        )
+      : (
+          'Nenhuma raridade reconhecida. ' +
+          'Revise o texto extraído.'
+        );
   }
+);
 
-  renderReview(merged);
+sendButton.addEventListener(
+  'click',
+  () => {
+    const variants = {};
 
-  const count = Object.keys(merged.variants).length;
+    reviewArea
+      .querySelectorAll('.imp-rarity')
+      .forEach(block => {
+        const rarity =
+          block.dataset.rarity;
 
-  status.textContent = count
-    ? `Revisão montada com ${count} raridade(s). Confira antes de enviar.`
-    : 'Nenhuma raridade reconhecida. Revise o texto extraído.';
-});
+        const stats = {};
 
-sendButton.addEventListener('click', () => {
-  const variants = {};
+        block
+          .querySelectorAll('.imp-stat')
+          .forEach(row => {
+            const key =
+              row.querySelector(
+                '.imp-stat-key'
+              )?.value;
 
-  reviewArea.querySelectorAll('.imp-rarity').forEach(block => {
-    const rarity = block.dataset.rarity;
-    const stats = {};
+            const value = Number(
+              row.querySelector(
+                '.imp-stat-value'
+              )?.value
+            );
 
-    block.querySelectorAll('.imp-stat').forEach(row => {
-      const key = row.querySelector('.imp-stat-key').value;
-      const value = Number(row.querySelector('.imp-stat-value').value);
+            if (
+              !key ||
+              !Number.isFinite(value)
+            ) {
+              return;
+            }
 
-      if (!key || !Number.isFinite(value)) return;
+            stats[key] = value;
+          });
 
-      stats[key] = value;
-    });
+        if (
+          rarity &&
+          Object.keys(stats).length
+        ) {
+          variants[rarity] = stats;
+        }
+      });
 
-    if (Object.keys(stats).length) variants[rarity] = stats;
-  });
+    const bonuses = [
+      ...reviewArea.querySelectorAll(
+        '.imp-bonus'
+      )
+    ]
+      .map(row => {
+        const inputs =
+          row.querySelectorAll('input');
 
-  const bonuses = [...reviewArea.querySelectorAll('.imp-bonus')].map(row => {
-    const inputs = row.querySelectorAll('input');
+        return {
+          required_pieces:
+            Number(inputs[0]?.value) || 0,
 
-    return {
-      required_pieces: Number(inputs[0].value) || 0,
-      title: inputs[1].value.trim(),
-      description: inputs[2].value.trim()
+          title:
+            inputs[1]?.value.trim() || '',
+
+          description:
+            inputs[2]?.value.trim() || ''
+        };
+      })
+      .filter(
+        bonus =>
+          bonus.required_pieces > 0
+      );
+
+    const draft = {
+      name:
+        $('r-name')?.value.trim() || '',
+
+      setName:
+        $('r-set')?.value.trim() || '',
+
+      description:
+        $('r-desc')?.value.trim() || '',
+
+      recommendation:
+        $('r-rec')?.value.trim() || '',
+
+      variants,
+      bonuses
     };
-  }).filter(bonus => bonus.required_pieces > 0);
 
-  const draft = {
-    name: $('r-name')?.value.trim() || '',
-    setName: $('r-set')?.value.trim() || '',
-    description: $('r-desc')?.value.trim() || '',
-    recommendation: $('r-rec')?.value.trim() || '',
-    variants,
-    bonuses
-  };
+    if (!draft.name) {
+      status.textContent =
+        'Informe o nome do equipamento ' +
+        'antes de enviar.';
 
-  if (!draft.name) {
-    status.textContent = 'Informe o nome do equipamento antes de enviar.';
-    return;
+      return;
+    }
+
+    sessionStorage.setItem(
+      'equipment-import-draft',
+      JSON.stringify(draft)
+    );
+
+    location.href =
+      './equipment-editor.html?import=1';
   }
+);
 
-  sessionStorage.setItem('equipment-import-draft', JSON.stringify(draft));
-  location.href = './equipment-editor.html?import=1';
-});
+/* =========================================================
+   LIMPEZA AO SAIR DA PÁGINA
+========================================================= */
+
+window.addEventListener(
+  'beforeunload',
+  () => {
+    stopElapsedTimer();
+
+    /*
+      Não usamos await aqui porque beforeunload não aguarda
+      Promises. O encerramento normal acontece no fluxo de OCR.
+    */
+
+    try {
+      extractionRun.worker?.terminate();
+    } catch {
+      // Ignora erro durante o fechamento da página.
+    }
+
+    releaseShotUrls();
+  }
+);
+
+/* =========================================================
+   INICIALIZAÇÃO VISUAL
+========================================================= */
+
+injectStyles();
+
+sendButton.disabled = true;
+
+status.textContent =
+  'Selecione os prints do equipamento para iniciar.';
