@@ -206,12 +206,31 @@ const extractionRun = {
 };
 
 const options = {
-  invert: true,
-  threshold: 55,
-  scale: 3,
-  sharedCrop: true
-};
+  /*
+   * auto:
+   * testa imagem colorida melhorada, escala de cinza
+   * e preto/branco, escolhendo o melhor resultado.
+   *
+   * original:
+   * preserva as cores e apenas aumenta escala/nitidez.
+   *
+   * contrast:
+   * preserva as cores, mas aumenta mais o contraste.
+   *
+   * binary:
+   * preto e branco. Deve ser usado apenas como fallback.
+   */
+  readingMode: 'auto',
 
+  scale: 3,
+  sharedCrop: true,
+
+  /*
+   * Usado somente pelo modo preto e branco.
+   * No modo automático o corte é calculado pela própria imagem.
+   */
+  binaryThreshold: 55
+};
 /* =========================================================
    TEXTO
 ========================================================= */
@@ -236,24 +255,51 @@ function escapeHtml(value = '') {
 }
 
 function similarity(a, b) {
-  if (a === b) return 1;
-  if (!a.length || !b.length) return 0;
+  const first = String(a || '');
+  const second = String(b || '');
 
-  const rows = a.length + 1;
-  const cols = b.length + 1;
+  if (first === second) {
+    return 1;
+  }
+
+  if (!first.length || !second.length) {
+    return 0;
+  }
+
+  const rows = first.length + 1;
+  const columns = second.length + 1;
 
   const matrix = Array.from(
     { length: rows },
-    (_, index) => [index, ...Array(cols - 1).fill(0)]
+    (_, row) => {
+      const values = new Array(columns).fill(0);
+      values[0] = row;
+      return values;
+    }
   );
 
-  for (let column = 0; column < cols; column += 1) {
+  for (
+    let column = 0;
+    column < columns;
+    column += 1
+  ) {
     matrix[0][column] = column;
   }
 
-  for (let row = 1; row < rows; row += 1) {
-    for (let column = 1; column < cols; column += 1) {
-      const cost = a[row - 1] === b[column - 1] ? 0 : 1;
+  for (
+    let row = 1;
+    row < rows;
+    row += 1
+  ) {
+    for (
+      let column = 1;
+      column < columns;
+      column += 1
+    ) {
+      const cost =
+        first[row - 1] === second[column - 1]
+          ? 0
+          : 1;
 
       matrix[row][column] = Math.min(
         matrix[row - 1][column] + 1,
@@ -265,11 +311,10 @@ function similarity(a, b) {
 
   return (
     1 -
-    matrix[a.length][b.length] /
-      Math.max(a.length, b.length)
+    matrix[first.length][second.length] /
+      Math.max(first.length, second.length)
   );
 }
-
 /* =========================================================
    INTERFACE
 ========================================================= */
@@ -815,29 +860,39 @@ function buildToolbar() {
   bar.innerHTML = `
     <div class="ocr-row">
       <label class="ocr-check">
-        <input type="checkbox" id="opt-invert" checked>
-        Inverter cores
-      </label>
-
-      <label class="ocr-check">
         <input type="checkbox" id="opt-shared" checked>
         Mesmo recorte para todos
       </label>
 
       <label class="ocr-slider">
-        Contraste
-        <input
-          type="range"
-          id="opt-threshold"
-          min="20"
-          max="85"
-          value="55"
+        Modo de leitura
+
+        <select
+          id="opt-reading-mode"
+          class="admin-select"
+          style="min-width: 210px"
         >
-        <output id="opt-threshold-value">55</output>
+          <option value="auto" selected>
+            Automático — recomendado
+          </option>
+
+          <option value="original">
+            Original melhorado
+          </option>
+
+          <option value="contrast">
+            Alto contraste
+          </option>
+
+          <option value="binary">
+            Preto e branco
+          </option>
+        </select>
       </label>
 
       <label class="ocr-slider">
         Escala
+
         <input
           type="range"
           id="opt-scale"
@@ -846,7 +901,30 @@ function buildToolbar() {
           step="1"
           value="3"
         >
-        <output id="opt-scale-value">3×</output>
+
+        <output id="opt-scale-value">
+          3×
+        </output>
+      </label>
+
+      <label
+        class="ocr-slider"
+        id="binary-threshold-control"
+        hidden
+      >
+        Corte P/B
+
+        <input
+          type="range"
+          id="opt-threshold"
+          min="20"
+          max="85"
+          value="55"
+        >
+
+        <output id="opt-threshold-value">
+          55
+        </output>
       </label>
 
       <button
@@ -859,62 +937,99 @@ function buildToolbar() {
     </div>
 
     <p class="ocr-hint">
-      Marque com o mouse <strong>apenas o painel de efeitos</strong>
-      em um print. Como o jogo desenha o painel sempre no mesmo
-      lugar, o mesmo recorte vale para os outros.
+      Marque com o mouse preferencialmente a área iniciada em
+      <strong>“Efeitos por categoria”</strong>.
+
+      No modo automático, o sistema preserva a imagem colorida,
+      também gera versões alternativas e escolhe a leitura que
+      reconheceu melhor as raridades e os atributos.
     </p>
   `;
 
-  zone.parentElement.insertBefore(bar, zone.nextSibling);
+  zone.parentElement.insertBefore(
+    bar,
+    zone.nextSibling
+  );
 
-  $('opt-invert')?.addEventListener('change', event => {
-    options.invert = event.target.checked;
-    renderPreview();
-  });
-
-  $('opt-shared')?.addEventListener('change', event => {
-    options.sharedCrop = event.target.checked;
-    renderPreview();
-  });
-
-  $('opt-threshold')?.addEventListener('input', event => {
-    options.threshold = Number(event.target.value);
-
-    const output = $('opt-threshold-value');
-
-    if (output) {
-      output.textContent = event.target.value;
+  $('opt-shared')?.addEventListener(
+    'change',
+    event => {
+      options.sharedCrop = event.target.checked;
+      renderPreview();
     }
+  );
 
-    renderPreview();
-  });
+  $('opt-reading-mode')?.addEventListener(
+    'change',
+    event => {
+      options.readingMode = event.target.value;
 
-  $('opt-scale')?.addEventListener('input', event => {
-    options.scale = Number(event.target.value);
+      const thresholdControl =
+        $('binary-threshold-control');
 
-    const output = $('opt-scale-value');
+      if (thresholdControl) {
+        thresholdControl.hidden =
+          options.readingMode !== 'binary';
+      }
 
-    if (output) {
-      output.textContent = `${event.target.value}×`;
+      renderPreview();
     }
+  );
 
-    renderPreview();
-  });
+  $('opt-threshold')?.addEventListener(
+    'input',
+    event => {
+      options.binaryThreshold =
+        Number(event.target.value);
 
-  $('opt-reset-crop')?.addEventListener('click', () => {
-    shots.forEach(shot => {
-      shot.crop = null;
-    });
+      const output =
+        $('opt-threshold-value');
 
-    const cropBox = $('ocr-crop-box');
+      if (output) {
+        output.textContent =
+          event.target.value;
+      }
 
-    if (cropBox) {
-      cropBox.style.display = 'none';
+      renderPreview();
     }
+  );
 
-    renderPreview();
-    showWarnings();
-  });
+  $('opt-scale')?.addEventListener(
+    'input',
+    event => {
+      options.scale =
+        Number(event.target.value);
+
+      const output =
+        $('opt-scale-value');
+
+      if (output) {
+        output.textContent =
+          `${event.target.value}×`;
+      }
+
+      renderPreview();
+    }
+  );
+
+  $('opt-reset-crop')?.addEventListener(
+    'click',
+    () => {
+      shots.forEach(shot => {
+        shot.crop = null;
+      });
+
+      const cropBox =
+        $('ocr-crop-box');
+
+      if (cropBox) {
+        cropBox.style.display = 'none';
+      }
+
+      renderPreview();
+      showWarnings();
+    }
+  );
 }
 
 function buildWorkArea() {
@@ -1162,32 +1277,55 @@ function shotResultInfo(shot) {
         message: 'Extraindo e interpretando o texto...'
       };
 
-    case 'success': {
-      const rarityCount = Object.keys(
-        shot.parsed?.variants || {}
-      ).length;
+case 'success': {
+  const rarityCount =
+    Object.keys(
+      shot.parsed?.variants || {}
+    ).length;
 
-      const bonusCount =
-        shot.parsed?.bonuses?.length || 0;
+  const attributeCount =
+    countParsedAttributes(
+      shot.parsed
+    );
 
-      return {
-        icon: '✓',
-        className: 'is-success',
-        message:
-          `${rarityCount} raridade(s) e ` +
-          `${bonusCount} bônus reconhecido(s).`
-      };
-    }
+  const bonusCount =
+    shot.parsed?.bonuses?.length || 0;
 
-    case 'warning':
-      return {
-        icon: '!',
-        className: 'is-warning',
-        message:
-          shot.error ||
-          'Texto lido, mas nenhum dado estruturado foi reconhecido.'
-      };
+  const method =
+    shot.ocrMethod
+      ? ` Método: ${shot.ocrMethod}.`
+      : '';
 
+  return {
+    icon: '✓',
+    className: 'is-success',
+
+    message:
+      `${rarityCount} raridade(s), ` +
+      `${attributeCount} atributo(s) e ` +
+      `${bonusCount} bônus reconhecido(s).` +
+      method
+  };
+}
+
+case 'warning': {
+  const method =
+    shot.ocrMethod
+      ? ` Melhor tentativa: ${shot.ocrMethod}.`
+      : '';
+
+  return {
+    icon: '!',
+    className: 'is-warning',
+
+    message:
+      (
+        shot.error ||
+        'Texto lido, mas nenhum dado estruturado foi reconhecido.'
+      ) +
+      method
+  };
+}
     case 'error':
       return {
         icon: '✕',
@@ -1532,14 +1670,21 @@ function bindCropSelection() {
    PREPARO DA IMAGEM
 ========================================================= */
 
-function buildProcessedCanvas(shot) {
-  if (!shot) return null;
+/* =========================================================
+   PREPARO DA IMAGEM
+========================================================= */
+
+function getShotSourceArea(shot) {
+  if (!shot?.image) {
+    throw new Error(
+      'A imagem do arquivo não está disponível.'
+    );
+  }
 
   const image = shot.image;
   const relative = effectiveCrop(shot);
 
   if (
-    !image ||
     !image.naturalWidth ||
     !image.naturalHeight
   ) {
@@ -1550,10 +1695,21 @@ function buildProcessedCanvas(shot) {
 
   const area = relative
     ? {
-        x: relative.x * image.naturalWidth,
-        y: relative.y * image.naturalHeight,
-        w: relative.w * image.naturalWidth,
-        h: relative.h * image.naturalHeight
+        x:
+          relative.x *
+          image.naturalWidth,
+
+        y:
+          relative.y *
+          image.naturalHeight,
+
+        w:
+          relative.w *
+          image.naturalWidth,
+
+        h:
+          relative.h *
+          image.naturalHeight
       }
     : {
         x: 0,
@@ -1562,66 +1718,88 @@ function buildProcessedCanvas(shot) {
         h: image.naturalHeight
       };
 
+  const x = Math.max(
+    0,
+    Math.min(
+      area.x,
+      image.naturalWidth - 1
+    )
+  );
+
+  const y = Math.max(
+    0,
+    Math.min(
+      area.y,
+      image.naturalHeight - 1
+    )
+  );
+
+  const width = Math.max(
+    1,
+    Math.min(
+      area.w,
+      image.naturalWidth - x
+    )
+  );
+
+  const height = Math.max(
+    1,
+    Math.min(
+      area.h,
+      image.naturalHeight - y
+    )
+  );
+
   if (
-    !Number.isFinite(area.x) ||
-    !Number.isFinite(area.y) ||
-    !Number.isFinite(area.w) ||
-    !Number.isFinite(area.h) ||
-    area.w <= 0 ||
-    area.h <= 0
+    !Number.isFinite(x) ||
+    !Number.isFinite(y) ||
+    !Number.isFinite(width) ||
+    !Number.isFinite(height)
   ) {
     throw new Error(
       'O recorte possui dimensões inválidas.'
     );
   }
 
-  const boundedArea = {
-    x: Math.max(
-      0,
-      Math.min(area.x, image.naturalWidth - 1)
-    ),
-    y: Math.max(
-      0,
-      Math.min(area.y, image.naturalHeight - 1)
-    ),
-    w: Math.max(
-      1,
-      Math.min(
-        area.w,
-        image.naturalWidth - Math.max(0, area.x)
-      )
-    ),
-    h: Math.max(
-      1,
-      Math.min(
-        area.h,
-        image.naturalHeight - Math.max(0, area.y)
-      )
-    )
+  return {
+    x,
+    y,
+    w: width,
+    h: height
   };
+}
 
-  const scale = options.scale;
+function createBaseCanvas(shot) {
+  const image = shot.image;
+  const area = getShotSourceArea(shot);
+  const scale = Math.max(
+    1,
+    Number(options.scale) || 3
+  );
 
-  const canvas = document.createElement('canvas');
+  const canvas =
+    document.createElement('canvas');
 
   canvas.width = Math.max(
     1,
-    Math.round(boundedArea.w * scale)
+    Math.round(area.w * scale)
   );
 
   canvas.height = Math.max(
     1,
-    Math.round(boundedArea.h * scale)
+    Math.round(area.h * scale)
   );
 
   const context = canvas.getContext(
     '2d',
-    { willReadFrequently: true }
+    {
+      willReadFrequently: true
+    }
   );
 
   if (!context) {
     throw new Error(
-      'Não foi possível criar o contexto de imagem.'
+      'Não foi possível criar o contexto da imagem.'
     );
   }
 
@@ -1630,25 +1808,182 @@ function buildProcessedCanvas(shot) {
 
   context.drawImage(
     image,
-    boundedArea.x,
-    boundedArea.y,
-    boundedArea.w,
-    boundedArea.h,
+    area.x,
+    area.y,
+    area.w,
+    area.h,
     0,
     0,
     canvas.width,
     canvas.height
   );
 
-  const buffer = context.getImageData(
-    0,
-    0,
-    canvas.width,
-    canvas.height
+  return canvas;
+}
+
+function cloneCanvas(source) {
+  const canvas =
+    document.createElement('canvas');
+
+  canvas.width = source.width;
+  canvas.height = source.height;
+
+  const context =
+    canvas.getContext(
+      '2d',
+      {
+        willReadFrequently: true
+      }
+    );
+
+  if (!context) {
+    throw new Error(
+      'Não foi possível copiar a imagem.'
+    );
+  }
+
+  context.drawImage(source, 0, 0);
+
+  return canvas;
+}
+
+function applyContrastToCanvas(
+  canvas,
+  contrastAmount = 18,
+  saturationAmount = 1.05
+) {
+  const context = canvas.getContext(
+    '2d',
+    {
+      willReadFrequently: true
+    }
   );
 
-  const data = buffer.data;
-  const cut = (options.threshold / 100) * 255;
+  if (!context) return canvas;
+
+  const imageData =
+    context.getImageData(
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    );
+
+  const data = imageData.data;
+
+  const contrast =
+    Math.max(
+      -100,
+      Math.min(100, contrastAmount)
+    );
+
+  const factor =
+    (
+      259 *
+      (contrast + 255)
+    ) /
+    (
+      255 *
+      (259 - contrast)
+    );
+
+  for (
+    let index = 0;
+    index < data.length;
+    index += 4
+  ) {
+    let red = data[index];
+    let green = data[index + 1];
+    let blue = data[index + 2];
+
+    const luminance =
+      red * 0.299 +
+      green * 0.587 +
+      blue * 0.114;
+
+    red =
+      luminance +
+      (red - luminance) *
+      saturationAmount;
+
+    green =
+      luminance +
+      (green - luminance) *
+      saturationAmount;
+
+    blue =
+      luminance +
+      (blue - luminance) *
+      saturationAmount;
+
+    data[index] = Math.max(
+      0,
+      Math.min(
+        255,
+        factor * (red - 128) + 128
+      )
+    );
+
+    data[index + 1] = Math.max(
+      0,
+      Math.min(
+        255,
+        factor * (green - 128) + 128
+      )
+    );
+
+    data[index + 2] = Math.max(
+      0,
+      Math.min(
+        255,
+        factor * (blue - 128) + 128
+      )
+    );
+
+    data[index + 3] = 255;
+  }
+
+  context.putImageData(
+    imageData,
+    0,
+    0
+  );
+
+  return canvas;
+}
+
+function applyGrayscaleToCanvas(
+  canvas,
+  contrastAmount = 20
+) {
+  const context = canvas.getContext(
+    '2d',
+    {
+      willReadFrequently: true
+    }
+  );
+
+  if (!context) return canvas;
+
+  const imageData =
+    context.getImageData(
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    );
+
+  const data = imageData.data;
+
+  const factor =
+    (
+      259 *
+      (contrastAmount + 255)
+    ) /
+    (
+      255 *
+      (259 - contrastAmount)
+    );
 
   for (
     let index = 0;
@@ -1660,11 +1995,15 @@ function buildProcessedCanvas(shot) {
       data[index + 1] * 0.587 +
       data[index + 2] * 0.114;
 
-    if (options.invert) {
-      value = 255 - value;
-    }
+    value =
+      factor *
+      (value - 128) +
+      128;
 
-    value = value > cut ? 255 : 0;
+    value = Math.max(
+      0,
+      Math.min(255, value)
+    );
 
     data[index] = value;
     data[index + 1] = value;
@@ -1672,94 +2011,531 @@ function buildProcessedCanvas(shot) {
     data[index + 3] = 255;
   }
 
-  context.putImageData(buffer, 0, 0);
+  context.putImageData(
+    imageData,
+    0,
+    0
+  );
 
   return canvas;
 }
 
-function renderPreview() {
-  const shot = currentShot();
+function calculateOtsuThreshold(
+  imageData
+) {
+  const histogram =
+    new Array(256).fill(0);
 
-  if (!shot) return;
+  const data = imageData.data;
+  let pixelCount = 0;
 
-  const canvas = $('ocr-canvas');
-  const box = $('ocr-crop-box');
-  const preview = $('ocr-preview');
+  for (
+    let index = 0;
+    index < data.length;
+    index += 4
+  ) {
+    const value = Math.round(
+      data[index] * 0.299 +
+      data[index + 1] * 0.587 +
+      data[index + 2] * 0.114
+    );
 
-  if (!canvas || !box || !preview) return;
+    histogram[value] += 1;
+    pixelCount += 1;
+  }
 
-  const context = canvas.getContext('2d');
+  if (!pixelCount) return 128;
 
-  if (!context) return;
+  let totalSum = 0;
 
-  canvas.width = shot.image.naturalWidth;
-  canvas.height = shot.image.naturalHeight;
+  for (
+    let value = 0;
+    value < 256;
+    value += 1
+  ) {
+    totalSum +=
+      value *
+      histogram[value];
+  }
 
-  context.clearRect(
+  let backgroundWeight = 0;
+  let backgroundSum = 0;
+  let bestVariance = -1;
+  let bestThreshold = 128;
+
+  for (
+    let threshold = 0;
+    threshold < 256;
+    threshold += 1
+  ) {
+    backgroundWeight +=
+      histogram[threshold];
+
+    if (!backgroundWeight) {
+      continue;
+    }
+
+    const foregroundWeight =
+      pixelCount -
+      backgroundWeight;
+
+    if (!foregroundWeight) {
+      break;
+    }
+
+    backgroundSum +=
+      threshold *
+      histogram[threshold];
+
+    const backgroundMean =
+      backgroundSum /
+      backgroundWeight;
+
+    const foregroundMean =
+      (
+        totalSum -
+        backgroundSum
+      ) /
+      foregroundWeight;
+
+    const difference =
+      backgroundMean -
+      foregroundMean;
+
+    const variance =
+      backgroundWeight *
+      foregroundWeight *
+      difference *
+      difference;
+
+    if (variance > bestVariance) {
+      bestVariance = variance;
+      bestThreshold = threshold;
+    }
+  }
+
+  return bestThreshold;
+}
+
+function applyBinaryToCanvas(
+  canvas,
+  forcedThreshold = null
+) {
+  const context = canvas.getContext(
+    '2d',
+    {
+      willReadFrequently: true
+    }
+  );
+
+  if (!context) return canvas;
+
+  const imageData =
+    context.getImageData(
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    );
+
+  const data = imageData.data;
+
+  const threshold =
+    Number.isFinite(forcedThreshold)
+      ? forcedThreshold
+      : calculateOtsuThreshold(
+          imageData
+        );
+
+  for (
+    let index = 0;
+    index < data.length;
+    index += 4
+  ) {
+    const luminance =
+      data[index] * 0.299 +
+      data[index + 1] * 0.587 +
+      data[index + 2] * 0.114;
+
+    /*
+     * Não invertemos.
+     *
+     * O Tesseract aceita texto claro em fundo escuro.
+     * Inverter indiscriminadamente estava destruindo
+     * informações importantes do painel.
+     */
+    const value =
+      luminance >= threshold
+        ? 255
+        : 0;
+
+    data[index] = value;
+    data[index + 1] = value;
+    data[index + 2] = value;
+    data[index + 3] = 255;
+  }
+
+  context.putImageData(
+    imageData,
+    0,
+    0
+  );
+
+  return canvas;
+}
+
+function applySharpenToCanvas(
+  source,
+  strength = 0.55
+) {
+  const width = source.width;
+  const height = source.height;
+
+  if (
+    width < 3 ||
+    height < 3
+  ) {
+    return source;
+  }
+
+  const sourceContext =
+    source.getContext(
+      '2d',
+      {
+        willReadFrequently: true
+      }
+    );
+
+  if (!sourceContext) {
+    return source;
+  }
+
+  const sourceData =
+    sourceContext.getImageData(
+      0,
+      0,
+      width,
+      height
+    );
+
+  const output =
+    new ImageData(
+      width,
+      height
+    );
+
+  const input =
+    sourceData.data;
+
+  const result =
+    output.data;
+
+  const center =
+    1 + 4 * strength;
+
+  const side =
+    -strength;
+
+  for (
+    let y = 1;
+    y < height - 1;
+    y += 1
+  ) {
+    for (
+      let x = 1;
+      x < width - 1;
+      x += 1
+    ) {
+      const index =
+        (y * width + x) * 4;
+
+      const left =
+        index - 4;
+
+      const right =
+        index + 4;
+
+      const top =
+        index - width * 4;
+
+      const bottom =
+        index + width * 4;
+
+      for (
+        let channel = 0;
+        channel < 3;
+        channel += 1
+      ) {
+        const value =
+          input[index + channel] *
+            center +
+          input[left + channel] *
+            side +
+          input[right + channel] *
+            side +
+          input[top + channel] *
+            side +
+          input[bottom + channel] *
+            side;
+
+        result[index + channel] =
+          Math.max(
+            0,
+            Math.min(255, value)
+          );
+      }
+
+      result[index + 3] = 255;
+    }
+  }
+
+  /*
+   * Copia as bordas, pois o filtro acima processa
+   * somente pixels com vizinhos completos.
+   */
+  for (
+    let x = 0;
+    x < width;
+    x += 1
+  ) {
+    for (
+      const y of [0, height - 1]
+    ) {
+      const index =
+        (y * width + x) * 4;
+
+      result[index] =
+        input[index];
+
+      result[index + 1] =
+        input[index + 1];
+
+      result[index + 2] =
+        input[index + 2];
+
+      result[index + 3] = 255;
+    }
+  }
+
+  for (
+    let y = 0;
+    y < height;
+    y += 1
+  ) {
+    for (
+      const x of [0, width - 1]
+    ) {
+      const index =
+        (y * width + x) * 4;
+
+      result[index] =
+        input[index];
+
+      result[index + 1] =
+        input[index + 1];
+
+      result[index + 2] =
+        input[index + 2];
+
+      result[index + 3] = 255;
+    }
+  }
+
+  sourceContext.putImageData(
+    output,
+    0,
+    0
+  );
+
+  return source;
+}
+
+function buildProcessedCanvases(shot) {
+  const base =
+    createBaseCanvas(shot);
+
+  const original =
+    applySharpenToCanvas(
+      cloneCanvas(base),
+      0.35
+    );
+
+  const contrast =
+    applySharpenToCanvas(
+      applyContrastToCanvas(
+        cloneCanvas(base),
+        24,
+        1.08
+      ),
+      0.55
+    );
+
+  const grayscale =
+    applySharpenToCanvas(
+      applyGrayscaleToCanvas(
+        cloneCanvas(base),
+        24
+      ),
+      0.5
+    );
+
+  const configuredCut =
+    (
+      Number(
+        options.binaryThreshold
+      ) /
+      100
+    ) *
+    255;
+
+  const binary =
+    applyBinaryToCanvas(
+      applyGrayscaleToCanvas(
+        cloneCanvas(base),
+        18
+      ),
+      options.readingMode === 'binary'
+        ? configuredCut
+        : null
+    );
+
+  switch (options.readingMode) {
+    case 'original':
+      return [
+        {
+          name: 'original',
+          label: 'Original melhorado',
+          canvas: original
+        }
+      ];
+
+    case 'contrast':
+      return [
+        {
+          name: 'contrast',
+          label: 'Alto contraste',
+          canvas: contrast
+        }
+      ];
+
+    case 'binary':
+      return [
+        {
+          name: 'binary',
+          label: 'Preto e branco',
+          canvas: binary
+        }
+      ];
+
+    case 'auto':
+    default:
+      return [
+        {
+          name: 'contrast',
+          label: 'Colorida melhorada',
+          canvas: contrast
+        },
+        {
+          name: 'original',
+          label: 'Original melhorado',
+          canvas: original
+        },
+        {
+          name: 'grayscale',
+          label: 'Escala de cinza',
+          canvas: grayscale
+        },
+        {
+          name: 'binary',
+          label: 'Preto e branco',
+          canvas: binary
+        }
+      ];
+  }
+}
+
+function buildProcessedCanvas(shot) {
+  const versions =
+    buildProcessedCanvases(shot);
+
+  return versions[0]?.canvas || null;
+}
+
+function cropCanvasRegion(
+  source,
+  {
+    x = 0,
+    y = 0,
+    w = 1,
+    h = 1
+  } = {}
+) {
+  const sourceX =
+    Math.max(
+      0,
+      Math.floor(
+        source.width * x
+      )
+    );
+
+  const sourceY =
+    Math.max(
+      0,
+      Math.floor(
+        source.height * y
+      )
+    );
+
+  const sourceWidth =
+    Math.max(
+      1,
+      Math.min(
+        source.width - sourceX,
+        Math.floor(
+          source.width * w
+        )
+      )
+    );
+
+  const sourceHeight =
+    Math.max(
+      1,
+      Math.min(
+        source.height - sourceY,
+        Math.floor(
+          source.height * h
+        )
+      )
+    );
+
+  const canvas =
+    document.createElement('canvas');
+
+  canvas.width = sourceWidth;
+  canvas.height = sourceHeight;
+
+  const context =
+    canvas.getContext('2d');
+
+  if (!context) {
+    throw new Error(
+      'Não foi possível criar a região da imagem.'
+    );
+  }
+
+  context.drawImage(
+    source,
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight,
     0,
     0,
     canvas.width,
     canvas.height
   );
 
-  context.drawImage(
-    shot.image,
-    0,
-    0
-  );
-
-  const relative = effectiveCrop(shot);
-
-  if (relative) {
-    const rect = canvas.getBoundingClientRect();
-
-    box.style.display = 'block';
-    box.style.left =
-      `${relative.x * rect.width}px`;
-
-    box.style.top =
-      `${relative.y * rect.height}px`;
-
-    box.style.width =
-      `${relative.w * rect.width}px`;
-
-    box.style.height =
-      `${relative.h * rect.height}px`;
-  } else {
-    box.style.display = 'none';
-  }
-
-  try {
-    const processed = buildProcessedCanvas(shot);
-
-    if (!processed) return;
-
-    preview.width = processed.width;
-    preview.height = processed.height;
-
-    const previewContext =
-      preview.getContext('2d');
-
-    if (!previewContext) return;
-
-    previewContext.clearRect(
-      0,
-      0,
-      preview.width,
-      preview.height
-    );
-
-    previewContext.drawImage(
-      processed,
-      0,
-      0
-    );
-  } catch (error) {
-    console.warn(
-      '[OCR] Não foi possível montar a prévia:',
-      error
-    );
-  }
+  return canvas;
 }
 
 /* =========================================================
@@ -1816,37 +2592,92 @@ function showWarnings() {
    LEITURA ESTRUTURADA
 ========================================================= */
 
+function normalizeRarityCandidate(value = '') {
+  return normalize(value)
+    .replace(/\b0\b/g, 'o')
+    .replace(/\b1\b/g, 'i')
+    .replace(/\|/g, 'i')
+    .replace(/rn/g, 'm')
+    .replace(/vv/g, 'w')
+    .replace(/[^a-z]/g, '');
+}
+
 function matchRarity(line) {
   const clean = normalize(line);
 
-  if (!clean || clean.length > 22) {
+  if (!clean) {
     return null;
   }
 
-  const letters =
-    clean.replace(/[^a-z]/g, '');
+  const words = clean
+    .split(/\s+/)
+    .filter(Boolean);
 
-  if (letters.length < 4) {
-    return null;
+  const candidates = new Set();
+
+  candidates.add(
+    normalizeRarityCandidate(clean)
+  );
+
+  for (const word of words) {
+    candidates.add(
+      normalizeRarityCandidate(word)
+    );
   }
 
-  let best = null;
+  for (
+    let index = 0;
+    index < words.length - 1;
+    index += 1
+  ) {
+    candidates.add(
+      normalizeRarityCandidate(
+        words[index] + words[index + 1]
+      )
+    );
+  }
+
+  let bestRarity = null;
   let bestScore = 0;
 
-  for (const rarity of RARITIES) {
-    const score = similarity(
-      letters,
-      normalize(rarity.label)
-    );
+  for (const candidate of candidates) {
+    if (
+      !candidate ||
+      candidate.length < 3
+    ) {
+      continue;
+    }
 
-    if (score > bestScore) {
-      bestScore = score;
-      best = rarity;
+    for (const rarity of RARITIES) {
+      const expected =
+        normalizeRarityCandidate(
+          rarity.label
+        );
+
+      let score = similarity(
+        candidate,
+        expected
+      );
+
+      if (
+        candidate.includes(expected) ||
+        expected.includes(candidate)
+      ) {
+        score = Math.max(
+          score,
+          0.88
+        );
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestRarity = rarity;
+      }
     }
   }
 
-  return bestScore >= 0.72
-    ? best
+  return bestScore >= 0.68
+    ? bestRarity
     : null;
 }
 
@@ -1871,9 +2702,9 @@ function matchStat(line) {
     return null;
   }
 
-  const isPercent =
-    numberMatch[2] === '%' ||
-    clean.includes('%');
+ const isPercent =
+  numberMatch[2] === '%' ||
+  clean.includes('%');
 
   let best = null;
   let bestScore = 0;
@@ -1977,18 +2808,41 @@ function parseText(text) {
   let currentBonus = null;
 
   for (const line of lines) {
-    const rarity = matchRarity(line);
+  const rarity = matchRarity(line);
 
-    if (rarity) {
-      currentRarity = rarity.slug;
-      currentBonus = null;
+if (rarity) {
+  currentRarity = rarity.slug;
+  currentBonus = null;
 
-      if (!result.variants[currentRarity]) {
-        result.variants[currentRarity] = [];
-      }
+  if (!result.variants[currentRarity]) {
+    result.variants[currentRarity] = [];
+  }
 
-      continue;
+  /*
+   * Em vez de depender da grafia exata da raridade,
+   * pega o conteúdo a partir do primeiro número.
+   */
+  const numberPosition =
+    line.search(/[+-]?\s*\d/);
+
+  if (numberPosition >= 0) {
+    const remainder =
+      line
+        .slice(numberPosition)
+        .trim();
+
+    const inlineStat =
+      matchStat(remainder);
+
+    if (inlineStat) {
+      result.variants[
+        currentRarity
+      ].push(inlineStat);
     }
+  }
+
+  continue;
+}
 
     const pieces =
       matchSetBonusHeader(line);
@@ -2036,7 +2890,574 @@ function parseText(text) {
 
   return result;
 }
+/* =========================================================
+   AVALIAÇÃO E ESCOLHA DA MELHOR LEITURA
+========================================================= */
 
+function countParsedAttributes(parsed) {
+  if (!parsed?.variants) {
+    return 0;
+  }
+
+  return Object.values(
+    parsed.variants
+  ).reduce(
+    (total, attributes) =>
+      total +
+      (
+        Array.isArray(attributes)
+          ? attributes.length
+          : 0
+      ),
+    0
+  );
+}
+
+function countRecognizedAttributes(
+  parsed
+) {
+  if (!parsed?.variants) {
+    return 0;
+  }
+
+  return Object.values(
+    parsed.variants
+  ).reduce(
+    (total, attributes) =>
+      total +
+      (
+        Array.isArray(attributes)
+          ? attributes.filter(
+              attribute =>
+                Boolean(
+                  attribute?.key
+                )
+            ).length
+          : 0
+      ),
+    0
+  );
+}
+
+function countRarityMentions(text) {
+  return String(text || '')
+    .split(/\r?\n/)
+    .filter(line =>
+      Boolean(matchRarity(line))
+    )
+    .length;
+}
+
+function scoreOcrCandidate({
+  text,
+  parsed,
+  confidence = 0
+}) {
+  const cleanText =
+    String(text || '').trim();
+
+  if (!cleanText) {
+    return -1000;
+  }
+
+  const rarityCount =
+    Object.keys(
+      parsed?.variants || {}
+    ).length;
+
+  const rarityMentions =
+    countRarityMentions(
+      cleanText
+    );
+
+  const attributeCount =
+    countParsedAttributes(
+      parsed
+    );
+
+  const recognizedAttributes =
+    countRecognizedAttributes(
+      parsed
+    );
+
+  const bonusCount =
+    parsed?.bonuses?.length || 0;
+
+  const validLines =
+    cleanText
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(line =>
+        line.length >= 2
+      ).length;
+
+  const replacementCharacters =
+    (
+      cleanText.match(
+        /[�□■]{1}/g
+      ) || []
+    ).length;
+
+  let score = 0;
+
+  score += rarityCount * 120;
+  score += rarityMentions * 28;
+  score += attributeCount * 22;
+  score += recognizedAttributes * 35;
+  score += bonusCount * 30;
+  score += Math.min(validLines, 30) * 1.5;
+  score += Math.max(
+    0,
+    Math.min(100, confidence)
+  ) * 0.15;
+
+  if (parsed?.name) {
+    score += 8;
+  }
+
+  if (parsed?.setName) {
+    score += 8;
+  }
+
+  score -=
+    replacementCharacters * 12;
+
+  /*
+   * Evita selecionar uma leitura enorme e cheia de ruído
+   * somente porque ela contém muitas linhas.
+   */
+  if (
+    cleanText.length > 5000
+  ) {
+    score -= 30;
+  }
+
+  return score;
+}
+
+function mergeOcrTexts(
+  firstText,
+  secondText
+) {
+  const lines = [];
+
+  const seen =
+    new Set();
+
+  for (
+    const line of [
+      ...String(firstText || '')
+        .split(/\r?\n/),
+
+      ...String(secondText || '')
+        .split(/\r?\n/)
+    ]
+  ) {
+    const trimmed =
+      line.trim();
+
+    if (!trimmed) continue;
+
+    const key =
+      normalize(trimmed);
+
+    if (!key) continue;
+    if (seen.has(key)) continue;
+
+    seen.add(key);
+    lines.push(trimmed);
+  }
+
+  return lines.join('\n');
+}
+
+async function recognizeCanvas(
+  worker,
+  canvas,
+  {
+    psm = '4',
+    label = ''
+  } = {}
+) {
+  await worker.setParameters({
+    tessedit_pageseg_mode:
+      String(psm),
+
+    preserve_interword_spaces:
+      '1',
+
+    user_defined_dpi:
+      '300',
+
+    tessedit_char_whitelist:
+      'ABCDEFGHIJKLMNOPQRSTUVWXYZ' +
+      'ÀÁÂÃÉÊÍÓÔÕÚÇ' +
+      'abcdefghijklmnopqrstuvwxyz' +
+      'àáâãéêíóôõúç' +
+      '0123456789+-%.,/() '
+  });
+
+  const result =
+    await worker.recognize(
+      canvas
+    );
+
+  const text =
+    String(
+      result?.data?.text || ''
+    ).trim();
+
+  const parsed =
+    parseText(text);
+
+  const confidence =
+    Number(
+      result?.data?.confidence
+    ) || 0;
+
+  return {
+    label,
+    psm: String(psm),
+    text,
+    parsed,
+    confidence,
+    score: scoreOcrCandidate({
+      text,
+      parsed,
+      confidence
+    })
+  };
+}
+
+function getAutomaticOcrAttempts(
+  versions
+) {
+  const byName =
+    new Map(
+      versions.map(version => [
+        version.name,
+        version
+      ])
+    );
+
+  const attempts = [];
+
+  const contrast =
+    byName.get('contrast');
+
+  const original =
+    byName.get('original');
+
+  const grayscale =
+    byName.get('grayscale');
+
+  const binary =
+    byName.get('binary');
+
+  /*
+   * PSM 4:
+   * considera colunas/blocos de tamanhos diferentes.
+   *
+   * PSM 11:
+   * procura textos esparsos e independentes.
+   */
+  if (contrast) {
+    attempts.push({
+      ...contrast,
+      psm: '4'
+    });
+
+    attempts.push({
+      ...contrast,
+      psm: '11'
+    });
+  }
+
+  if (original) {
+    attempts.push({
+      ...original,
+      psm: '11'
+    });
+  }
+
+  if (grayscale) {
+    attempts.push({
+      ...grayscale,
+      psm: '4'
+    });
+  }
+
+  /*
+   * A versão binária fica por último e funciona
+   * somente como fallback.
+   */
+  if (binary) {
+    attempts.push({
+      ...binary,
+      psm: '11'
+    });
+  }
+
+  return attempts;
+}
+
+async function recognizeShotRobustly(
+  worker,
+  shot,
+  shouldCancel
+) {
+  const versions =
+    buildProcessedCanvases(shot);
+
+  let attempts;
+
+  if (
+    options.readingMode === 'auto'
+  ) {
+    attempts =
+      getAutomaticOcrAttempts(
+        versions
+      );
+  } else {
+    const version =
+      versions[0];
+
+    attempts = [
+      {
+        ...version,
+        psm: '4'
+      },
+      {
+        ...version,
+        psm: '11'
+      }
+    ];
+  }
+
+  const candidates = [];
+
+  for (const attempt of attempts) {
+    if (shouldCancel()) {
+      throw new Error(
+        'OCR_CANCELLED'
+      );
+    }
+
+    const candidate =
+      await recognizeCanvas(
+        worker,
+        attempt.canvas,
+        {
+          psm: attempt.psm,
+          label:
+            `${attempt.label} / ` +
+            `PSM ${attempt.psm}`
+        }
+      );
+
+    candidates.push(candidate);
+
+    /*
+     * Resultado suficientemente bom:
+     * pelo menos uma raridade e um atributo.
+     *
+     * Evita executar passagens desnecessárias.
+     */
+    const rarityCount =
+      Object.keys(
+        candidate.parsed
+          ?.variants || {}
+      ).length;
+
+    const attributeCount =
+      countParsedAttributes(
+        candidate.parsed
+      );
+
+    if (
+      rarityCount >= 1 &&
+      attributeCount >= 1 &&
+      candidate.score >= 160
+    ) {
+      break;
+    }
+  }
+
+  candidates.sort(
+    (first, second) =>
+      second.score -
+      first.score
+  );
+
+  let best =
+    candidates[0] || {
+      label: 'Nenhuma leitura',
+      psm: '',
+      text: '',
+      parsed: parseText(''),
+      confidence: 0,
+      score: -1000
+    };
+
+  /*
+   * Segunda etapa.
+   *
+   * Quando a primeira leitura encontra pouco conteúdo,
+   * divide o painel em duas regiões sobrepostas:
+   *
+   * 1. cabeçalho;
+   * 2. área de efeitos e raridades.
+   *
+   * A sobreposição evita cortar justamente o título
+   * "Efeitos por categoria".
+   */
+  const bestVersionName =
+    best.label
+      .toLowerCase()
+      .includes('original')
+      ? 'original'
+      : best.label
+          .toLowerCase()
+          .includes('cinza')
+        ? 'grayscale'
+        : best.label
+            .toLowerCase()
+            .includes('preto')
+          ? 'binary'
+          : 'contrast';
+
+  const bestVersion =
+    versions.find(
+      version =>
+        version.name ===
+        bestVersionName
+    ) ||
+    versions[0];
+
+  const bestRarityCount =
+    Object.keys(
+      best.parsed?.variants || {}
+    ).length;
+
+  const bestAttributeCount =
+    countParsedAttributes(
+      best.parsed
+    );
+
+  if (
+    bestVersion &&
+    (
+      bestRarityCount === 0 ||
+      bestAttributeCount === 0
+    )
+  ) {
+    if (shouldCancel()) {
+      throw new Error(
+        'OCR_CANCELLED'
+      );
+    }
+
+    const headerCanvas =
+      cropCanvasRegion(
+        bestVersion.canvas,
+        {
+          x: 0,
+          y: 0,
+          w: 1,
+          h: 0.42
+        }
+      );
+
+    const effectsCanvas =
+      cropCanvasRegion(
+        bestVersion.canvas,
+        {
+          x: 0,
+          y: 0.25,
+          w: 1,
+          h: 0.75
+        }
+      );
+
+    const headerResult =
+      await recognizeCanvas(
+        worker,
+        headerCanvas,
+        {
+          psm: '11',
+          label:
+            `${bestVersion.label} / cabeçalho`
+        }
+      );
+
+    if (shouldCancel()) {
+      throw new Error(
+        'OCR_CANCELLED'
+      );
+    }
+
+    const effectsResult =
+      await recognizeCanvas(
+        worker,
+        effectsCanvas,
+        {
+          psm: '4',
+          label:
+            `${bestVersion.label} / efeitos`
+        }
+      );
+
+    const combinedText =
+      mergeOcrTexts(
+        headerResult.text,
+        effectsResult.text
+      );
+
+    const combinedParsed =
+      parseText(combinedText);
+
+    const combinedCandidate = {
+      label:
+        `${bestVersion.label} / ` +
+        'leitura em duas etapas',
+
+      psm: '11 + 4',
+      text: combinedText,
+      parsed: combinedParsed,
+
+      confidence:
+        (
+          headerResult.confidence +
+          effectsResult.confidence
+        ) /
+        2,
+
+      score: 0
+    };
+
+    combinedCandidate.score =
+      scoreOcrCandidate(
+        combinedCandidate
+      );
+
+    candidates.push(
+      combinedCandidate
+    );
+
+    if (
+      combinedCandidate.score >
+      best.score
+    ) {
+      best =
+        combinedCandidate;
+    }
+  }
+
+  return {
+    best,
+    candidates
+  };
+}
 /* =========================================================
    FUSÃO DOS PRINTS
 ========================================================= */
@@ -2581,6 +4002,11 @@ fileInput.addEventListener(
           status: 'pending',
           error: '',
           durationMs: 0
+             
+           ocrMethod: '',
+ocrScore: 0,
+ocrConfidence: 0,
+ocrAttempts: []
         });
       } catch (error) {
         console.warn(
@@ -2655,6 +4081,11 @@ function resetExtractionState() {
     shot.status = 'pending';
     shot.error = '';
     shot.durationMs = 0;
+     
+     shot.ocrMethod = '';
+shot.ocrScore = 0;
+shot.ocrConfidence = 0;
+shot.ocrAttempts = [];
   }
 
   raw.value = '';
@@ -2901,15 +4332,6 @@ async function runExtraction() {
 
     extractionRun.worker = worker;
 
-    await worker.setParameters({
-      tessedit_pageseg_mode: '6',
-      preserve_interword_spaces: '1',
-      tessedit_char_whitelist:
-        'ABCDEFGHIJKLMNOPQRSTUVWXYZÀÁÂÃÉÊÍÓÔÕÚÇ' +
-        'abcdefghijklmnopqrstuvwxyzàáâãéêíóôõúç' +
-        '0123456789+-%.,/() '
-    });
-
     for (
       let index = 0;
       index < shots.length;
@@ -2942,42 +4364,81 @@ async function runExtraction() {
       renderStrip();
 
       try {
-        const canvas =
-          buildProcessedCanvas(shot);
+const robustResult =
+  await recognizeShotRobustly(
+    worker,
+    shot,
+    () =>
+      extractionRun.cancelled ||
+      runId !== extractionRun.id
+  );
 
-        if (
-          !canvas ||
-          !canvas.width ||
-          !canvas.height
-        ) {
-          throw new Error(
-            'O recorte gerou uma imagem vazia.'
-          );
-        }
+if (
+  extractionRun.cancelled ||
+  runId !== extractionRun.id
+) {
+  shot.status = 'cancelled';
 
-        const result =
-          await worker.recognize(canvas);
+  shot.error =
+    'Processamento interrompido pelo usuário.';
 
-        if (
-          extractionRun.cancelled ||
-          runId !== extractionRun.id
-        ) {
-          shot.status = 'cancelled';
+  break;
+}
 
-          shot.error =
-            'Processamento interrompido pelo usuário.';
+const best =
+  robustResult.best;
 
-          break;
-        }
+shot.text =
+  String(
+    best.text || ''
+  ).trim();
 
-        shot.text = String(
-          result?.data?.text || ''
-        ).trim();
+shot.parsed =
+  best.parsed ||
+  parseText(shot.text);
 
-        shot.parsed =
-          parseText(shot.text);
+shot.ocrMethod =
+  best.label || '';
 
-        classifyShotResult(shot);
+shot.ocrScore =
+  Number(best.score) || 0;
+
+shot.ocrConfidence =
+  Number(best.confidence) || 0;
+
+shot.ocrAttempts =
+  robustResult.candidates.map(
+    candidate => ({
+      method:
+        candidate.label,
+
+      psm:
+        candidate.psm,
+
+      score:
+        Math.round(
+          candidate.score
+        ),
+
+      confidence:
+        Math.round(
+          candidate.confidence
+        ),
+
+      rarities:
+        Object.keys(
+          candidate.parsed
+            ?.variants || {}
+        ).length,
+
+      attributes:
+        countParsedAttributes(
+          candidate.parsed
+        )
+    })
+  );
+
+classifyShotResult(shot);
       } catch (error) {
         if (
           extractionRun.cancelled ||
