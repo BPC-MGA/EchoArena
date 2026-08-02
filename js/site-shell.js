@@ -12,9 +12,35 @@ import { supabase } from './supabase.js';
      import { initSiteShell } from './js/site-shell.js';
      const shell = await initSiteShell({ activeId: 'herois' });
 
-   O HTML precisa apenas de:
-     <div data-site-content> ...conteúdo da página... </div>
+   O HTML da página é preservado por inteiro — inclusive painéis
+   laterais, modais e elementos fora de qualquer contêiner. Não é
+   preciso marcar nada.
    ========================================================= */
+
+/* =========================================================
+   TRAVA DE PINTURA
+   O guard.js já esconde a página, mas ele some assim que
+   libera. Esta trava cobre o intervalo entre a liberação e
+   a montagem da casca, evitando o conteúdo cru piscar.
+========================================================= */
+
+const PAINT_GUARD_ID = 'site-paint-guard';
+
+(function hideUntilReady() {
+  if (document.getElementById(PAINT_GUARD_ID)) return;
+
+  const style = document.createElement('style');
+  style.id = PAINT_GUARD_ID;
+  style.textContent = 'body{visibility:hidden !important}';
+
+  (document.head || document.documentElement).appendChild(style);
+
+  setTimeout(revealPage, 8000);
+})();
+
+function revealPage() {
+  document.getElementById(PAINT_GUARD_ID)?.remove();
+}
 
 /* ---------------------------------------------------------
    MENU — fonte única. Página nova? Acrescente aqui.
@@ -146,8 +172,15 @@ export function mediaInner(media, alt = '') {
    MONTAGEM
 --------------------------------------------------------- */
 function renderShell({ activeId, withRail }) {
-  const existing = document.querySelector('[data-site-content]');
-  const pageContent = existing ? existing.innerHTML : document.body.innerHTML;
+  /* Preserva TODOS os nós da página, não só o contêiner marcado.
+     Painéis laterais, modais e qualquer elemento solto sobrevivem.
+     Mover nós (em vez de copiar innerHTML) também mantém os
+     listeners já registrados. */
+  const preserved = document.createDocumentFragment();
+
+  while (document.body.firstChild) {
+    preserved.appendChild(document.body.firstChild);
+  }
 
   const mainNav = MAIN_NAV.map(item => `
     <a href="${item.href}" class="${item.id === activeId ? 'on' : ''}">
@@ -191,7 +224,7 @@ function renderShell({ activeId, withRail }) {
         </div>
       </aside>
 
-      <main class="col" data-site-content>${pageContent}</main>
+      <main class="col" id="site-main"></main>
     </div>
 
     <div class="auth-modal" id="auth-modal" aria-hidden="true">
@@ -234,6 +267,9 @@ function renderShell({ activeId, withRail }) {
       </div>
     </div>
   `;
+
+  document.getElementById('site-main').appendChild(preserved);
+  revealPage();
 }
 
 /* ---------------------------------------------------------
@@ -447,7 +483,10 @@ function bindShellEvents() {
 --------------------------------------------------------- */
 export async function initSiteShell({ activeId = '', withRail = false } = {}) {
   /* O porteiro já substituiu a página. */
-  if (window.__ECHO_BLOCKED) return null;
+  if (window.__ECHO_BLOCKED) {
+    revealPage();
+    return null;
+  }
 
   renderShell({ activeId, withRail });
   bindShellEvents();
