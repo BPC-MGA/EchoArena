@@ -410,6 +410,12 @@ function bindEvents() {
    em /admin/ e não passa por aqui.
 ========================================================= */
 
+/* O index.html nasce oculto por uma trava de inicialização.
+   Só liberamos depois de decidir entre site normal e manutenção. */
+function revealPage() {
+  document.getElementById('boot-guard')?.remove();
+}
+
 function renderMaintenanceScreen(siteName = 'Echo Arena') {
   document.body.innerHTML = `
     <div class="mnt-wrap">
@@ -469,6 +475,7 @@ function renderMaintenanceScreen(siteName = 'Echo Arena') {
   `;
 
   document.head.appendChild(style);
+  revealPage();
 }
 
 async function checkMaintenance() {
@@ -499,6 +506,7 @@ async function checkMaintenance() {
 async function bootstrap() {
   if (await checkMaintenance()) return;
 
+  revealPage();
   bindEvents();
 
   const { data } = await supabase.auth.getSession();
@@ -515,4 +523,5 @@ async function bootstrap() {
 
 bootstrap().catch((error) => {
   console.error('[Echo Arena]', error);
+  revealPage();
 });
