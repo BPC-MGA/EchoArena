@@ -77,6 +77,33 @@ function mediaInner(media, alt = '') {
 }
 
 /* =========================================================
+   COR DA CLASSE
+   Vem de hero_classes.color, editável no painel.
+   Sem cor definida, usa uma paleta estável derivada do slug —
+   o mesmo slug sempre recebe a mesma cor.
+========================================================= */
+
+const CLASS_PALETTE = [
+  '#F4D77A', '#8FE9FF', '#B794FF', '#4ADE80',
+  '#F87171', '#FBBF24', '#67E8F9', '#F0A6D0'
+];
+
+function classColor(hero = {}) {
+  const stored = String(hero.class_color || '').trim();
+
+  if (/^#[0-9a-f]{3,8}$/i.test(stored)) return stored;
+
+  const key = String(hero.class_slug || hero.class_name || hero.slug || '');
+  let sum = 0;
+
+  for (let i = 0; i < key.length; i += 1) {
+    sum = (sum + key.charCodeAt(i)) % 997;
+  }
+
+  return CLASS_PALETTE[sum % CLASS_PALETTE.length];
+}
+
+/* =========================================================
    AUTENTICAÇÃO
 ========================================================= */
 
@@ -143,18 +170,21 @@ async function loadHeroes(classSlug = '') {
 
   container.innerHTML = state.heroes.slice(0, 12).map((hero) => {
     const media = mediaOf(hero, 'card');
+    const color = classColor(hero);
 
     return `
-      <article class="hc" data-hero="${escapeHtml(hero.slug)}">
+      <article class="hc" data-hero="${escapeHtml(hero.slug)}"
+               style="--class-color:${escapeHtml(color)}">
         <div class="thumb">
           <div class="media ${media ? '' : 'empty'}"
                style="${mediaStyle(media, 'cover')}">
             ${mediaInner(media, hero.name)}
           </div>
           <div class="fade"></div>
-          <span class="div">${escapeHtml(hero.class_name || 'Herói')}</span>
           <div class="cap">
-            <div class="n">${escapeHtml(hero.name)}</div>
+            <div class="n" style="color:${escapeHtml(color)}">
+              ${escapeHtml(hero.name)}
+            </div>
             <div class="r">${escapeHtml(hero.class_name || '')}</div>
           </div>
         </div>
