@@ -6,6 +6,8 @@ const $$ = (selector) => [...document.querySelectorAll(selector)];
 
 const state = {
   session: null,
+  role: null,
+  maintenance: false,
   heroes: [],
   builds: [],
   authMode: 'login'
@@ -298,6 +300,122 @@ async function loadSavedBuilds() {
    SESSÃO
 ========================================================= */
 
+/* =========================================================
+   SAÍDA DA CONTA
+   Sair do login remove privilégios na hora. Para admin isso
+   pode significar perder o acesso ao próprio site — então a
+   ação pede confirmação explícita.
+========================================================= */
+
+async function loadAccountContext() {
+  state.role = null;
+  state.maintenance = false;
+
+  const userId = state.session?.user?.id;
+  if (!userId) return;
+
+  try {
+    const [profileResult, statusResult] = await Promise.all([
+      supabase.from('profiles').select('role').eq('id', userId).maybeSingle(),
+      supabase.rpc('site_status')
+    ]);
+
+    state.role = profileResult.data?.role ?? null;
+
+    const status = Array.isArray(statusResult.data)
+      ? statusResult.data[0]
+      : statusResult.data;
+
+    state.maintenance = status?.maintenance_mode === true;
+  } catch (error) {
+    console.warn('[conta] contexto indisponível:', error.message);
+  }
+}
+
+function confirmLogout() {
+  const isAdmin = state.role === 'admin';
+
+  /* Usuário comum sai sem cerimônia. */
+  if (!isAdmin) return Promise.resolve(true);
+
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.id = 'logout-modal';
+
+    const extra = state.maintenance
+      ? `<div class="lg-alert">
+           O site está <strong>em manutenção</strong>. Ao sair, esta página
+           deixa de abrir para você até que faça login novamente.
+         </div>`
+      : '';
+
+    overlay.innerHTML = `
+      <div class="lg-backdrop"></div>
+
+      <div class="lg-card" role="dialog" aria-modal="true">
+        <div class="lg-icon">&#9888;</div>
+
+        <h2>Sair da conta de administrador?</h2>
+
+        <p>
+          Você perde o acesso administrativo nesta aba. Recursos que exigem
+          login voltam a pedir autenticação, e será necessário entrar de novo
+          pelo painel para retomar a administração.
+        </p>
+
+        ${extra}
+
+        <div class="lg-actions">
+          <button type="button" id="lg-cancel">Continuar conectado</button>
+          <button type="button" id="lg-confirm" class="danger">Sair mesmo assim</button>
+        </div>
+      </div>
+    `;
+
+    const style = document.createElement('style');
+
+    style.textContent = `
+      #logout-modal{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:20px;
+        font-family:Inter,system-ui,sans-serif}
+      #logout-modal .lg-backdrop{position:absolute;inset:0;background:rgba(3,7,15,.82);
+        backdrop-filter:blur(5px)}
+      #logout-modal .lg-card{position:relative;width:min(440px,100%);padding:26px;
+        border:1px solid #71303b;border-radius:18px;background:#130E24;
+        box-shadow:0 30px 80px rgba(0,0,0,.6);text-align:center}
+      #logout-modal .lg-icon{font-size:32px;line-height:1;margin-bottom:12px;color:#ffb4bd}
+      #logout-modal h2{margin:0 0 10px;font-size:19px;color:#EDE9F7}
+      #logout-modal p{margin:0;color:#A79CC8;font-size:12.5px;line-height:1.65}
+      #logout-modal .lg-alert{margin-top:14px;padding:12px 14px;border:1px solid #71303b;
+        border-radius:11px;background:#2a1016;color:#ffb4bd;font-size:12px;line-height:1.6}
+      #logout-modal .lg-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:20px}
+      #logout-modal .lg-actions button{padding:12px;border:1px solid #31245C;border-radius:10px;
+        background:#181130;color:#EDE9F7;font:inherit;font-weight:700;font-size:12.5px;cursor:pointer}
+      #logout-modal .lg-actions button.danger{border-color:#71303b;background:#2a1016;color:#ff9aaa}
+      @media(max-width:420px){#logout-modal .lg-actions{grid-template-columns:1fr}}
+    `;
+
+    overlay.appendChild(style);
+    document.body.appendChild(overlay);
+
+    function close(result) {
+      document.removeEventListener('keydown', onKey);
+      overlay.remove();
+      resolve(result);
+    }
+
+    function onKey(event) {
+      if (event.key === 'Escape') close(false);
+    }
+
+    overlay.querySelector('#lg-confirm').addEventListener('click', () => close(true));
+    overlay.querySelector('#lg-cancel').addEventListener('click', () => close(false));
+    overlay.querySelector('.lg-backdrop').addEventListener('click', () => close(false));
+    document.addEventListener('keydown', onKey);
+
+    setTimeout(() => overlay.querySelector('#lg-cancel')?.focus(), 30);
+  });
+}
+
 function updateAuthUI() {
   const loginButton = $('#login-btn');
   const registerButton = $('#register-btn');
@@ -305,7 +423,9 @@ function updateAuthUI() {
   if (state.session?.user) {
     loginButton.textContent = 'Sair';
     loginButton.onclick = async () => {
-      await supabase.auth.signOut();
+      if (await confirmLogout()) {
+        await supabase.auth.signOut();
+      }
     };
     registerButton.textContent = state.session.user.email || 'Minha conta';
     registerButton.disabled = true;
@@ -412,10 +532,12 @@ async function bootstrap() {
 
   const { data } = await supabase.auth.getSession();
   state.session = data.session;
+  await loadAccountContext();
   updateAuthUI();
 
-  supabase.auth.onAuthStateChange((_event, session) => {
+  supabase.auth.onAuthStateChange(async (_event, session) => {
     state.session = session;
+    await loadAccountContext();
     updateAuthUI();
   });
 
