@@ -528,6 +528,9 @@ function bindEvents() {
 ========================================================= */
 
 async function bootstrap() {
+  /* O porteiro já substituiu a página — não há o que montar. */
+  if (window.__ECHO_BLOCKED) return;
+
   bindEvents();
 
   const { data } = await supabase.auth.getSession();
