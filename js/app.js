@@ -63,8 +63,8 @@ function mediaStyle(media, fit) {
     `--fit:${fit || media.fit || 'cover'}`,
     `--pos:${pos}`,
     `--scale:${Number(media.scale ?? 1)}`,
-    `--x:${Number(media.offset_x ?? 0)}px`,
-    `--y:${Number(media.offset_y ?? 0)}px`
+    `--x:${Number(media.offset_x ?? 0)}%`,
+    `--y:${Number(media.offset_y ?? 0)}%`
   ].join(';');
 }
 
