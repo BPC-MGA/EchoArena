@@ -4001,7 +4001,7 @@ fileInput.addEventListener(
           parsed: null,
           status: 'pending',
           error: '',
-          durationMs: 0
+          durationMs: 0,
              
            ocrMethod: '',
 ocrScore: 0,
