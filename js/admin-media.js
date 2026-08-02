@@ -1,5 +1,4 @@
-import { supabase } from '../../js/supabase.js';
-
+import { supabase } from './supabase.js';
 const BUCKET = 'game-media';
 const MAX_SIZE = 25 * 1024 * 1024;
 const ALLOWED = ['image/png','image/jpeg','image/gif','image/webp'];
