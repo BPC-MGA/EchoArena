@@ -269,6 +269,9 @@ function collect() {
     const key = element.dataset.field;
 
     if (element.type === 'checkbox') {
+      /* Manutenção tem fluxo próprio, com senha mestra. */
+      if (key === 'maintenance_mode') return;
+
       payload[key] = element.checked;
       return;
     }
@@ -390,16 +393,157 @@ async function load() {
 saveButton?.addEventListener('click', save);
 reloadButton?.addEventListener('click', () => load());
 
-/* Aviso imediato ao ligar o modo manutenção. */
-body?.addEventListener('change', (event) => {
-  const toggle = event.target.closest('[data-field="maintenance_mode"]');
+/* =========================================================
+   MODO MANUTENÇÃO
+   Ação separada do "Salvar": derruba o site na hora e exige
+   a senha mestra, conferida no banco.
+========================================================= */
 
-  if (toggle && toggle.checked) {
-    setMessage(
-      'Modo manutenção marcado. O site sai do ar para visitantes quando você salvar.',
-      'error'
-    );
+function buildMaintenanceModal(turningOn) {
+  const overlay = document.createElement('div');
+  overlay.id = 'maintenance-modal';
+
+  overlay.innerHTML = `
+    <div class="mm-backdrop"></div>
+
+    <div class="mm-card" role="dialog" aria-modal="true">
+      <div class="mm-icon">${turningOn ? '&#9888;' : '&#10003;'}</div>
+
+      <h2>${turningOn ? 'Derrubar o site?' : 'Reativar o site?'}</h2>
+
+      <p>
+        ${turningOn
+          ? 'Todos os visitantes verão a tela de manutenção. O painel administrativo continua acessível para você.'
+          : 'O site volta ao ar imediatamente para todos os visitantes.'}
+      </p>
+
+      <label for="mm-password">Senha mestra</label>
+      <input id="mm-password" type="password" autocomplete="off" placeholder="Digite para confirmar">
+
+      <div class="mm-error" id="mm-error"></div>
+
+      <div class="mm-actions">
+        <button type="button" id="mm-cancel">Cancelar</button>
+        <button type="button" id="mm-confirm" class="${turningOn ? 'danger' : 'primary'}">
+          ${turningOn ? 'Derrubar site' : 'Reativar site'}
+        </button>
+      </div>
+    </div>
+  `;
+
+  const style = document.createElement('style');
+  style.textContent = `
+    #maintenance-modal{position:fixed;inset:0;z-index:200;display:grid;place-items:center;padding:20px}
+    #maintenance-modal .mm-backdrop{position:absolute;inset:0;background:rgba(3,7,15,.82);backdrop-filter:blur(5px)}
+    #maintenance-modal .mm-card{position:relative;width:min(430px,100%);padding:26px;
+      border:1px solid #71303b;border-radius:18px;background:#12101f;
+      box-shadow:0 30px 80px rgba(0,0,0,.6);text-align:center}
+    #maintenance-modal .mm-icon{font-size:34px;line-height:1;margin-bottom:12px;color:#ff9aaa}
+    #maintenance-modal h2{margin:0 0 10px;font-size:20px}
+    #maintenance-modal p{margin:0 0 18px;color:#9aa4bb;font-size:12.5px;line-height:1.6}
+    #maintenance-modal label{display:block;margin-bottom:7px;font-size:11px;font-weight:700;
+      letter-spacing:.06em;text-transform:uppercase;color:#c8cfdd;text-align:left}
+    #maintenance-modal input{width:100%;padding:12px 13px;border:1px solid #31245c;border-radius:10px;
+      background:#08101e;color:#ece9f8;font:inherit}
+    #maintenance-modal input:focus{outline:none;border-color:#8b5cf6}
+    #maintenance-modal .mm-error{min-height:18px;margin-top:9px;color:#ff8585;font-size:11.5px;text-align:left}
+    #maintenance-modal .mm-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:12px}
+    #maintenance-modal .mm-actions button{padding:12px;border:1px solid #31245c;border-radius:10px;
+      background:#161331;color:#ece9f8;font:inherit;font-weight:700;font-size:12.5px;cursor:pointer}
+    #maintenance-modal .mm-actions button.danger{border-color:#71303b;background:#2a1016;color:#ff9aaa}
+    #maintenance-modal .mm-actions button.primary{border-color:transparent;
+      background:linear-gradient(180deg,#8b5cf6,#6d28d9);color:#fff}
+    #maintenance-modal .mm-actions button:disabled{opacity:.6;cursor:wait}
+    @media(max-width:420px){#maintenance-modal .mm-actions{grid-template-columns:1fr}}
+  `;
+
+  overlay.appendChild(style);
+  return overlay;
+}
+
+function askMaintenance(turningOn) {
+  return new Promise((resolve) => {
+    const overlay = buildMaintenanceModal(turningOn);
+    document.body.appendChild(overlay);
+
+    const input = overlay.querySelector('#mm-password');
+    const errorBox = overlay.querySelector('#mm-error');
+    const confirmButton = overlay.querySelector('#mm-confirm');
+    const cancelButton = overlay.querySelector('#mm-cancel');
+
+    setTimeout(() => input.focus(), 30);
+
+    function close(result) {
+      document.removeEventListener('keydown', onKey);
+      overlay.remove();
+      resolve(result);
+    }
+
+    function onKey(event) {
+      if (event.key === 'Escape') close(false);
+      if (event.key === 'Enter' && document.activeElement === input) confirm();
+    }
+
+    async function confirm() {
+      const password = input.value;
+
+      if (!password) {
+        errorBox.textContent = 'Digite a senha mestra.';
+        return;
+      }
+
+      confirmButton.disabled = true;
+      cancelButton.disabled = true;
+      confirmButton.textContent = 'Verificando...';
+      errorBox.textContent = '';
+
+      try {
+        const { error } = await supabase.rpc('admin_set_maintenance', {
+          new_mode: turningOn,
+          master_password: password
+        });
+
+        if (error) throw error;
+
+        close(true);
+      } catch (error) {
+        console.error('[manutenção]', error);
+        errorBox.textContent = error.message || 'Não foi possível aplicar.';
+        input.value = '';
+        input.focus();
+        confirmButton.disabled = false;
+        cancelButton.disabled = false;
+        confirmButton.textContent = turningOn ? 'Derrubar site' : 'Reativar site';
+      }
+    }
+
+    confirmButton.addEventListener('click', confirm);
+    cancelButton.addEventListener('click', () => close(false));
+    overlay.querySelector('.mm-backdrop').addEventListener('click', () => close(false));
+    document.addEventListener('keydown', onKey);
+  });
+}
+
+body?.addEventListener('change', async (event) => {
+  const toggle = event.target.closest('[data-field="maintenance_mode"]');
+  if (!toggle) return;
+
+  const turningOn = toggle.checked;
+  const confirmed = await askMaintenance(turningOn);
+
+  if (!confirmed) {
+    toggle.checked = !turningOn;
+    return;
   }
+
+  settings.maintenance_mode = turningOn;
+
+  setMessage(
+    turningOn
+      ? 'Site fora do ar. Visitantes veem a tela de manutenção.'
+      : 'Site reativado.',
+    turningOn ? 'error' : 'ok'
+  );
 });
 
 await load();
