@@ -1,0 +1,685 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+  >
+
+  <title>Importador assistido de equipamentos — Echo Admin</title>
+
+  <link
+    rel="stylesheet"
+    href="./css/admin.css"
+  >
+
+  <link
+    rel="stylesheet"
+    href="./css/equipments.css"
+  >
+
+  <style>
+    .equipment-ai-page {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 240px minmax(0, 1fr);
+      background: #070b14;
+      color: white;
+    }
+
+    .equipment-ai-main {
+      min-width: 0;
+      padding: 24px;
+    }
+
+    .equipment-ai-layout {
+      display: grid;
+      grid-template-columns:
+        minmax(320px, .9fr)
+        minmax(0, 1.1fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .equipment-ai-panel {
+      min-width: 0;
+      padding: 18px;
+      border: 1px solid #26344f;
+      border-radius: 14px;
+      background: #0f1728;
+    }
+
+    .equipment-ai-heading {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: flex-start;
+      margin-bottom: 14px;
+    }
+
+    .equipment-ai-heading h2 {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    .equipment-ai-heading p {
+      margin: 6px 0 0;
+      color: #8f9aae;
+      font-size: 11px;
+      line-height: 1.55;
+    }
+
+    .equipment-ai-badge {
+      flex: 0 0 auto;
+      padding: 5px 8px;
+      border: 1px solid #26344f;
+      border-radius: 999px;
+      background: #09111f;
+      color: #9da8bd;
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+
+    .equipment-ai-textarea {
+      width: 100%;
+      min-height: 360px;
+      resize: vertical;
+      font:
+        12px/1.55
+        ui-monospace,
+        SFMono-Regular,
+        Menlo,
+        Consolas,
+        monospace;
+    }
+
+    .equipment-ai-prompt {
+      min-height: 210px;
+    }
+
+    .equipment-ai-actions {
+      display: flex;
+      gap: 9px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+
+    .equipment-ai-actions .eq-btn:disabled {
+      opacity: .45;
+      cursor: not-allowed;
+    }
+
+    .equipment-ai-status {
+      display: none;
+      margin-bottom: 12px;
+      padding: 11px 12px;
+      border: 1px solid #26344f;
+      border-radius: 10px;
+      background: #09111f;
+      color: #c8cfdd;
+      font-size: 11px;
+      line-height: 1.55;
+    }
+
+    .equipment-ai-status.is-visible {
+      display: block;
+    }
+
+    .equipment-ai-status.ok {
+      border-color: #28583a;
+      background: #0c1c14;
+      color: #8fd3a6;
+    }
+
+    .equipment-ai-status.warn {
+      border-color: #6f5618;
+      background: #2a2009;
+      color: #ffd76d;
+    }
+
+    .equipment-ai-status.error {
+      border-color: #75353d;
+      background: #210d12;
+      color: #ff9da5;
+    }
+
+    .equipment-ai-empty {
+      padding: 34px 18px;
+      border: 1px dashed #26344f;
+      border-radius: 12px;
+      background: #09111f;
+      color: #8f9aae;
+      font-size: 12px;
+      line-height: 1.6;
+      text-align: center;
+    }
+
+    .equipment-ai-review {
+      display: none;
+      gap: 14px;
+    }
+
+    .equipment-ai-review.is-visible {
+      display: grid;
+    }
+
+    .equipment-ai-overview {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(180px, .8fr);
+      gap: 12px;
+    }
+
+    .equipment-ai-identity,
+    .equipment-ai-completion {
+      padding: 14px;
+      border: 1px solid #26344f;
+      border-radius: 12px;
+      background: #09111f;
+    }
+
+    .equipment-ai-identity small,
+    .equipment-ai-completion small {
+      display: block;
+      color: #7f8aa0;
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .equipment-ai-identity h3 {
+      margin: 7px 0 0;
+      font-size: 23px;
+    }
+
+    .equipment-ai-identity p {
+      margin: 6px 0 0;
+      color: #aeb8ca;
+      font-size: 11px;
+      line-height: 1.5;
+    }
+
+    .equipment-ai-completion strong {
+      display: block;
+      margin-top: 7px;
+      font-size: 24px;
+    }
+
+    .equipment-ai-bar {
+      height: 9px;
+      margin-top: 10px;
+      overflow: hidden;
+      border: 1px solid #26344f;
+      border-radius: 999px;
+      background: #050a12;
+    }
+
+    .equipment-ai-bar span {
+      display: block;
+      width: 0;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #6d4aff, #a78bfa);
+      transition: width .25s ease;
+    }
+
+    .equipment-ai-section {
+      padding: 14px;
+      border: 1px solid #26344f;
+      border-radius: 12px;
+      background: #09111f;
+    }
+
+    .equipment-ai-section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 11px;
+    }
+
+    .equipment-ai-section-head h3 {
+      margin: 0;
+      font-size: 14px;
+    }
+
+    .equipment-ai-section-head span {
+      color: #7f8aa0;
+      font-size: 10px;
+    }
+
+    .equipment-ai-fields {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .equipment-ai-field {
+      min-width: 0;
+      padding: 10px;
+      border: 1px solid #1f2b42;
+      border-radius: 9px;
+      background: #07101d;
+    }
+
+    .equipment-ai-field.is-missing {
+      border-style: dashed;
+      border-color: #5f4e20;
+    }
+
+    .equipment-ai-field small {
+      display: block;
+      color: #748097;
+      font-size: 8.5px;
+      font-weight: 800;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+
+    .equipment-ai-field strong {
+      display: block;
+      margin-top: 4px;
+      color: #dce3ef;
+      font-size: 12px;
+      line-height: 1.45;
+      word-break: break-word;
+    }
+
+    .equipment-ai-field.is-missing strong {
+      color: #c8a954;
+    }
+
+    .equipment-ai-rarities {
+      display: grid;
+      gap: 9px;
+    }
+
+    .equipment-ai-rarity {
+      padding: 11px;
+      border: 1px solid #1f2b42;
+      border-radius: 10px;
+      background: #07101d;
+    }
+
+    .equipment-ai-rarity-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .equipment-ai-rarity-head strong {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+
+    .equipment-ai-rarity-head span {
+      color: #7f8aa0;
+      font-size: 9px;
+    }
+
+    .equipment-ai-attrs {
+      display: grid;
+      gap: 6px;
+    }
+
+    .equipment-ai-attr {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      padding: 8px 9px;
+      border: 1px solid #1f2b42;
+      border-radius: 8px;
+      background: #0b1525;
+    }
+
+    .equipment-ai-attr span {
+      color: #c8cfdd;
+      font-size: 10.5px;
+      line-height: 1.45;
+    }
+
+    .equipment-ai-attr strong {
+      color: #dce3ef;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .equipment-ai-warning {
+      padding: 10px 11px;
+      border: 1px solid #6f5618;
+      border-radius: 9px;
+      background: #2a2009;
+      color: #ffd76d;
+      font-size: 10.5px;
+      line-height: 1.5;
+    }
+
+    .equipment-ai-note {
+      margin-top: 12px;
+      padding: 11px 12px;
+      border: 1px solid #28583a;
+      border-radius: 10px;
+      background: #0c1c14;
+      color: #8fd3a6;
+      font-size: 10.5px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 980px) {
+      .equipment-ai-layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .equipment-ai-page {
+        grid-template-columns: 1fr;
+      }
+
+      .equipment-ai-main {
+        padding: 14px;
+      }
+
+      .equipment-ai-overview,
+      .equipment-ai-fields {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        display: none;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="equipment-ai-page">
+    <aside class="sidebar">
+      <div class="brand">
+        ECHO <span>ADMIN</span>
+      </div>
+
+      <nav>
+        <a href="./index.html">
+          Dashboard
+        </a>
+
+        <a href="./heroes.html">
+          Heróis
+        </a>
+
+        <a
+          class="active"
+          href="./equipments.html"
+        >
+          Equipamentos
+        </a>
+      </nav>
+
+      <button
+        id="logout"
+        class="btn ghost"
+      >
+        Sair
+      </button>
+    </aside>
+
+    <main class="equipment-ai-main">
+      <header class="eq-head">
+        <div>
+          <div class="eyebrow">
+            Importação assistida
+          </div>
+
+          <h1>
+            Equipamento por JSON
+          </h1>
+
+          <p style="color:#8f9aae;font-size:12px;max-width:760px;line-height:1.55">
+            Cole o JSON produzido pelo ChatGPT, revise os dados e envie
+            tudo para o editor de equipamento. Nada é salvo automaticamente.
+          </p>
+        </div>
+
+        <a
+          class="eq-btn"
+          href="./equipments.html"
+        >
+          Voltar
+        </a>
+      </header>
+
+      <section class="equipment-ai-layout">
+        <article class="equipment-ai-panel">
+          <div class="equipment-ai-heading">
+            <div>
+              <h2>1. Prompt para o ChatGPT</h2>
+
+              <p>
+                Envie os prints do equipamento e copie este prompt.
+              </p>
+            </div>
+
+            <span class="equipment-ai-badge">
+              Sem API
+            </span>
+          </div>
+
+          <textarea
+            id="equipment-ai-prompt"
+            class="admin-textarea equipment-ai-textarea equipment-ai-prompt"
+            readonly
+          ></textarea>
+
+          <div class="equipment-ai-actions">
+            <button
+              id="equipment-ai-copy-prompt"
+              type="button"
+              class="eq-btn"
+            >
+              Copiar prompt
+            </button>
+          </div>
+
+          <div class="equipment-ai-heading" style="margin-top:20px">
+            <div>
+              <h2>2. JSON retornado</h2>
+
+              <p>
+                Aceita JSON puro ou dentro de um bloco de código.
+              </p>
+            </div>
+          </div>
+
+          <textarea
+            id="equipment-ai-json"
+            class="admin-textarea equipment-ai-textarea"
+            spellcheck="false"
+            placeholder="Cole aqui o JSON do equipamento..."
+          ></textarea>
+
+          <div class="equipment-ai-actions">
+            <button
+              id="equipment-ai-validate"
+              type="button"
+              class="eq-btn primary"
+            >
+              Validar dados
+            </button>
+
+            <button
+              id="equipment-ai-example"
+              type="button"
+              class="eq-btn"
+            >
+              Carregar exemplo
+            </button>
+
+            <button
+              id="equipment-ai-send"
+              type="button"
+              class="eq-btn"
+              disabled
+            >
+              Preencher editor
+            </button>
+
+            <button
+              id="equipment-ai-clear"
+              type="button"
+              class="eq-btn"
+            >
+              Limpar
+            </button>
+          </div>
+
+          <div class="equipment-ai-note">
+            Este módulo usa o editor de equipamento já existente.
+            Ao clicar em <strong>Preencher editor</strong>, os dados são
+            guardados apenas no navegador e a página
+            <code>equipment-editor.html</code> é aberta para revisão.
+          </div>
+        </article>
+
+        <article class="equipment-ai-panel">
+          <div class="equipment-ai-heading">
+            <div>
+              <h2>Revisão</h2>
+
+              <p>
+                Confira identificação, raridades, atributos e bônus.
+              </p>
+            </div>
+
+            <span
+              id="equipment-ai-review-badge"
+              class="equipment-ai-badge"
+            >
+              Aguardando
+            </span>
+          </div>
+
+          <div
+            id="equipment-ai-status"
+            class="equipment-ai-status"
+          ></div>
+
+          <div
+            id="equipment-ai-empty"
+            class="equipment-ai-empty"
+          >
+            Cole um JSON e clique em
+            <strong>Validar dados</strong>.
+          </div>
+
+          <div
+            id="equipment-ai-review"
+            class="equipment-ai-review"
+          >
+            <div class="equipment-ai-overview">
+              <div class="equipment-ai-identity">
+                <small>Equipamento reconhecido</small>
+
+                <h3 id="equipment-ai-name">
+                  —
+                </h3>
+
+                <p id="equipment-ai-meta">
+                  —
+                </p>
+              </div>
+
+              <div class="equipment-ai-completion">
+                <small>Completude</small>
+
+                <strong id="equipment-ai-completion">
+                  0%
+                </strong>
+
+                <div class="equipment-ai-bar">
+                  <span id="equipment-ai-completion-bar"></span>
+                </div>
+              </div>
+            </div>
+
+            <section class="equipment-ai-section">
+              <div class="equipment-ai-section-head">
+                <h3>Informações gerais</h3>
+
+                <span id="equipment-ai-general-count">
+                  0 campos
+                </span>
+              </div>
+
+              <div
+                id="equipment-ai-general"
+                class="equipment-ai-fields"
+              ></div>
+            </section>
+
+            <section class="equipment-ai-section">
+              <div class="equipment-ai-section-head">
+                <h3>Raridades e atributos</h3>
+
+                <span id="equipment-ai-rarity-count">
+                  0 raridades
+                </span>
+              </div>
+
+              <div
+                id="equipment-ai-rarities"
+                class="equipment-ai-rarities"
+              ></div>
+            </section>
+
+            <section class="equipment-ai-section">
+              <div class="equipment-ai-section-head">
+                <h3>Bônus de conjunto</h3>
+
+                <span id="equipment-ai-bonus-count">
+                  0 bônus
+                </span>
+              </div>
+
+              <div
+                id="equipment-ai-bonuses"
+                class="equipment-ai-fields"
+              ></div>
+            </section>
+
+            <section
+              id="equipment-ai-warning-section"
+              class="equipment-ai-section"
+            >
+              <div class="equipment-ai-section-head">
+                <h3>Avisos</h3>
+
+                <span id="equipment-ai-warning-count">
+                  0
+                </span>
+              </div>
+
+              <div
+                id="equipment-ai-warnings"
+                style="display:grid;gap:7px"
+              ></div>
+            </section>
+          </div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <script
+    type="module"
+    src="./js/equipment-ai-import.js"
+  ></script>
+</body>
+</html>
