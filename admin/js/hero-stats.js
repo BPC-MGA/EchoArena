@@ -1,7 +1,10 @@
 import { supabase } from '../../js/supabase.js';
 
+const IMPORT_KEY = 'hero-import-draft';
+
 const params = new URLSearchParams(location.search);
 const requestedHeroId = params.get('hero');
+const importRequested = params.get('import') === '1';
 
 const heroSelect =
   document.getElementById('hero-select');
@@ -44,6 +47,8 @@ let definitions = [];
 let currentHero = null;
 let isLoadingHero = false;
 let isSaving = false;
+let importSnapshot = null;
+let importedDraft = null;
 
 const HERO_CATEGORIES = new Set([
   'hero',
@@ -56,6 +61,255 @@ const WEAPON_CATEGORIES = new Set([
   'offense',
   'ability'
 ]);
+
+/*
+ * Cada campo do JSON possui uma lista de nomes possíveis.
+ * O sistema compara esses nomes com:
+ *   - definition.key
+ *   - definition.name
+ *
+ * Assim ele não depende de um único nome fixo no banco.
+ */
+const IMPORT_ALIASES = {
+  hero: {
+    power: [
+      'power',
+      'hero_power',
+      'poder',
+      'poder geral'
+    ],
+
+    health: [
+      'health',
+      'life',
+      'hp',
+      'vida',
+      'vida total'
+    ],
+
+    damage: [
+      'damage',
+      'hero_damage',
+      'dano',
+      'dano do heroi'
+    ],
+
+    armor: [
+      'armor',
+      'armour',
+      'armadura',
+      'armadura total'
+    ],
+
+    visionRange: [
+      'vision_range',
+      'visionrange',
+      'hero_vision_range',
+      'alcance de visao',
+      'visao'
+    ],
+
+    movementNoiseRadius: [
+      'movement_noise_radius',
+      'movementnoiseradius',
+      'noise_radius',
+      'raio maximo do barulho de movimentacao do heroi',
+      'raio do barulho',
+      'barulho de movimentacao'
+    ],
+
+    maxMovementSpeed: [
+      'max_movement_speed',
+      'maxmovementspeed',
+      'movement_speed',
+      'velocidade maxima de movimentacao do heroi',
+      'velocidade maxima'
+    ],
+
+    aimedMovementSpeed: [
+      'aimed_movement_speed',
+      'aimedmovementspeed',
+      'movement_speed_aiming',
+      'velocidade maxima de movimentacao do heroi ao mirar',
+      'velocidade ao mirar'
+    ],
+
+    penetrationResistance: [
+      'penetration_resistance',
+      'penetrationresistance',
+      'resistencia a perfuracao do heroi',
+      'resistencia a perfuracao'
+    ],
+
+    armorValue: [
+      'armor_value',
+      'armorvalue',
+      'valor de armadura',
+      'valor da armadura'
+    ],
+
+    armorResistance: [
+      'armor_resistance',
+      'armorresistance',
+      'resistencia de armadura'
+    ]
+  },
+
+  weapon: {
+    firepower: [
+      'firepower',
+      'weapon_firepower',
+      'poder de fogo'
+    ],
+
+    armorBreak: [
+      'armor_break',
+      'armorbreak',
+      'quebra de armadura'
+    ],
+
+    fireRate: [
+      'fire_rate',
+      'firerate',
+      'cadencia',
+      'cadencia de tiro'
+    ],
+
+    magazineCapacity: [
+      'magazine_capacity',
+      'magazinecapacity',
+      'ammo_capacity',
+      'capacidade de municao'
+    ],
+
+    effectiveRange: [
+      'effective_range',
+      'effectiverange',
+      'alcance efetivo'
+    ],
+
+    aimingStability: [
+      'aiming_stability',
+      'aimingstability',
+      'estabilidade de mira'
+    ],
+
+    damagePerShot: [
+      'damage_per_shot',
+      'damagepershot',
+      'weapon_damage',
+      'dano da arma por tiro',
+      'dano por tiro'
+    ],
+
+    healthDamageMultiplier: [
+      'health_damage_multiplier',
+      'healthdamagemultiplier',
+      'damage_to_health_multiplier',
+      'modificador de dano da arma a vida',
+      'modificador contra vida'
+    ],
+
+    armorPenetration: [
+      'armor_penetration',
+      'armorpenetration',
+      'perfuracao de armadura da arma',
+      'perfuracao de armadura'
+    ],
+
+    penetrationPower: [
+      'penetration_power',
+      'penetrationpower',
+      'poder de perfuracao da arma',
+      'poder de perfuracao'
+    ],
+
+    armorDroneMultiplier: [
+      'armor_drone_multiplier',
+      'armordronemultiplier',
+      'damage_to_armor_drone_multiplier',
+      'modificador de dano por armas a armaduras e drones',
+      'modificador contra armadura e drones'
+    ],
+
+    shotsPerSecond: [
+      'shots_per_second',
+      'shotspersecond',
+      'fire_rate_per_second',
+      'cadencia de tiro da arma por segundo',
+      'tiros por segundo'
+    ],
+
+    reloadTime: [
+      'reload_time',
+      'reloadtime',
+      'tempo de recarga da arma',
+      'tempo de recarga'
+    ],
+
+    magazineSize: [
+      'magazine_size',
+      'magazinesize',
+      'tamanho do pente da arma',
+      'tamanho do pente'
+    ],
+
+    hipFireRange: [
+      'hip_fire_range',
+      'hipfirerange',
+      'weapon_range',
+      'alcance do tiro da arma',
+      'alcance sem mira'
+    ],
+
+    aimedRange: [
+      'aimed_range',
+      'aimedrange',
+      'weapon_aim_range',
+      'alcance de tiro da arma ao mirar',
+      'alcance com mira'
+    ],
+
+    dispersion: [
+      'dispersion',
+      'weapon_dispersion',
+      'dispersao de tiro da arma',
+      'dispersao'
+    ],
+
+    movingDispersion: [
+      'moving_dispersion',
+      'movingdispersion',
+      'weapon_moving_dispersion',
+      'dispersao de tiro da arma ao se movimentar',
+      'dispersao em movimento'
+    ],
+
+    aimedDispersion: [
+      'aimed_dispersion',
+      'aimeddispersion',
+      'weapon_aimed_dispersion',
+      'dispersao de tiro da arma ao mirar',
+      'dispersao com mira'
+    ],
+
+    aimTime: [
+      'aim_time',
+      'aimtime',
+      'weapon_aim_time',
+      'tempo de mira da arma',
+      'tempo de mira'
+    ],
+
+    dispersionFactor: [
+      'dispersion_factor',
+      'dispersionfactor',
+      'weapon_dispersion_factor',
+      'fator de dispersao da arma',
+      'fator de dispersao'
+    ]
+  }
+};
 
 /* =========================================================
    UTILITÁRIOS
@@ -83,6 +337,22 @@ function escapeHtml(value = '') {
     .replaceAll("'", '&#039;');
 }
 
+function normalizeText(value = '') {
+  return String(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function slugify(value = '') {
+  return normalizeText(value)
+    .replace(/\s+/g, '-');
+}
+
 function toNumber(
   value,
   fallback = 0
@@ -92,6 +362,27 @@ function toNumber(
   return Number.isFinite(number)
     ? number
     : fallback;
+}
+
+function nullableNumber(value) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ''
+  ) {
+    return null;
+  }
+
+  const normalized =
+    typeof value === 'string'
+      ? value.replace(',', '.').trim()
+      : value;
+
+  const number = Number(normalized);
+
+  return Number.isFinite(number)
+    ? number
+    : null;
 }
 
 function publicMediaUrl(path) {
@@ -168,6 +459,244 @@ function findDefinition(statKey) {
   return definitions.find(
     definition =>
       definition.key === statKey
+  );
+}
+
+function loadImportDraft() {
+  try {
+    const stored =
+      sessionStorage.getItem(
+        IMPORT_KEY
+      );
+
+    if (!stored) {
+      return null;
+    }
+
+    const parsed =
+      JSON.parse(stored);
+
+    if (
+      !parsed ||
+      typeof parsed !== 'object' ||
+      !parsed.data
+    ) {
+      return null;
+    }
+
+    return parsed;
+  } catch (error) {
+    console.warn(
+      'Rascunho de importação inválido:',
+      error
+    );
+
+    return null;
+  }
+}
+
+function hasImportedData(draft) {
+  return Boolean(
+    draft?.data?.status ||
+    draft?.data?.weaponSummary ||
+    draft?.data?.weaponDetails
+  );
+}
+
+/* =========================================================
+   BOTÕES DE IMPORTAÇÃO E DESFAZER
+========================================================= */
+
+function injectImportControls() {
+  if (
+    document.getElementById(
+      'apply-imported-stats'
+    )
+  ) {
+    return;
+  }
+
+  const actions =
+    document.querySelector(
+      '.hero-stats-toolbar-actions'
+    );
+
+  if (!actions) {
+    return;
+  }
+
+  const applyButton =
+    document.createElement('button');
+
+  applyButton.id =
+    'apply-imported-stats';
+
+  applyButton.type =
+    'button';
+
+  applyButton.className =
+    'admin-button';
+
+  applyButton.textContent =
+    'Aplicar dados importados';
+
+  applyButton.hidden =
+    !hasImportedData(
+      importedDraft
+    );
+
+  const undoButton =
+    document.createElement('button');
+
+  undoButton.id =
+    'undo-imported-stats';
+
+  undoButton.type =
+    'button';
+
+  undoButton.className =
+    'admin-button';
+
+  undoButton.textContent =
+    'Desfazer preenchimento';
+
+  undoButton.disabled =
+    true;
+
+  actions.insertBefore(
+    applyButton,
+    saveButton
+  );
+
+  actions.insertBefore(
+    undoButton,
+    saveButton
+  );
+
+  applyButton.addEventListener(
+    'click',
+    () => {
+      applyImportedStats({
+        announce: true
+      });
+    }
+  );
+
+  undoButton.addEventListener(
+    'click',
+    undoImportedStats
+  );
+}
+
+function updateUndoButton() {
+  const undoButton =
+    document.getElementById(
+      'undo-imported-stats'
+    );
+
+  if (undoButton) {
+    undoButton.disabled =
+      !importSnapshot;
+  }
+}
+
+function captureCurrentFormSnapshot() {
+  const values = {};
+
+  document
+    .querySelectorAll(
+      '.stat-field'
+    )
+    .forEach(field => {
+      const input =
+        field.querySelector('input');
+
+      if (!input) {
+        return;
+      }
+
+      values[
+        `${field.dataset.group}:${field.dataset.statKey}`
+      ] = input.value;
+    });
+
+  return {
+    heroId:
+      currentHero?.id || null,
+
+    weaponName:
+      weaponNameInput.value,
+
+    values
+  };
+}
+
+function restoreFormSnapshot(snapshot) {
+  if (!snapshot) {
+    return;
+  }
+
+  if (
+    snapshot.heroId &&
+    currentHero &&
+    String(snapshot.heroId) !==
+      String(currentHero.id)
+  ) {
+    setMessage(
+      'O backup pertence a outro herói.',
+      'error'
+    );
+
+    return;
+  }
+
+  weaponNameInput.value =
+    snapshot.weaponName ?? '';
+
+  document
+    .querySelectorAll(
+      '.stat-field'
+    )
+    .forEach(field => {
+      const input =
+        field.querySelector('input');
+
+      if (!input) {
+        return;
+      }
+
+      const key =
+        `${field.dataset.group}:${field.dataset.statKey}`;
+
+      input.value =
+        snapshot.values[key] ?? '';
+    });
+
+  renderPreview();
+}
+
+function undoImportedStats() {
+  if (!importSnapshot) {
+    setMessage(
+      'Não há preenchimento para desfazer.',
+      'error'
+    );
+
+    return;
+  }
+
+  restoreFormSnapshot(
+    importSnapshot
+  );
+
+  importSnapshot =
+    null;
+
+  updateUndoButton();
+
+  setMessage(
+    'Os valores anteriores foram restaurados. Nada foi salvo.',
+    'ok'
   );
 }
 
@@ -387,6 +916,348 @@ function collectFields(group) {
 }
 
 /* =========================================================
+   LOCALIZAÇÃO DINÂMICA DE DEFINIÇÕES
+========================================================= */
+
+function scoreDefinitionMatch(
+  definition,
+  aliases
+) {
+  const key =
+    normalizeText(
+      definition.key
+    );
+
+  const name =
+    normalizeText(
+      definition.name
+    );
+
+  let bestScore = 0;
+
+  for (const alias of aliases) {
+    const normalizedAlias =
+      normalizeText(alias);
+
+    if (!normalizedAlias) {
+      continue;
+    }
+
+    if (
+      key === normalizedAlias ||
+      name === normalizedAlias
+    ) {
+      bestScore =
+        Math.max(
+          bestScore,
+          100
+        );
+
+      continue;
+    }
+
+    if (
+      key.replace(/\s/g, '') ===
+        normalizedAlias.replace(/\s/g, '') ||
+      name.replace(/\s/g, '') ===
+        normalizedAlias.replace(/\s/g, '')
+    ) {
+      bestScore =
+        Math.max(
+          bestScore,
+          95
+        );
+
+      continue;
+    }
+
+    if (
+      key.includes(normalizedAlias) ||
+      name.includes(normalizedAlias) ||
+      normalizedAlias.includes(key) ||
+      normalizedAlias.includes(name)
+    ) {
+      bestScore =
+        Math.max(
+          bestScore,
+          70
+        );
+    }
+  }
+
+  return bestScore;
+}
+
+function findBestDefinition(
+  group,
+  aliases
+) {
+  const allowedCategories =
+    group === 'hero'
+      ? HERO_CATEGORIES
+      : WEAPON_CATEGORIES;
+
+  const candidates =
+    definitions
+      .filter(
+        definition =>
+          allowedCategories.has(
+            definition.category
+          )
+      )
+      .map(definition => ({
+        definition,
+
+        score:
+          scoreDefinitionMatch(
+            definition,
+            aliases
+          )
+      }))
+      .filter(
+        item =>
+          item.score > 0
+      )
+      .sort(
+        (first, second) =>
+          second.score -
+          first.score
+      );
+
+  return candidates[0]?.definition ||
+    null;
+}
+
+function findInputForDefinition(
+  group,
+  definition
+) {
+  if (!definition) {
+    return null;
+  }
+
+  return document.querySelector(
+    `.stat-field[data-group="${group}"][data-stat-key="${CSS.escape(definition.key)}"] input`
+  );
+}
+
+/* =========================================================
+   APLICAÇÃO DOS DADOS IMPORTADOS
+========================================================= */
+
+function buildImportEntries() {
+  const data =
+    importedDraft?.data || {};
+
+  const heroData =
+    data.status || {};
+
+  const weaponSummary =
+    data.weaponSummary || {};
+
+  const weaponDetails =
+    data.weaponDetails || {};
+
+  const heroEntries =
+    Object.entries(
+      IMPORT_ALIASES.hero
+    ).map(
+      ([sourceKey, aliases]) => ({
+        sourceKey,
+        aliases,
+        value:
+          nullableNumber(
+            heroData[sourceKey]
+          )
+      })
+    );
+
+  const weaponSource = {
+    ...weaponSummary,
+    ...weaponDetails
+  };
+
+  const weaponEntries =
+    Object.entries(
+      IMPORT_ALIASES.weapon
+    ).map(
+      ([sourceKey, aliases]) => ({
+        sourceKey,
+        aliases,
+        value:
+          nullableNumber(
+            weaponSource[sourceKey]
+          )
+      })
+    );
+
+  return {
+    heroEntries,
+    weaponEntries,
+    weaponName:
+      weaponSummary.name ||
+      weaponDetails.name ||
+      null
+  };
+}
+
+function applyImportedStats({
+  announce = false
+} = {}) {
+  if (!currentHero) {
+    if (announce) {
+      setMessage(
+        'Selecione ou identifique um herói antes de aplicar os dados.',
+        'error'
+      );
+    }
+
+    return {
+      applied: 0,
+      missing: []
+    };
+  }
+
+  if (!hasImportedData(importedDraft)) {
+    if (announce) {
+      setMessage(
+        'Nenhum dado importado foi encontrado no navegador.',
+        'error'
+      );
+    }
+
+    return {
+      applied: 0,
+      missing: []
+    };
+  }
+
+  /*
+   * O snapshot é criado somente na primeira aplicação.
+   * Assim o botão Desfazer sempre volta aos valores que
+   * existiam antes da importação.
+   */
+  if (!importSnapshot) {
+    importSnapshot =
+      captureCurrentFormSnapshot();
+
+    updateUndoButton();
+  }
+
+  const {
+    heroEntries,
+    weaponEntries,
+    weaponName
+  } =
+    buildImportEntries();
+
+  let applied = 0;
+  const missing = [];
+
+  for (
+    const entry
+    of heroEntries
+  ) {
+    if (entry.value === null) {
+      continue;
+    }
+
+    const definition =
+      findBestDefinition(
+        'hero',
+        entry.aliases
+      );
+
+    const input =
+      findInputForDefinition(
+        'hero',
+        definition
+      );
+
+    if (!definition || !input) {
+      missing.push(
+        `Herói: ${entry.sourceKey}`
+      );
+
+      continue;
+    }
+
+    input.value =
+      String(entry.value);
+
+    applied += 1;
+  }
+
+  for (
+    const entry
+    of weaponEntries
+  ) {
+    if (entry.value === null) {
+      continue;
+    }
+
+    const definition =
+      findBestDefinition(
+        'weapon',
+        entry.aliases
+      );
+
+    const input =
+      findInputForDefinition(
+        'weapon',
+        definition
+      );
+
+    if (!definition || !input) {
+      missing.push(
+        `Arma: ${entry.sourceKey}`
+      );
+
+      continue;
+    }
+
+    input.value =
+      String(entry.value);
+
+    applied += 1;
+  }
+
+  if (weaponName) {
+    weaponNameInput.value =
+      String(weaponName);
+
+    applied += 1;
+  }
+
+  renderPreview();
+
+  if (announce) {
+    let text =
+      `${applied} campo(s) preenchido(s) automaticamente.`;
+
+    if (missing.length) {
+      text +=
+        ` ${missing.length} campo(s) não possuem definição correspondente no banco.`;
+    }
+
+    text +=
+      ' Revise e clique em Salvar alterações.';
+
+    setMessage(
+      text,
+      applied
+        ? 'ok'
+        : 'error'
+    );
+  }
+
+  return {
+    applied,
+    missing
+  };
+}
+
+/* =========================================================
    PRÉVIA
 ========================================================= */
 
@@ -461,6 +1332,9 @@ function renderPreview() {
 
 function clearHeroSummary() {
   currentHero = null;
+  importSnapshot = null;
+
+  updateUndoButton();
 
   heroName.textContent =
     'Nenhum herói selecionado';
@@ -516,6 +1390,149 @@ function renderHeroSummary(hero) {
         hero.id
       )}&tab=stats`;
   }
+}
+
+/* =========================================================
+   IDENTIFICAÇÃO AUTOMÁTICA DO HERÓI
+========================================================= */
+
+function findImportedHero() {
+  if (!importedDraft) {
+    return null;
+  }
+
+  const importedId =
+    importedDraft.heroId ||
+    importedDraft.data?.hero?.id ||
+    null;
+
+  if (importedId) {
+    const byId =
+      heroes.find(
+        hero =>
+          String(hero.id) ===
+          String(importedId)
+      );
+
+    if (byId) {
+      return byId;
+    }
+  }
+
+  const importedSlug =
+    importedDraft.heroSlug ||
+    importedDraft.data?.hero?.slug ||
+    (
+      importedDraft.data?.hero?.name
+        ? slugify(
+            importedDraft.data.hero.name
+          )
+        : ''
+    );
+
+  if (importedSlug) {
+    const normalizedSlug =
+      slugify(importedSlug);
+
+    const bySlug =
+      heroes.find(
+        hero =>
+          slugify(hero.slug) ===
+            normalizedSlug ||
+          slugify(hero.name) ===
+            normalizedSlug
+      );
+
+    if (bySlug) {
+      return bySlug;
+    }
+  }
+
+  const importedName =
+    importedDraft.heroName ||
+    importedDraft.data?.hero?.name ||
+    '';
+
+  if (importedName) {
+    const normalizedName =
+      normalizeText(
+        importedName
+      );
+
+    const byName =
+      heroes.find(
+        hero =>
+          normalizeText(
+            hero.name
+          ) === normalizedName
+      );
+
+    if (byName) {
+      return byName;
+    }
+  }
+
+  return null;
+}
+
+async function selectHeroAutomatically() {
+  let hero = null;
+
+  if (requestedHeroId) {
+    hero =
+      heroes.find(
+        item =>
+          String(item.id) ===
+          String(requestedHeroId)
+      ) || null;
+  }
+
+  if (!hero) {
+    hero =
+      findImportedHero();
+  }
+
+  if (!hero) {
+    return false;
+  }
+
+  heroSelect.value =
+    String(hero.id);
+
+  const url =
+    new URL(
+      location.href
+    );
+
+  url.searchParams.set(
+    'hero',
+    hero.id
+  );
+
+  if (hasImportedData(importedDraft)) {
+    url.searchParams.set(
+      'import',
+      '1'
+    );
+  }
+
+  history.replaceState(
+    {},
+    '',
+    url
+  );
+
+  await loadHeroStats(
+    hero.id,
+    {
+      applyImport:
+        hasImportedData(
+          importedDraft
+        )
+    }
+  );
+
+  return true;
 }
 
 /* =========================================================
@@ -619,7 +1636,12 @@ async function loadInitialData() {
    CARREGAMENTO DOS STATUS
 ========================================================= */
 
-async function loadHeroStats(heroId) {
+async function loadHeroStats(
+  heroId,
+  {
+    applyImport = false
+  } = {}
+) {
   if (isLoadingHero) {
     return;
   }
@@ -649,6 +1671,9 @@ async function loadHeroStats(heroId) {
 
   isLoadingHero = true;
   currentHero = selectedHero;
+  importSnapshot = null;
+
+  updateUndoButton();
 
   statsArea.classList.add(
     'hidden'
@@ -733,7 +1758,31 @@ async function loadHeroStats(heroId) {
       'hidden'
     );
 
-    setMessage('');
+    if (applyImport) {
+      const result =
+        applyImportedStats();
+
+      let text =
+        `Herói identificado automaticamente: ${selectedHero.name}. ` +
+        `${result.applied} campo(s) importado(s).`;
+
+      if (result.missing.length) {
+        text +=
+          ` ${result.missing.length} campo(s) não possuem definição correspondente.`;
+      }
+
+      text +=
+        ' Revise os valores antes de salvar.';
+
+      setMessage(
+        text,
+        result.applied
+          ? 'ok'
+          : 'error'
+      );
+    } else {
+      setMessage('');
+    }
   } finally {
     isLoadingHero = false;
   }
@@ -783,13 +1832,6 @@ async function syncStats(
         row.stat_key
     );
 
-  /*
-   * Primeiro cria ou atualiza os valores.
-   * Só depois remove os campos apagados.
-   *
-   * Isso evita apagar todos os status antes
-   * de descobrir que a inserção falhou.
-   */
   if (rows.length) {
     const payload =
       rows.map(row => ({
@@ -903,6 +1945,16 @@ async function saveAllStats() {
       }
     );
 
+    /*
+     * Após salvar com sucesso, o preenchimento deixa de ser
+     * apenas temporário. O botão Desfazer local é desativado.
+     * A restauração persistente será uma etapa posterior.
+     */
+    importSnapshot =
+      null;
+
+    updateUndoButton();
+
     setMessage(
       'Status salvos com sucesso.',
       'ok'
@@ -959,7 +2011,23 @@ heroSelect.addEventListener(
 
     try {
       await loadHeroStats(
-        selectedHeroId
+        selectedHeroId,
+        {
+          applyImport:
+            Boolean(
+              selectedHeroId &&
+              hasImportedData(
+                importedDraft
+              ) &&
+              findImportedHero() &&
+              String(
+                findImportedHero().id
+              ) ===
+              String(
+                selectedHeroId
+              )
+            )
+        }
       );
     } catch (error) {
       console.error(
@@ -999,32 +2067,52 @@ saveButton.addEventListener(
 
 async function initialize() {
   try {
+    importedDraft =
+      loadImportDraft();
+
     clearHeroSummary();
 
     await loadInitialData();
 
-    if (requestedHeroId) {
-      const heroExists =
-        heroes.some(
-          hero =>
-            String(hero.id) ===
-            String(requestedHeroId)
-        );
+    injectImportControls();
 
-      if (!heroExists) {
-        setMessage(
-          'O herói informado na URL não foi encontrado.',
-          'error'
-        );
+    const selectedAutomatically =
+      await selectHeroAutomatically();
 
-        return;
-      }
+    if (selectedAutomatically) {
+      return;
+    }
 
-      heroSelect.value =
-        requestedHeroId;
+    if (
+      requestedHeroId &&
+      !heroes.some(
+        hero =>
+          String(hero.id) ===
+          String(requestedHeroId)
+      )
+    ) {
+      setMessage(
+        'O herói informado na URL não foi encontrado.',
+        'error'
+      );
 
-      await loadHeroStats(
-        requestedHeroId
+      return;
+    }
+
+    if (
+      hasImportedData(
+        importedDraft
+      )
+    ) {
+      const importedName =
+        importedDraft.data?.hero?.name ||
+        'o herói importado';
+
+      setMessage(
+        `Os dados de ${importedName} estão disponíveis, ` +
+        'mas o herói ainda não foi encontrado no banco. ' +
+        'Salve o herói primeiro ou selecione-o manualmente.',
+        'error'
       );
     }
   } catch (error) {
