@@ -131,18 +131,14 @@ body.admin-shell-lock{overflow:hidden}
 .admin-shell-group.is-open .admin-shell-chevron{transform:rotate(180deg)}
 
 .admin-shell-submenu{
-  display:grid;
-  grid-template-rows:0fr;
-  margin-left:12px;
+  display:none;
+  flex-direction:column;
+  margin:2px 0 4px 12px;
   padding-left:10px;
   border-left:1px solid var(--admin-line,#26344f);
-  overflow:hidden;
-  transition:grid-template-rows .2s ease;
 }
 
-.admin-shell-group.is-open .admin-shell-submenu{grid-template-rows:1fr}
-
-.admin-shell-submenu > *{min-height:0}
+.admin-shell-group.is-open .admin-shell-submenu{display:flex}
 
 .admin-shell-subitem{
   display:block;
