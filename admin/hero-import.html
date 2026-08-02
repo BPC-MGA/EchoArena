@@ -1,0 +1,1654 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+
+  <title>Importador de Heróis — Echo Arena Admin</title>
+
+  <link rel="stylesheet" href="./css/admin.css">
+  <link rel="stylesheet" href="./css/admin-shell.css">
+
+  <style>
+    .hero-import-page {
+      display: grid;
+      gap: 18px;
+    }
+
+    .hero-import-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .hero-import-toolbar-copy strong {
+      display: block;
+      font-size: 20px;
+    }
+
+    .hero-import-toolbar-copy span {
+      display: block;
+      max-width: 720px;
+      margin-top: 6px;
+      color: var(--admin-muted);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .hero-import-toolbar-actions {
+      display: flex;
+      gap: 9px;
+      flex-wrap: wrap;
+    }
+
+    .hero-import-progress {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .hero-import-step {
+      min-width: 0;
+      padding: 13px;
+      border: 1px solid var(--admin-line);
+      border-radius: 12px;
+      background: var(--admin-panel);
+    }
+
+    .hero-import-step small {
+      display: block;
+      color: var(--admin-muted);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .hero-import-step strong {
+      display: block;
+      margin-top: 5px;
+      color: #dbe3f2;
+      font-size: 13px;
+    }
+
+    .hero-import-step.is-active {
+      border-color: #7656d8;
+      background: #130e27;
+    }
+
+    .hero-import-step.is-complete {
+      border-color: #28583a;
+      background: #0c1c14;
+    }
+
+    .hero-import-grid {
+      display: grid;
+      grid-template-columns: minmax(330px, .9fr) minmax(0, 1.1fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .hero-import-card {
+      min-width: 0;
+      padding: 18px;
+      border: 1px solid var(--admin-line);
+      border-radius: 14px;
+      background: var(--admin-panel);
+    }
+
+    .hero-import-heading {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 14px;
+      margin-bottom: 15px;
+    }
+
+    .hero-import-heading h2 {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    .hero-import-heading p {
+      margin: 6px 0 0;
+      color: var(--admin-muted);
+      font-size: 11px;
+      line-height: 1.55;
+    }
+
+    .hero-import-badge {
+      flex: 0 0 auto;
+      padding: 5px 8px;
+      border: 1px solid var(--admin-line);
+      border-radius: 999px;
+      background: #0a1322;
+      color: var(--admin-muted);
+      font-size: 9px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+
+    .hero-import-textarea {
+      width: 100%;
+      min-height: 370px;
+      resize: vertical;
+      font:
+        12px/1.55
+        ui-monospace,
+        SFMono-Regular,
+        Menlo,
+        Consolas,
+        monospace;
+    }
+
+    .hero-import-actions {
+      display: flex;
+      gap: 9px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+
+    .hero-import-actions .admin-button:disabled {
+      opacity: .45;
+      cursor: not-allowed;
+    }
+
+    .hero-import-hint {
+      margin-top: 12px;
+      padding: 11px 12px;
+      border: 1px solid var(--admin-line);
+      border-radius: 10px;
+      background: #09111f;
+      color: var(--admin-muted);
+      font-size: 10.5px;
+      line-height: 1.6;
+    }
+
+    .hero-import-status {
+      display: none;
+      margin-bottom: 12px;
+      padding: 11px 12px;
+      border: 1px solid var(--admin-line);
+      border-radius: 10px;
+      background: #09111f;
+      color: #c8cfdd;
+      font-size: 11px;
+      line-height: 1.55;
+    }
+
+    .hero-import-status.is-visible {
+      display: block;
+    }
+
+    .hero-import-status.ok {
+      border-color: #28583a;
+      color: #8fd3a6;
+      background: #0c1c14;
+    }
+
+    .hero-import-status.warn {
+      border-color: #6f5618;
+      color: #ffd76d;
+      background: #2a2009;
+    }
+
+    .hero-import-status.error {
+      border-color: #75353d;
+      color: #ff9da5;
+      background: #210d12;
+    }
+
+    .hero-import-empty {
+      padding: 36px 18px;
+      border: 1px dashed var(--admin-line);
+      border-radius: 12px;
+      background: #09111f;
+      color: var(--admin-muted);
+      text-align: center;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .hero-import-review {
+      display: none;
+      gap: 14px;
+    }
+
+    .hero-import-review.is-visible {
+      display: grid;
+    }
+
+    .hero-import-overview {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(180px, .8fr);
+      gap: 12px;
+    }
+
+    .hero-import-identity,
+    .hero-import-completion {
+      padding: 14px;
+      border: 1px solid var(--admin-line);
+      border-radius: 12px;
+      background: #09111f;
+    }
+
+    .hero-import-identity small,
+    .hero-import-completion small {
+      display: block;
+      color: var(--admin-muted);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .hero-import-identity h3 {
+      margin: 7px 0 0;
+      font-size: 24px;
+    }
+
+    .hero-import-identity p {
+      margin: 6px 0 0;
+      color: #aeb8ca;
+      font-size: 11px;
+      line-height: 1.5;
+    }
+
+    .hero-import-completion strong {
+      display: block;
+      margin-top: 7px;
+      font-size: 24px;
+    }
+
+    .hero-import-bar {
+      height: 9px;
+      margin-top: 10px;
+      overflow: hidden;
+      border: 1px solid var(--admin-line);
+      border-radius: 999px;
+      background: #050a12;
+    }
+
+    .hero-import-bar > span {
+      display: block;
+      width: 0;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #6d4aff, #a78bfa);
+      transition: width .25s ease;
+    }
+
+    .hero-import-section {
+      padding: 14px;
+      border: 1px solid var(--admin-line);
+      border-radius: 12px;
+      background: #09111f;
+    }
+
+    .hero-import-section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 11px;
+    }
+
+    .hero-import-section-head h3 {
+      margin: 0;
+      font-size: 14px;
+    }
+
+    .hero-import-section-head span {
+      color: var(--admin-muted);
+      font-size: 10px;
+    }
+
+    .hero-import-fields {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .hero-import-field {
+      min-width: 0;
+      padding: 10px;
+      border: 1px solid #1e2a40;
+      border-radius: 9px;
+      background: #07101d;
+    }
+
+    .hero-import-field.is-missing {
+      border-style: dashed;
+      border-color: #5f4e20;
+    }
+
+    .hero-import-field small {
+      display: block;
+      color: #748097;
+      font-size: 8.5px;
+      font-weight: 800;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+
+    .hero-import-field strong {
+      display: block;
+      margin-top: 4px;
+      color: #dce3ef;
+      font-size: 12px;
+      line-height: 1.45;
+      word-break: break-word;
+    }
+
+    .hero-import-field.is-missing strong {
+      color: #c8a954;
+    }
+
+    .hero-import-warnings {
+      display: grid;
+      gap: 7px;
+    }
+
+    .hero-import-warning {
+      padding: 10px 11px;
+      border: 1px solid #6f5618;
+      border-radius: 9px;
+      background: #2a2009;
+      color: #ffd76d;
+      font-size: 10.5px;
+      line-height: 1.5;
+    }
+
+    .hero-import-safe-note {
+      padding: 13px 14px;
+      border: 1px solid #28583a;
+      border-radius: 11px;
+      background: #0c1c14;
+      color: #8fd3a6;
+      font-size: 11px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 980px) {
+      .hero-import-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-import-textarea {
+        min-height: 300px;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .hero-import-progress {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .hero-import-overview,
+      .hero-import-fields {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 460px) {
+      .hero-import-progress {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-import-toolbar-actions,
+      .hero-import-actions {
+        width: 100%;
+      }
+
+      .hero-import-toolbar-actions .admin-button,
+      .hero-import-actions .admin-button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div data-admin-content>
+    <main class="hero-import-page">
+      <section class="hero-import-toolbar">
+        <div class="hero-import-toolbar-copy">
+          <strong>Importador Inteligente de Heróis</strong>
+
+          <span>
+            Primeira etapa de testes. Esta página valida e revisa o JSON
+            produzido pelo ChatGPT, mas ainda não grava nada no Supabase.
+          </span>
+        </div>
+
+        <div class="hero-import-toolbar-actions">
+          <a
+            class="admin-button"
+            href="./heroes.html"
+          >
+            Voltar para heróis
+          </a>
+        </div>
+      </section>
+
+      <section class="hero-import-progress">
+        <div
+          class="hero-import-step is-active"
+          data-step="json"
+        >
+          <small>Etapa 1</small>
+          <strong>Colar JSON</strong>
+        </div>
+
+        <div
+          class="hero-import-step"
+          data-step="validate"
+        >
+          <small>Etapa 2</small>
+          <strong>Validar dados</strong>
+        </div>
+
+        <div
+          class="hero-import-step"
+          data-step="review"
+        >
+          <small>Etapa 3</small>
+          <strong>Revisar</strong>
+        </div>
+
+        <div
+          class="hero-import-step"
+          data-step="save"
+        >
+          <small>Etapa 4</small>
+          <strong>Gravar no banco</strong>
+        </div>
+      </section>
+
+      <section class="hero-import-grid">
+        <article class="hero-import-card">
+          <div class="hero-import-heading">
+            <div>
+              <h2>Dados produzidos pelo ChatGPT</h2>
+
+              <p>
+                Cole o objeto JSON completo. O validador aceita JSON puro
+                ou envolvido por um bloco de código.
+              </p>
+            </div>
+
+            <span class="hero-import-badge">
+              Somente leitura
+            </span>
+          </div>
+
+          <textarea
+            id="hero-import-json"
+            class="admin-textarea hero-import-textarea"
+            spellcheck="false"
+            placeholder='Cole aqui o JSON do herói...'
+          ></textarea>
+
+          <div class="hero-import-actions">
+            <button
+              id="hero-import-validate"
+              type="button"
+              class="admin-button primary"
+            >
+              Validar JSON
+            </button>
+
+            <button
+              id="hero-import-example"
+              type="button"
+              class="admin-button"
+            >
+              Carregar exemplo
+            </button>
+
+            <button
+              id="hero-import-clear"
+              type="button"
+              class="admin-button"
+            >
+              Limpar
+            </button>
+          </div>
+
+          <div class="hero-import-hint">
+            Este primeiro arquivo não altera nenhuma página existente,
+            não atualiza heróis e não envia dados ao banco. Ele serve
+            somente para validar a estrutura e a interface do novo módulo.
+          </div>
+        </article>
+
+        <article class="hero-import-card">
+          <div class="hero-import-heading">
+            <div>
+              <h2>Revisão da importação</h2>
+
+              <p>
+                Os campos reconhecidos, ausentes e inválidos aparecem aqui.
+              </p>
+            </div>
+
+            <span
+              id="hero-import-review-badge"
+              class="hero-import-badge"
+            >
+              Aguardando
+            </span>
+          </div>
+
+          <div
+            id="hero-import-status"
+            class="hero-import-status"
+          ></div>
+
+          <div
+            id="hero-import-empty"
+            class="hero-import-empty"
+          >
+            Cole um JSON e clique em
+            <strong>Validar JSON</strong>.
+          </div>
+
+          <div
+            id="hero-import-review"
+            class="hero-import-review"
+          >
+            <div class="hero-import-overview">
+              <div class="hero-import-identity">
+                <small>Herói reconhecido</small>
+
+                <h3 id="review-name">
+                  —
+                </h3>
+
+                <p id="review-meta">
+                  —
+                </p>
+              </div>
+
+              <div class="hero-import-completion">
+                <small>Completude</small>
+
+                <strong id="review-completion">
+                  0%
+                </strong>
+
+                <div class="hero-import-bar">
+                  <span id="review-completion-bar"></span>
+                </div>
+              </div>
+            </div>
+
+            <section class="hero-import-section">
+              <div class="hero-import-section-head">
+                <h3>Informações gerais</h3>
+                <span id="review-general-count">0 campos</span>
+              </div>
+
+              <div
+                id="review-general"
+                class="hero-import-fields"
+              ></div>
+            </section>
+
+            <section class="hero-import-section">
+              <div class="hero-import-section-head">
+                <h3>Status do herói</h3>
+                <span id="review-status-count">0 campos</span>
+              </div>
+
+              <div
+                id="review-status-fields"
+                class="hero-import-fields"
+              ></div>
+            </section>
+
+            <section class="hero-import-section">
+              <div class="hero-import-section-head">
+                <h3>Resumo da arma</h3>
+                <span id="review-weapon-summary-count">0 campos</span>
+              </div>
+
+              <div
+                id="review-weapon-summary"
+                class="hero-import-fields"
+              ></div>
+            </section>
+
+            <section class="hero-import-section">
+              <div class="hero-import-section-head">
+                <h3>Detalhes da arma</h3>
+                <span id="review-weapon-details-count">0 campos</span>
+              </div>
+
+              <div
+                id="review-weapon-details"
+                class="hero-import-fields"
+              ></div>
+            </section>
+
+            <section
+              id="review-warnings-section"
+              class="hero-import-section"
+            >
+              <div class="hero-import-section-head">
+                <h3>Avisos</h3>
+                <span id="review-warning-count">0</span>
+              </div>
+
+              <div
+                id="review-warnings"
+                class="hero-import-warnings"
+              ></div>
+            </section>
+
+            <div class="hero-import-safe-note">
+              Validação concluída localmente no navegador.
+              Nenhum dado foi enviado ou salvo.
+            </div>
+          </div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <script type="module">
+    import { initAdminShell } from './js/admin-shell.js';
+
+    const shell = await initAdminShell({
+      activeId: 'hero-import',
+      pageTitle: 'Importador de Heróis',
+      pageSubtitle: 'Validação e revisão assistida'
+    });
+
+    if (!shell) {
+      throw new Error(
+        'Não foi possível iniciar o painel administrativo.'
+      );
+    }
+
+    const IMPORT_SCHEMA_VERSION = 1;
+
+    const FIELD_LABELS = {
+      hero: {
+        name: 'Nome',
+        class: 'Classe',
+        description: 'Descrição',
+        displayOrder: 'Ordem de exibição',
+        active: 'Publicação'
+      },
+
+      status: {
+        power: 'Poder',
+        health: 'Vida',
+        damage: 'Dano',
+        armor: 'Armadura',
+        visionRange: 'Alcance de visão',
+        movementNoiseRadius: 'Raio do barulho de movimentação',
+        maxMovementSpeed: 'Velocidade máxima',
+        aimedMovementSpeed: 'Velocidade ao mirar',
+        penetrationResistance: 'Resistência à perfuração',
+        armorValue: 'Valor de armadura',
+        armorResistance: 'Resistência de armadura'
+      },
+
+      weaponSummary: {
+        name: 'Nome da arma',
+        firepower: 'Poder de fogo',
+        armorBreak: 'Quebra de armadura',
+        fireRate: 'Cadência',
+        magazineCapacity: 'Capacidade de munição',
+        effectiveRange: 'Alcance efetivo',
+        aimingStability: 'Estabilidade de mira'
+      },
+
+      weaponDetails: {
+        damagePerShot: 'Dano por tiro',
+        healthDamageMultiplier: 'Modificador contra vida',
+        armorPenetration: 'Perfuração de armadura',
+        penetrationPower: 'Poder de perfuração',
+        armorDroneMultiplier: 'Modificador contra armadura e drones',
+        shotsPerSecond: 'Tiros por segundo',
+        reloadTime: 'Tempo de recarga',
+        magazineSize: 'Tamanho do pente',
+        hipFireRange: 'Alcance sem mira',
+        aimedRange: 'Alcance com mira',
+        dispersion: 'Dispersão',
+        movingDispersion: 'Dispersão em movimento',
+        aimedDispersion: 'Dispersão com mira',
+        aimTime: 'Tempo de mira',
+        dispersionFactor: 'Fator de dispersão'
+      },
+
+      meta: {
+        rarity: 'Raridade',
+        faction: 'Facção'
+      }
+    };
+
+    const REQUIRED_FIELDS = [
+      ['hero', 'name'],
+      ['hero', 'class'],
+      ['status', 'power'],
+      ['status', 'health'],
+      ['status', 'damage'],
+      ['status', 'armor']
+    ];
+
+    const jsonArea =
+      document.getElementById('hero-import-json');
+
+    const validateButton =
+      document.getElementById('hero-import-validate');
+
+    const exampleButton =
+      document.getElementById('hero-import-example');
+
+    const clearButton =
+      document.getElementById('hero-import-clear');
+
+    const emptyState =
+      document.getElementById('hero-import-empty');
+
+    const review =
+      document.getElementById('hero-import-review');
+
+    const statusBox =
+      document.getElementById('hero-import-status');
+
+    const reviewBadge =
+      document.getElementById('hero-import-review-badge');
+
+    function escapeHtml(value = '') {
+      return String(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+
+    function nullableNumber(value) {
+      if (
+        value === null ||
+        value === undefined ||
+        value === ''
+      ) {
+        return null;
+      }
+
+      const normalized =
+        typeof value === 'string'
+          ? value.replace(',', '.').trim()
+          : value;
+
+      const number = Number(normalized);
+
+      return Number.isFinite(number)
+        ? number
+        : null;
+    }
+
+    function extractJson(value = '') {
+      const text = String(value).trim();
+
+      if (!text) {
+        throw new Error(
+          'Cole o JSON retornado pelo ChatGPT.'
+        );
+      }
+
+      const fenced =
+        text.match(
+          /```(?:json)?\s*([\s\S]*?)```/i
+        );
+
+      const candidate =
+        fenced
+          ? fenced[1].trim()
+          : text;
+
+      const firstBrace =
+        candidate.indexOf('{');
+
+      const lastBrace =
+        candidate.lastIndexOf('}');
+
+      if (
+        firstBrace < 0 ||
+        lastBrace < firstBrace
+      ) {
+        throw new Error(
+          'Não foi encontrado um objeto JSON.'
+        );
+      }
+
+      return candidate.slice(
+        firstBrace,
+        lastBrace + 1
+      );
+    }
+
+    function normalizeData(source = {}) {
+      if (
+        !source ||
+        typeof source !== 'object' ||
+        Array.isArray(source)
+      ) {
+        throw new Error(
+          'O conteúdo principal precisa ser um objeto JSON.'
+        );
+      }
+
+      const hero =
+        source.hero &&
+        typeof source.hero === 'object'
+          ? source.hero
+          : source;
+
+      const status =
+        source.status &&
+        typeof source.status === 'object'
+          ? source.status
+          : (
+              source.heroParameters &&
+              typeof source.heroParameters === 'object'
+                ? source.heroParameters
+                : {}
+            );
+
+      const summary =
+        source.weaponSummary &&
+        typeof source.weaponSummary === 'object'
+          ? source.weaponSummary
+          : {};
+
+      const weapon =
+        source.weaponDetails &&
+        typeof source.weaponDetails === 'object'
+          ? source.weaponDetails
+          : (
+              source.weapon &&
+              typeof source.weapon === 'object'
+                ? source.weapon
+                : {}
+            );
+
+      const meta =
+        source.meta &&
+        typeof source.meta === 'object'
+          ? source.meta
+          : {};
+
+      return {
+        schemaVersion:
+          Number(source.schemaVersion) ||
+          IMPORT_SCHEMA_VERSION,
+
+        hero: {
+          name:
+            hero.name ??
+            source.name ??
+            null,
+
+          class:
+            hero.class ??
+            hero.heroClass ??
+            source.heroClass ??
+            source.class ??
+            null,
+
+          description:
+            hero.description ??
+            source.description ??
+            null,
+
+          displayOrder:
+            nullableNumber(
+              hero.displayOrder ??
+              hero.display_order ??
+              source.displayOrder ??
+              source.display_order
+            ),
+
+          active:
+            hero.active ??
+            hero.enabled ??
+            source.active ??
+            source.enabled ??
+            null
+        },
+
+        status: {
+          power:
+            nullableNumber(
+              status.power ??
+              source.power
+            ),
+
+          health:
+            nullableNumber(
+              status.health ??
+              status.life ??
+              source.health
+            ),
+
+          damage:
+            nullableNumber(
+              status.damage ??
+              source.damage
+            ),
+
+          armor:
+            nullableNumber(
+              status.armor ??
+              source.armor
+            ),
+
+          visionRange:
+            nullableNumber(
+              status.visionRange ??
+              status.vision_range
+            ),
+
+          movementNoiseRadius:
+            nullableNumber(
+              status.movementNoiseRadius ??
+              status.movement_noise_radius
+            ),
+
+          maxMovementSpeed:
+            nullableNumber(
+              status.maxMovementSpeed ??
+              status.max_movement_speed
+            ),
+
+          aimedMovementSpeed:
+            nullableNumber(
+              status.aimedMovementSpeed ??
+              status.aimed_movement_speed
+            ),
+
+          penetrationResistance:
+            nullableNumber(
+              status.penetrationResistance ??
+              status.penetration_resistance
+            ),
+
+          armorValue:
+            nullableNumber(
+              status.armorValue ??
+              status.armor_value
+            ),
+
+          armorResistance:
+            nullableNumber(
+              status.armorResistance ??
+              status.armor_resistance
+            )
+        },
+
+        weaponSummary: {
+          name:
+            summary.name ??
+            weapon.name ??
+            null,
+
+          firepower:
+            nullableNumber(
+              summary.firepower ??
+              weapon.firepower
+            ),
+
+          armorBreak:
+            nullableNumber(
+              summary.armorBreak ??
+              summary.armor_break ??
+              weapon.armorBreak
+            ),
+
+          fireRate:
+            nullableNumber(
+              summary.fireRate ??
+              summary.fire_rate ??
+              weapon.fireRate
+            ),
+
+          magazineCapacity:
+            nullableNumber(
+              summary.magazineCapacity ??
+              summary.magazine_capacity ??
+              weapon.magazineCapacity
+            ),
+
+          effectiveRange:
+            nullableNumber(
+              summary.effectiveRange ??
+              summary.effective_range ??
+              weapon.effectiveRange
+            ),
+
+          aimingStability:
+            nullableNumber(
+              summary.aimingStability ??
+              summary.aiming_stability ??
+              weapon.aimingStability
+            )
+        },
+
+        weaponDetails: {
+          damagePerShot:
+            nullableNumber(
+              weapon.damagePerShot ??
+              weapon.damage_per_shot
+            ),
+
+          healthDamageMultiplier:
+            nullableNumber(
+              weapon.healthDamageMultiplier ??
+              weapon.health_damage_multiplier
+            ),
+
+          armorPenetration:
+            nullableNumber(
+              weapon.armorPenetration ??
+              weapon.armor_penetration
+            ),
+
+          penetrationPower:
+            nullableNumber(
+              weapon.penetrationPower ??
+              weapon.penetration_power
+            ),
+
+          armorDroneMultiplier:
+            nullableNumber(
+              weapon.armorDroneMultiplier ??
+              weapon.armor_drone_multiplier
+            ),
+
+          shotsPerSecond:
+            nullableNumber(
+              weapon.shotsPerSecond ??
+              weapon.shots_per_second
+            ),
+
+          reloadTime:
+            nullableNumber(
+              weapon.reloadTime ??
+              weapon.reload_time
+            ),
+
+          magazineSize:
+            nullableNumber(
+              weapon.magazineSize ??
+              weapon.magazine_size
+            ),
+
+          hipFireRange:
+            nullableNumber(
+              weapon.hipFireRange ??
+              weapon.hip_fire_range
+            ),
+
+          aimedRange:
+            nullableNumber(
+              weapon.aimedRange ??
+              weapon.aimed_range
+            ),
+
+          dispersion:
+            nullableNumber(
+              weapon.dispersion
+            ),
+
+          movingDispersion:
+            nullableNumber(
+              weapon.movingDispersion ??
+              weapon.moving_dispersion
+            ),
+
+          aimedDispersion:
+            nullableNumber(
+              weapon.aimedDispersion ??
+              weapon.aimed_dispersion
+            ),
+
+          aimTime:
+            nullableNumber(
+              weapon.aimTime ??
+              weapon.aim_time
+            ),
+
+          dispersionFactor:
+            nullableNumber(
+              weapon.dispersionFactor ??
+              weapon.dispersion_factor
+            )
+        },
+
+        meta: {
+          rarity:
+            meta.rarity ??
+            source.rarity ??
+            null,
+
+          faction:
+            meta.faction ??
+            source.faction ??
+            null
+        }
+      };
+    }
+
+    function isPresent(value) {
+      return (
+        value !== null &&
+        value !== undefined &&
+        value !== ''
+      );
+    }
+
+    function formatValue(value) {
+      if (value === true) return 'Ativo';
+      if (value === false) return 'Inativo';
+
+      return isPresent(value)
+        ? String(value)
+        : 'Não informado';
+    }
+
+    function renderFields(
+      containerId,
+      countId,
+      sectionName,
+      values
+    ) {
+      const container =
+        document.getElementById(containerId);
+
+      const counter =
+        document.getElementById(countId);
+
+      const labels =
+        FIELD_LABELS[sectionName];
+
+      const entries =
+        Object.entries(labels);
+
+      const presentCount =
+        entries.filter(
+          ([key]) =>
+            isPresent(values[key])
+        ).length;
+
+      counter.textContent =
+        `${presentCount} de ${entries.length}`;
+
+      container.innerHTML =
+        entries.map(([key, label]) => {
+          const value =
+            values[key];
+
+          const missing =
+            !isPresent(value);
+
+          return `
+            <div class="hero-import-field ${missing ? 'is-missing' : ''}">
+              <small>${escapeHtml(label)}</small>
+
+              <strong>
+                ${escapeHtml(formatValue(value))}
+              </strong>
+            </div>
+          `;
+        }).join('');
+
+      return {
+        present: presentCount,
+        total: entries.length
+      };
+    }
+
+    function updateSteps(valid) {
+      const jsonStep =
+        document.querySelector(
+          '[data-step="json"]'
+        );
+
+      const validateStep =
+        document.querySelector(
+          '[data-step="validate"]'
+        );
+
+      const reviewStep =
+        document.querySelector(
+          '[data-step="review"]'
+        );
+
+      jsonStep.classList.add(
+        'is-complete'
+      );
+
+      jsonStep.classList.remove(
+        'is-active'
+      );
+
+      validateStep.classList.toggle(
+        'is-complete',
+        valid
+      );
+
+      validateStep.classList.toggle(
+        'is-active',
+        !valid
+      );
+
+      reviewStep.classList.toggle(
+        'is-active',
+        valid
+      );
+    }
+
+    function showStatus(
+      text,
+      type = ''
+    ) {
+      statusBox.textContent =
+        text;
+
+      statusBox.className =
+        `hero-import-status is-visible ${type}`.trim();
+    }
+
+    function clearReview() {
+      emptyState.style.display =
+        '';
+
+      review.classList.remove(
+        'is-visible'
+      );
+
+      reviewBadge.textContent =
+        'Aguardando';
+
+      reviewBadge.style.borderColor =
+        '';
+
+      reviewBadge.style.color =
+        '';
+
+      statusBox.className =
+        'hero-import-status';
+
+      statusBox.textContent =
+        '';
+
+      document
+        .querySelectorAll(
+          '.hero-import-step'
+        )
+        .forEach(step => {
+          step.classList.remove(
+            'is-active',
+            'is-complete'
+          );
+        });
+
+      document
+        .querySelector(
+          '[data-step="json"]'
+        )
+        .classList.add(
+          'is-active'
+        );
+    }
+
+    function validateAndRender() {
+      try {
+        const parsed =
+          JSON.parse(
+            extractJson(
+              jsonArea.value
+            )
+          );
+
+        const data =
+          normalizeData(parsed);
+
+        const warnings = [];
+
+        if (
+          data.schemaVersion !==
+          IMPORT_SCHEMA_VERSION
+        ) {
+          warnings.push(
+            `O JSON usa a versão ${data.schemaVersion}; ` +
+            `esta página espera a versão ${IMPORT_SCHEMA_VERSION}.`
+          );
+        }
+
+        for (
+          const [section, field]
+          of REQUIRED_FIELDS
+        ) {
+          if (
+            !isPresent(
+              data[section]?.[field]
+            )
+          ) {
+            const label =
+              FIELD_LABELS[section]?.[field] ||
+              `${section}.${field}`;
+
+            warnings.push(
+              `Campo obrigatório ausente: ${label}.`
+            );
+          }
+        }
+
+        const generalResult =
+          renderFields(
+            'review-general',
+            'review-general-count',
+            'hero',
+            data.hero
+          );
+
+        const statusResult =
+          renderFields(
+            'review-status-fields',
+            'review-status-count',
+            'status',
+            data.status
+          );
+
+        const summaryResult =
+          renderFields(
+            'review-weapon-summary',
+            'review-weapon-summary-count',
+            'weaponSummary',
+            data.weaponSummary
+          );
+
+        const detailsResult =
+          renderFields(
+            'review-weapon-details',
+            'review-weapon-details-count',
+            'weaponDetails',
+            data.weaponDetails
+          );
+
+        const metaPresent =
+          Object.values(data.meta)
+            .filter(isPresent)
+            .length;
+
+        const totalPresent =
+          generalResult.present +
+          statusResult.present +
+          summaryResult.present +
+          detailsResult.present +
+          metaPresent;
+
+        const totalFields =
+          generalResult.total +
+          statusResult.total +
+          summaryResult.total +
+          detailsResult.total +
+          Object.keys(
+            FIELD_LABELS.meta
+          ).length;
+
+        const completion =
+          totalFields
+            ? Math.round(
+                (
+                  totalPresent /
+                  totalFields
+                ) * 100
+              )
+            : 0;
+
+        document
+          .getElementById(
+            'review-name'
+          )
+          .textContent =
+            data.hero.name ||
+            'Herói sem nome';
+
+        const meta = [
+          data.hero.class,
+          data.meta.rarity,
+          data.meta.faction
+        ]
+          .filter(isPresent)
+          .join(' · ');
+
+        document
+          .getElementById(
+            'review-meta'
+          )
+          .textContent =
+            meta ||
+            'Classe, raridade e facção não informadas.';
+
+        document
+          .getElementById(
+            'review-completion'
+          )
+          .textContent =
+            `${completion}%`;
+
+        document
+          .getElementById(
+            'review-completion-bar'
+          )
+          .style.width =
+            `${completion}%`;
+
+        const warningContainer =
+          document.getElementById(
+            'review-warnings'
+          );
+
+        const warningSection =
+          document.getElementById(
+            'review-warnings-section'
+          );
+
+        document
+          .getElementById(
+            'review-warning-count'
+          )
+          .textContent =
+            String(warnings.length);
+
+        if (warnings.length) {
+          warningSection.style.display =
+            '';
+
+          warningContainer.innerHTML =
+            warnings.map(item => `
+              <div class="hero-import-warning">
+                ${escapeHtml(item)}
+              </div>
+            `).join('');
+        } else {
+          warningSection.style.display =
+            'none';
+
+          warningContainer.innerHTML =
+            '';
+        }
+
+        emptyState.style.display =
+          'none';
+
+        review.classList.add(
+          'is-visible'
+        );
+
+        reviewBadge.textContent =
+          warnings.length
+            ? 'Com avisos'
+            : 'Válido';
+
+        reviewBadge.style.borderColor =
+          warnings.length
+            ? '#6f5618'
+            : '#28583a';
+
+        reviewBadge.style.color =
+          warnings.length
+            ? '#ffd76d'
+            : '#8fd3a6';
+
+        showStatus(
+          warnings.length
+            ? (
+                `JSON válido, mas foram encontrados ` +
+                `${warnings.length} aviso(s).`
+              )
+            : (
+                'JSON válido e campos obrigatórios presentes.'
+              ),
+          warnings.length
+            ? 'warn'
+            : 'ok'
+        );
+
+        updateSteps(true);
+      } catch (error) {
+        clearReview();
+
+        showStatus(
+          error.message ||
+          'Não foi possível validar o JSON.',
+          'error'
+        );
+
+        reviewBadge.textContent =
+          'Inválido';
+
+        reviewBadge.style.borderColor =
+          '#75353d';
+
+        reviewBadge.style.color =
+          '#ff9da5';
+
+        updateSteps(false);
+      }
+    }
+
+    const example = {
+      schemaVersion: 1,
+
+      hero: {
+        name: 'Slayer',
+        class: 'Franco-atirador',
+        description:
+          'Slayer usa um poderoso rifle de precisão.',
+        displayOrder: null,
+        active: true
+      },
+
+      status: {
+        power: 2535,
+        health: 821,
+        damage: 2557,
+        armor: 829,
+        visionRange: 725,
+        movementNoiseRadius: 300,
+        maxMovementSpeed: 171,
+        aimedMovementSpeed: 51,
+        penetrationResistance: 4,
+        armorValue: 829,
+        armorResistance: 10
+      },
+
+      weaponSummary: {
+        name: 'Rifle de precisão',
+        firepower: 1653,
+        armorBreak: 2710,
+        fireRate: 213,
+        magazineCapacity: 83,
+        effectiveRange: 1651,
+        aimingStability: 453
+      },
+
+      weaponDetails: {
+        damagePerShot: 2557,
+        healthDamageMultiplier: 1.12,
+        armorPenetration: 85,
+        penetrationPower: 32,
+        armorDroneMultiplier: 2.35,
+        shotsPerSecond: 0.3,
+        reloadTime: 4.2,
+        magazineSize: 11,
+        hipFireRange: 439,
+        aimedRange: 508,
+        dispersion: 54,
+        movingDispersion: 5,
+        aimedDispersion: 4,
+        aimTime: 1.7,
+        dispersionFactor: 0.9
+      },
+
+      meta: {
+        rarity: 'Divino',
+        faction: 'Força e Armas'
+      }
+    };
+
+    validateButton.addEventListener(
+      'click',
+      validateAndRender
+    );
+
+    exampleButton.addEventListener(
+      'click',
+      () => {
+        jsonArea.value =
+          JSON.stringify(
+            example,
+            null,
+            2
+          );
+
+        validateAndRender();
+      }
+    );
+
+    clearButton.addEventListener(
+      'click',
+      () => {
+        jsonArea.value = '';
+        clearReview();
+        jsonArea.focus();
+      }
+    );
+
+    jsonArea.addEventListener(
+      'input',
+      () => {
+        if (!jsonArea.value.trim()) {
+          clearReview();
+        }
+      }
+    );
+  </script>
+</body>
+</html>
