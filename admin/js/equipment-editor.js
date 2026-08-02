@@ -31,6 +31,20 @@ const IMPORT_KEY =
 const IMPORT_BACKUP_KEY =
   'equipment-import-form-backup';
 
+/*
+ * Slots exibidos no cadastro.
+ * Os nomes são fixos na interface; os slugs apontam para
+ * os registros já existentes em equipment_slots.
+ */
+const REQUIRED_SLOT_OPTIONS = [
+  { label: 'Cabeça', slugs: ['cabeca'] },
+  { label: 'Peito', slugs: ['body', 'peito', 'corpo'] },
+  { label: 'Mãos', slugs: ['maos', 'hands'] },
+  { label: 'Pés', slugs: ['leg', 'pes', 'perna'] },
+  { label: 'Anel', slugs: ['ring', 'anel'] },
+  { label: 'Gadget', slugs: ['especial', 'gadget'] }
+];
+
 const params =
   new URLSearchParams(
     location.search
@@ -130,6 +144,43 @@ function setMessage(
 
   message.className =
     `eq-message${type ? ` ${type}` : ''}`;
+}
+
+function populateRequiredSlots() {
+  const select =
+    document.getElementById('slot-id');
+
+  select.innerHTML = `
+    <option value="">
+      Selecione um slot
+    </option>
+  `;
+
+  for (const option of REQUIRED_SLOT_OPTIONS) {
+    const match = meta.slots.find(item => {
+      const slug = normalizeText(item.slug);
+      const name = normalizeText(item.name);
+
+      return option.slugs.some(candidate => {
+        const normalized = normalizeText(candidate);
+        return slug === normalized || name === normalized;
+      });
+    });
+
+    if (!match) {
+      console.warn(
+        `[equipamento] Slot não encontrado para "${option.label}".`,
+        option.slugs
+      );
+      continue;
+    }
+
+    const element = document.createElement('option');
+    element.value = match.id;
+    element.textContent = option.label;
+    element.dataset.slug = match.slug || '';
+    select.appendChild(element);
+  }
 }
 
 function findMetaMatch(
@@ -1043,6 +1094,17 @@ form.onsubmit =
     );
 
     try {
+      const selectedSlotId =
+        document
+          .getElementById('slot-id')
+          .value;
+
+      if (!selectedSlotId) {
+        throw new Error(
+          'Selecione obrigatoriamente um slot: Cabeça, Peito, Mãos, Pés, Anel ou Gadget.'
+        );
+      }
+
       let setId =
         document
           .getElementById(
@@ -1195,12 +1257,7 @@ form.onsubmit =
               .trim(),
 
           slot_id:
-            document
-              .getElementById(
-                'slot-id'
-              )
-              .value ||
-            null,
+            selectedSlotId,
 
           set_id:
             setId,
@@ -1275,18 +1332,7 @@ form.onsubmit =
 meta =
   await loadEquipmentMeta();
 
-document
-  .getElementById(
-    'slot-id'
-  )
-  .innerHTML +=
-    meta.slots.map(
-      item => `
-        <option value="${item.id}">
-          ${escapeHtml(item.name)}
-        </option>
-      `
-    ).join('');
+populateRequiredSlots();
 
 document
   .getElementById(
