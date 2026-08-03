@@ -156,11 +156,69 @@ function toNumber(value, fallback = 0) {
 
 function nullableNumber(value) {
   if (value === null || value === undefined || value === '') return null;
-  const normalized = typeof value === 'string'
-    ? value.replace(',', '.').trim()
-    : value;
+  let normalized = value;
+  if (typeof value === 'string') {
+    const cleaned = value.replace(',', '.').trim();
+    const match = cleaned.match(/[+-]?(?:\d+(?:\.\d+)?|\.\d+)/);
+    normalized = match ? match[0] : cleaned;
+  }
   const number = Number(normalized);
   return Number.isFinite(number) ? number : null;
+}
+
+function repairMojibake(value = '') {
+  const text = String(value);
+  if (!/[ÃÂâ]/.test(text)) return text;
+  try {
+    const windows1252 = new Map([
+      ['€',0x80],['‚',0x82],['ƒ',0x83],['„',0x84],['…',0x85],['†',0x86],
+      ['‡',0x87],['ˆ',0x88],['‰',0x89],['Š',0x8a],['‹',0x8b],['Œ',0x8c],
+      ['Ž',0x8e],['‘',0x91],['’',0x92],['“',0x93],['”',0x94],['•',0x95],
+      ['–',0x96],['—',0x97],['˜',0x98],['™',0x99],['š',0x9a],['›',0x9b],
+      ['œ',0x9c],['ž',0x9e],['Ÿ',0x9f]
+    ]);
+    const bytes = Uint8Array.from(text, character =>
+      windows1252.get(character) ?? (character.charCodeAt(0) & 255)
+    );
+    const repaired = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    return repaired.includes('\uFFFD') ? text : repaired;
+  } catch {
+    return text;
+  }
+}
+
+function repairDocumentEncoding(root = document) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  nodes.forEach(node => {
+    const repaired = repairMojibake(node.nodeValue);
+    if (repaired !== node.nodeValue) node.nodeValue = repaired;
+  });
+  root.querySelectorAll?.('[placeholder],[title],[aria-label]').forEach(element => {
+    for (const attribute of ['placeholder', 'title', 'aria-label']) {
+      if (!element.hasAttribute(attribute)) continue;
+      const current = element.getAttribute(attribute);
+      const repaired = repairMojibake(current);
+      if (repaired !== current) element.setAttribute(attribute, repaired);
+    }
+  });
+}
+
+function bindEncodingRepairObserver() {
+  const observer = new MutationObserver(records => {
+    for (const record of records) {
+      record.addedNodes.forEach(node => {
+        if (node.nodeType === Node.TEXT_NODE) {
+          const repaired = repairMojibake(node.nodeValue);
+          if (repaired !== node.nodeValue) node.nodeValue = repaired;
+        } else if (node.nodeType === Node.ELEMENT_NODE) {
+          repairDocumentEncoding(node);
+        }
+      });
+    }
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
 }
 
 function clamp(value, minimum, maximum) {
@@ -182,10 +240,10 @@ function getPublicUrl(path) {
 function validateFile(file, allowedTypes) {
   if (!file) return;
   if (!allowedTypes.includes(file.type)) {
-    throw new Error(`Formato nÃ£o permitido para "${file.name}".`);
+    throw new Error(`Formato não permitido para "${file.name}".`);
   }
   if (file.size > MAX_FILE_SIZE) {
-    throw new Error(`"${file.name}" deve ter no mÃ¡ximo 25 MB.`);
+    throw new Error(`"${file.name}" deve ter no máximo 25 MB.`);
   }
 }
 
@@ -216,7 +274,7 @@ function setFieldValue(field, value, eventName = 'input') {
 }
 
 /* =========================================================
-   EDITOR DE MÃDIA
+   EDITOR DE MÍDIA
 ========================================================= */
 
 function createMediaEditor({
@@ -303,7 +361,7 @@ function createMediaEditor({
     };
 
     image.onerror = () => {
-      console.warn(`NÃ£o foi possÃ­vel carregar a mÃ­dia "${name}".`);
+      console.warn(`Não foi possível carregar a mídia "${name}".`);
       canvas.classList.remove('has-image');
     };
 
@@ -377,7 +435,7 @@ function createMediaEditor({
 
   function bind() {
     if (!canvas || !image || !input) {
-      console.warn(`Editor de mÃ­dia incompleto: ${name}`);
+      console.warn(`Editor de mídia incompleto: ${name}`);
       return;
     }
 
@@ -514,23 +572,23 @@ function createAllMediaEditors() {
 }
 
 /* =========================================================
-   PRÃ‰VIA E EVENTOS
+   PRÉVIA E EVENTOS
 ========================================================= */
 
 function updateInformationPreview() {
   if (previewElements.name) {
     previewElements.name.textContent =
-      fields.name?.value.trim() || 'Novo herÃ³i';
+      fields.name?.value.trim() || 'Novo herói';
   }
 
   if (previewElements.slug) {
     previewElements.slug.textContent =
-      fields.slug?.value.trim() || 'â€”';
+      fields.slug?.value.trim() || '—';
   }
 
   if (previewElements.description) {
     previewElements.description.textContent =
-      fields.description?.value.trim() || 'Nenhuma descriÃ§Ã£o cadastrada.';
+      fields.description?.value.trim() || 'Nenhuma descrição cadastrada.';
   }
 
   if (previewElements.enabled) {
@@ -547,7 +605,7 @@ function updateLivePreview() {
   const state = mainEditor.getState();
 
   if (!source) {
-    container.textContent = 'Sem mÃ­dia selecionada';
+    container.textContent = 'Sem mídia selecionada';
     return;
   }
 
@@ -610,7 +668,7 @@ async function loadHeroClasses() {
   }
 
   if (result.error) {
-    console.warn('NÃ£o foi possÃ­vel carregar as classes:', result.error);
+    console.warn('Não foi possível carregar as classes:', result.error);
     return;
   }
 
@@ -637,7 +695,7 @@ async function loadNextDisplayOrder() {
     .limit(1);
 
   if (error) {
-    console.warn('NÃ£o foi possÃ­vel calcular a ordem:', error);
+    console.warn('Não foi possível calcular a ordem:', error);
     fields.displayOrder.value = '0';
     return;
   }
@@ -662,7 +720,7 @@ function formatIntegratedStatValue(value, definition = {}) {
   const number = Number(value);
 
   if (!Number.isFinite(number)) {
-    return 'â€”';
+    return '—';
   }
 
   const decimals = Math.max(0, toNumber(definition.decimals, 0));
@@ -738,7 +796,7 @@ function renderIntegratedStatsFields(heroValues = {}, weaponValues = {}) {
     if (!heroDefinitions.length) {
       integratedStats.heroGrid.innerHTML = `
         <div class="integrated-stats-empty">
-          Nenhuma definiÃ§Ã£o de status do herÃ³i foi encontrada.
+          Nenhuma definição de status do herói foi encontrada.
         </div>
       `;
     } else {
@@ -760,7 +818,7 @@ function renderIntegratedStatsFields(heroValues = {}, weaponValues = {}) {
     if (!weaponDefinitions.length) {
       integratedStats.weaponGrid.innerHTML = `
         <div class="integrated-stats-empty">
-          Nenhuma definiÃ§Ã£o de status da arma foi encontrada.
+          Nenhuma definição de status da arma foi encontrada.
         </div>
       `;
     } else {
@@ -799,7 +857,7 @@ function collectIntegratedStatFields(group) {
       const value = Number(item.rawValue);
 
       if (!Number.isFinite(value)) {
-        throw new Error(`Valor invÃ¡lido em "${item.stat_key}".`);
+        throw new Error(`Valor inválido em "${item.stat_key}".`);
       }
 
       return {
@@ -1183,7 +1241,7 @@ function applyImportedStatsData(data, {
       getIntegratedInput('hero', definition);
 
     if (!definition || !input) {
-      missing.push(`HerÃ³i: ${sourceKey}`);
+      missing.push(`Herói: ${sourceKey}`);
       continue;
     }
 
@@ -1229,7 +1287,7 @@ function applyImportedStatsData(data, {
 
     if (missing.length) {
       text +=
-        ` ${missing.length} campo(s) nÃ£o possuem definiÃ§Ã£o correspondente.`;
+        ` ${missing.length} campo(s) não possuem definição correspondente.`;
     }
 
     showMessage(
@@ -1263,7 +1321,7 @@ function bindIntegratedStatsControls() {
     () => {
       if (!importedStatsSnapshot) {
         showMessage(
-          'NÃ£o hÃ¡ preenchimento para desfazer.',
+          'Não há preenchimento para desfazer.',
           'error'
         );
         return;
@@ -1302,15 +1360,15 @@ function refreshImportedStatsButton() {
 
 
 /* =========================================================
-   IMPORTAÃ‡ÃƒO ASSISTIDA
+   IMPORTAÇÃO ASSISTIDA
 ========================================================= */
 
 function getImportPrompt() {
-  return `Analise os prints enviados de um herÃ³i do jogo Bullet Echo.
+  return `Analise os prints enviados de um herói do jogo Bullet Echo.
 
-Extraia apenas os dados claramente visÃ­veis. NÃ£o estime, nÃ£o invente e nÃ£o calcule valores ausentes. Quando um campo nÃ£o estiver visÃ­vel ou nÃ£o puder ser confirmado, use null.
+Extraia apenas os dados claramente visíveis. Não estime, não invente e não calcule valores ausentes. Quando um campo não estiver visível ou não puder ser confirmado, use null.
 
-Responda SOMENTE com JSON vÃ¡lido, sem explicaÃ§Ãµes antes ou depois:
+Responda SOMENTE com JSON válido, sem explicações antes ou depois:
 
 {
   "schemaVersion": 1,
@@ -1367,10 +1425,10 @@ Responda SOMENTE com JSON vÃ¡lido, sem explicaÃ§Ãµes antes ou depois:
 }
 
 Regras:
-- Preserve nÃºmeros decimais.
-- Remova sÃ­mbolos de unidade do valor numÃ©rico.
+- Preserve números decimais.
+- Remova símbolos de unidade do valor numérico.
 - Em "class", use o nome mostrado no jogo.
-- Em "description", transcreva somente a descriÃ§Ã£o do herÃ³i.
+- Em "description", transcreva somente a descrição do herói.
 - Nunca coloque texto fora do JSON.`;
 }
 
@@ -1387,7 +1445,7 @@ function extractJsonText(value = '') {
   const lastBrace = candidate.lastIndexOf('}');
 
   if (firstBrace < 0 || lastBrace < firstBrace) {
-    throw new Error('NÃ£o foi encontrado um objeto JSON vÃ¡lido.');
+    throw new Error('Não foi encontrado um objeto JSON válido.');
   }
 
   return candidate.slice(firstBrace, lastBrace + 1);
@@ -1400,15 +1458,34 @@ function normalizeImportedData(source = {}) {
 
   const status = source.status && typeof source.status === 'object'
     ? source.status
-    : (source.heroParameters || {});
+    : (source.heroParameters || source.parametros_do_heroi || {});
+
+  const overview = source.resumo && typeof source.resumo === 'object'
+    ? source.resumo
+    : {};
+
+  const armaPt = source.arma && typeof source.arma === 'object'
+    ? source.arma
+    : {};
 
   const summary = source.weaponSummary && typeof source.weaponSummary === 'object'
     ? source.weaponSummary
-    : {};
+    : (armaPt.resumo || {});
 
   const weapon = source.weaponDetails && typeof source.weaponDetails === 'object'
     ? source.weaponDetails
-    : (source.weapon || {});
+    : (source.weapon || armaPt || {});
+
+  const detalhesPt = armaPt.detalhes && typeof armaPt.detalhes === 'object'
+    ? armaPt.detalhes
+    : {};
+
+  const firepowerPt = detalhesPt.poder_de_fogo || {};
+  const armorBreakPt = detalhesPt.quebra_de_armadura || {};
+  const fireRatePt = detalhesPt.cadencia_de_tiro || {};
+  const magazinePt = detalhesPt.capacidade_de_municao || {};
+  const rangePt = detalhesPt.alcance_efetivo || {};
+  const stabilityPt = detalhesPt.estabilidade_de_mira || {};
 
   const meta = source.meta && typeof source.meta === 'object'
     ? source.meta
@@ -1419,8 +1496,8 @@ function normalizeImportedData(source = {}) {
 
     hero: {
       name: hero.name ?? source.name ?? null,
-      class: hero.class ?? hero.heroClass ?? source.heroClass ?? source.class ?? null,
-      description: hero.description ?? source.description ?? null,
+      class: hero.class ?? hero.classe ?? hero.heroClass ?? source.heroClass ?? source.class ?? source.classe ?? null,
+      description: hero.description ?? hero.descricao ?? source.description ?? source.descricao ?? null,
       displayOrder: nullableNumber(
         hero.displayOrder ?? hero.display_order ??
         source.displayOrder ?? source.display_order
@@ -1429,101 +1506,111 @@ function normalizeImportedData(source = {}) {
     },
 
     status: {
-      power: nullableNumber(status.power ?? source.power),
-      health: nullableNumber(status.health ?? status.life ?? source.health),
-      damage: nullableNumber(status.damage ?? source.damage),
-      armor: nullableNumber(status.armor ?? source.armor),
-      visionRange: nullableNumber(status.visionRange ?? status.vision_range),
+      power: nullableNumber(status.power ?? status.poder ?? overview.poder ?? source.power ?? source.poder),
+      health: nullableNumber(status.health ?? status.life ?? status.vida ?? overview.vida ?? source.health ?? source.vida),
+      damage: nullableNumber(status.damage ?? status.dano ?? overview.dano ?? source.damage ?? source.dano),
+      armor: nullableNumber(status.armor ?? status.armadura ?? overview.armadura ?? source.armor ?? source.armadura),
+      visionRange: nullableNumber(status.visionRange ?? status.vision_range ?? status.alcance_de_visao_do_heroi),
       movementNoiseRadius: nullableNumber(
-        status.movementNoiseRadius ?? status.movement_noise_radius
+        status.movementNoiseRadius ?? status.movement_noise_radius ??
+        status.raio_maximo_do_barulho_de_movimentacao_do_heroi
       ),
       maxMovementSpeed: nullableNumber(
-        status.maxMovementSpeed ?? status.max_movement_speed
+        status.maxMovementSpeed ?? status.max_movement_speed ??
+        status.velocidade_maxima_de_movimentacao_do_heroi
       ),
       aimedMovementSpeed: nullableNumber(
-        status.aimedMovementSpeed ?? status.aimed_movement_speed
+        status.aimedMovementSpeed ?? status.aimed_movement_speed ??
+        status.velocidade_maxima_de_movimentacao_do_heroi_ao_mirar
       ),
       penetrationResistance: nullableNumber(
-        status.penetrationResistance ?? status.penetration_resistance
+        status.penetrationResistance ?? status.penetration_resistance ??
+        status.resistencia_a_perfuracao_do_heroi
       ),
-      armorValue: nullableNumber(status.armorValue ?? status.armor_value),
+      armorValue: nullableNumber(status.armorValue ?? status.armor_value ?? status.valor_de_armadura),
       armorResistance: nullableNumber(
-        status.armorResistance ?? status.armor_resistance
+        status.armorResistance ?? status.armor_resistance ?? status.resistencia_de_armadura
       )
     },
 
     weaponSummary: {
-      name: summary.name ?? weapon.name ?? null,
-      firepower: nullableNumber(summary.firepower ?? weapon.firepower),
+      name: summary.name ?? summary.nome ?? weapon.name ?? weapon.nome ?? armaPt.nome ?? null,
+      firepower: nullableNumber(summary.firepower ?? summary.poder_de_fogo ?? weapon.firepower),
       armorBreak: nullableNumber(
-        summary.armorBreak ?? summary.armor_break ?? weapon.armorBreak
+        summary.armorBreak ?? summary.armor_break ?? summary.quebra_de_armadura ?? weapon.armorBreak
       ),
       fireRate: nullableNumber(
-        summary.fireRate ?? summary.fire_rate ?? weapon.fireRate
+        summary.fireRate ?? summary.fire_rate ?? summary.cadencia_de_tiro ?? weapon.fireRate
       ),
       magazineCapacity: nullableNumber(
         summary.magazineCapacity ??
         summary.magazine_capacity ??
+        summary.capacidade_de_municao ??
         weapon.magazineCapacity
       ),
       effectiveRange: nullableNumber(
-        summary.effectiveRange ?? summary.effective_range ?? weapon.effectiveRange
+        summary.effectiveRange ?? summary.effective_range ?? summary.alcance_efetivo ?? weapon.effectiveRange
       ),
       aimingStability: nullableNumber(
         summary.aimingStability ??
         summary.aiming_stability ??
+        summary.estabilidade_de_mira ??
         weapon.aimingStability
       )
     },
 
     weaponDetails: {
       damagePerShot: nullableNumber(
-        weapon.damagePerShot ?? weapon.damage_per_shot
+        weapon.damagePerShot ?? weapon.damage_per_shot ?? firepowerPt.dano_da_arma_por_tiro
       ),
       healthDamageMultiplier: nullableNumber(
-        weapon.healthDamageMultiplier ?? weapon.health_damage_multiplier
+        weapon.healthDamageMultiplier ?? weapon.health_damage_multiplier ?? firepowerPt.modificador_de_dano_a_vida
       ),
       armorPenetration: nullableNumber(
-        weapon.armorPenetration ?? weapon.armor_penetration
+        weapon.armorPenetration ?? weapon.armor_penetration ?? firepowerPt.perfuracao_de_armadura_da_arma
       ),
       penetrationPower: nullableNumber(
-        weapon.penetrationPower ?? weapon.penetration_power
+        weapon.penetrationPower ?? weapon.penetration_power ?? armorBreakPt.poder_de_perfuracao_da_arma
       ),
       armorDroneMultiplier: nullableNumber(
-        weapon.armorDroneMultiplier ?? weapon.armor_drone_multiplier
+        weapon.armorDroneMultiplier ?? weapon.armor_drone_multiplier ??
+        armorBreakPt.modificador_de_dano_por_armas_a_armaduras_e_drones
       ),
       shotsPerSecond: nullableNumber(
-        weapon.shotsPerSecond ?? weapon.shots_per_second
+        weapon.shotsPerSecond ?? weapon.shots_per_second ?? fireRatePt.cadencia_de_tiro_por_segundo
       ),
       reloadTime: nullableNumber(
-        weapon.reloadTime ?? weapon.reload_time
+        weapon.reloadTime ?? weapon.reload_time ?? fireRatePt.tempo_de_recarga_da_arma
       ),
       magazineSize: nullableNumber(
-        weapon.magazineSize ?? weapon.magazine_size
+        weapon.magazineSize ?? weapon.magazine_size ?? magazinePt.tamanho_do_pente
       ),
       hipFireRange: nullableNumber(
-        weapon.hipFireRange ?? weapon.hip_fire_range
+        weapon.hipFireRange ?? weapon.hip_fire_range ?? rangePt.alcance_do_tiro_da_arma
       ),
       aimedRange: nullableNumber(
-        weapon.aimedRange ?? weapon.aimed_range
+        weapon.aimedRange ?? weapon.aimed_range ?? rangePt.alcance_do_tiro_da_arma_ao_mirar
       ),
-      dispersion: nullableNumber(weapon.dispersion),
+      dispersion: nullableNumber(weapon.dispersion ?? stabilityPt.dispersao_de_tiro_da_arma),
       movingDispersion: nullableNumber(
-        weapon.movingDispersion ?? weapon.moving_dispersion
+        weapon.movingDispersion ?? weapon.moving_dispersion ??
+        stabilityPt.dispersao_de_tiro_da_arma_ao_se_movimentar
       ),
       aimedDispersion: nullableNumber(
-        weapon.aimedDispersion ?? weapon.aimed_dispersion
+        weapon.aimedDispersion ?? weapon.aimed_dispersion ??
+        stabilityPt.dispersao_de_tiro_da_arma_ao_mirar
       ),
       aimTime: nullableNumber(
-        weapon.aimTime ?? weapon.aim_time
+        weapon.aimTime ?? weapon.aim_time ?? stabilityPt.tempo_de_mira_da_arma
       ),
       dispersionFactor: nullableNumber(
-        weapon.dispersionFactor ?? weapon.dispersion_factor
+        weapon.dispersionFactor ?? weapon.dispersion_factor ?? stabilityPt.fator_de_dispersao_da_arma
       )
     },
 
     meta: {
-      rarity: meta.rarity ?? source.rarity ?? null,
+      level: meta.level ?? meta.nivel ?? hero.level ?? hero.nivel ?? source.level ?? source.nivel ?? null,
+      rarity: meta.rarity ?? meta.raridade ?? hero.rarity ?? hero.raridade ?? source.rarity ?? source.raridade ?? null,
       faction: meta.faction ?? source.faction ?? null
     }
   };
@@ -1582,7 +1669,7 @@ function loadImportDraft() {
     const parsed = JSON.parse(raw);
     return parsed?.data ? parsed : null;
   } catch (error) {
-    console.warn('Rascunho de importaÃ§Ã£o invÃ¡lido:', error);
+    console.warn('Rascunho de importação inválido:', error);
     return null;
   }
 }
@@ -1617,13 +1704,13 @@ function applyImportedData(data) {
       fields.classId.dispatchEvent(new Event('change', { bubbles: true }));
       applied.push('classe');
     } else {
-      warnings.push(`Classe "${hero.class}" nÃ£o encontrada.`);
+      warnings.push(`Classe "${hero.class}" não encontrada.`);
     }
   }
 
   if (hero.description) {
     setFieldValue(fields.description, hero.description, 'input');
-    applied.push('descriÃ§Ã£o');
+    applied.push('descrição');
   }
 
   if (hero.displayOrder !== null) {
@@ -1633,7 +1720,7 @@ function applyImportedData(data) {
 
   if (hero.active !== null) {
     setFieldValue(fields.enabled, hero.active);
-    applied.push('publicaÃ§Ã£o');
+    applied.push('publicação');
   }
 
   const statsOutcome =
@@ -1652,7 +1739,7 @@ function applyImportedData(data) {
 
   if (statsOutcome.missing.length) {
     warnings.push(
-      `${statsOutcome.missing.length} campo(s) de status/arma sem correspondÃªncia.`
+      `${statsOutcome.missing.length} campo(s) de status/arma sem correspondência.`
     );
   }
 
@@ -1704,7 +1791,7 @@ function injectImportUi() {
     .hero-import-actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:12px}
     .hero-import-result{display:grid;gap:8px;margin-top:12px}
     .hero-import-summary{
-      display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px
+      display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px
     }
     .hero-import-summary div{
       padding:10px;border:1px solid var(--admin-line);
@@ -1748,16 +1835,16 @@ function injectImportUi() {
     <section class="hero-import-modal" role="dialog" aria-modal="true">
       <header class="hero-import-head">
         <div>
-          <h2>Importar dados do herÃ³i</h2>
-          <p>Cole o JSON produzido pelo ChatGPT. Nada serÃ¡ salvo automaticamente.</p>
+          <h2>Importar dados do herói</h2>
+          <p>Cole o JSON produzido pelo ChatGPT. Nada será salvo automaticamente.</p>
         </div>
-        <button id="hero-import-close" type="button" class="admin-button">âœ•</button>
+        <button id="hero-import-close" type="button" class="admin-button">✕</button>
       </header>
 
       <div class="hero-import-body">
         <section class="hero-import-card">
           <h3>1. Prompt para o ChatGPT</h3>
-          <p>Envie os prints do herÃ³i e cole este prompt.</p>
+          <p>Envie os prints do herói e cole este prompt.</p>
           <textarea
             id="hero-import-prompt"
             class="admin-textarea hero-import-textarea"
@@ -1772,7 +1859,7 @@ function injectImportUi() {
 
         <section class="hero-import-card">
           <h3>2. JSON retornado</h3>
-          <p>Ã‰ aceito JSON puro ou dentro de um bloco de cÃ³digo.</p>
+          <p>É aceito JSON puro ou dentro de um bloco de código.</p>
           <textarea
             id="hero-import-json"
             class="admin-textarea hero-import-textarea"
@@ -1789,7 +1876,7 @@ function injectImportUi() {
               class="admin-button primary"
               disabled
             >
-              Preencher formulÃ¡rio
+              Preencher formulário
             </button>
             <button id="hero-import-clear" type="button" class="admin-button">
               Limpar
@@ -1800,8 +1887,8 @@ function injectImportUi() {
         </section>
 
         <div class="hero-import-note">
-          InformaÃ§Ãµes gerais, status e arma sÃ£o preenchidos nesta mesma tela.
-          MÃ­dias e habilidades continuam manuais.
+          Informações gerais, status e arma são preenchidos nesta mesma tela.
+          Mídias e habilidades continuam manuais.
         </div>
       </div>
     </section>
@@ -1852,16 +1939,17 @@ function injectImportUi() {
 
       resultArea.innerHTML = `
         <div class="hero-import-summary">
-          <div><small>InformaÃ§Ãµes</small><strong>${countValues(validatedData.hero)}</strong></div>
+          <div><small>Informações</small><strong>${countValues(validatedData.hero)}</strong></div>
           <div><small>Status</small><strong>${countValues(validatedData.status)}</strong></div>
           <div><small>Arma resumida</small><strong>${countValues(validatedData.weaponSummary)}</strong></div>
           <div><small>Arma detalhada</small><strong>${countValues(validatedData.weaponDetails)}</strong></div>
+          <div><small>Metadados</small><strong>${countValues(validatedData.meta)}</strong></div>
         </div>
 
         <div class="hero-import-note ${validatedData.hero.name ? 'ok' : 'warn'}">
           ${validatedData.hero.name
             ? `Nome reconhecido: ${escapeHtml(validatedData.hero.name)}.`
-            : 'Nome nÃ£o informado.'}
+            : 'Nome não informado.'}
         </div>
 
         <div class="hero-import-note ${classOption ? 'ok' : 'warn'}">
@@ -1869,10 +1957,16 @@ function injectImportUi() {
             ? (
                 classOption
                   ? `Classe encontrada: ${escapeHtml(classOption.textContent.trim())}.`
-                  : `Classe nÃ£o encontrada: ${escapeHtml(validatedData.hero.class)}.`
+                  : `Classe não encontrada: ${escapeHtml(validatedData.hero.class)}.`
               )
-            : 'Classe nÃ£o informada.'}
+            : 'Classe não informada.'}
         </div>
+
+        ${countValues(validatedData.meta) ? `
+          <div class="hero-import-note warn">
+            Nível e raridade foram reconhecidos, mas o editor atual ainda não possui campos de destino para salvá-los.
+          </div>
+        ` : ''}
       `;
 
       applyButton.disabled = false;
@@ -1882,10 +1976,10 @@ function injectImportUi() {
       clearValidation();
       resultArea.innerHTML = `
         <div class="hero-import-note error">
-          ${escapeHtml(error.message || 'JSON invÃ¡lido.')}
+          ${escapeHtml(error.message || 'JSON inválido.')}
         </div>
       `;
-      showMessage(error.message || 'JSON invÃ¡lido.', 'error');
+      showMessage(error.message || 'JSON inválido.', 'error');
       return null;
     }
   }
@@ -1922,7 +2016,7 @@ function injectImportUi() {
     const outcome = applyImportedData(data);
     let text = outcome.applied.length
       ? `${outcome.applied.length} campo(s) preenchido(s): ${outcome.applied.join(', ')}.`
-      : 'Nenhum campo geral pÃ´de ser preenchido.';
+      : 'Nenhum campo geral pôde ser preenchido.';
 
     if (outcome.warnings.length) {
       text += ` ${outcome.warnings.join(' ')}`;
@@ -1942,7 +2036,7 @@ function injectImportUi() {
 }
 
 /* =========================================================
-   CARREGAMENTO DO HERÃ“I
+   CARREGAMENTO DO HERÓI
 ========================================================= */
 
 function populateHero(hero) {
@@ -1975,7 +2069,7 @@ function populateHero(hero) {
 
   const editorTitle = document.getElementById('editor-title');
   if (editorTitle) editorTitle.textContent = `Editar ${hero.name}`;
-  if (saveButton) saveButton.textContent = 'Atualizar herÃ³i';
+  if (saveButton) saveButton.textContent = 'Atualizar herói';
 
   updateAllPreviews();
 }
@@ -1983,7 +2077,7 @@ function populateHero(hero) {
 async function loadHero() {
   if (!heroId) return;
 
-  showMessage('Carregando herÃ³i...');
+  showMessage('Carregando herói...');
 
   const { data, error } = await supabase
     .from('heroes')
@@ -2005,17 +2099,17 @@ async function loadHero() {
 }
 
 /* =========================================================
-   VALIDAÃ‡ÃƒO, UPLOAD E SALVAMENTO
+   VALIDAÇÃO, UPLOAD E SALVAMENTO
 ========================================================= */
 
 function validateForm() {
   const name = fields.name.value.trim();
 
-  if (!name) throw new Error('Informe o nome do herÃ³i.');
+  if (!name) throw new Error('Informe o nome do herói.');
 
   const slug = slugify(name);
 
-  if (!slug) throw new Error('NÃ£o foi possÃ­vel gerar o identificador.');
+  if (!slug) throw new Error('Não foi possível gerar o identificador.');
 
   fields.slug.value = slug;
   return slug;
@@ -2038,7 +2132,7 @@ async function validateSlugAvailability(slug) {
 }
 
 /* =========================================================
-   ASSISTENTE DE ATUALIZAÃ‡ÃƒO INTELIGENTE
+   ASSISTENTE DE ATUALIZAÇÃO INTELIGENTE
 ========================================================= */
 
 const UPDATE_HISTORY_KEY = 'echo-arena-hero-version-history';
@@ -2062,7 +2156,7 @@ function valuesEqual(a, b) {
 }
 
 function displayDiffValue(value) {
-  if (value === null || value === undefined || value === '') return 'â€”';
+  if (value === null || value === undefined || value === '') return '—';
   if (typeof value === 'boolean') return value ? 'Ativo' : 'Inativo';
   return String(value);
 }
@@ -2125,9 +2219,9 @@ function buildUpdateDiffs(bundle) {
   const diffs = [
     createDiff({ key:'name', label:'Nome', group:'Geral', before:hero.name, after:importedValue('name',fields.name.value.trim(),hero.name), apply:{ type:'hero', column:'name' } }),
     createDiff({ key:'class_id', label:'Classe', group:'Geral', before:hero.class_id, after:importedValue('class',fields.classId.value || null,hero.class_id), apply:{ type:'hero', column:'class_id' } }),
-    createDiff({ key:'description', label:'DescriÃ§Ã£o', group:'Geral', before:hero.description, after:importedValue('description',fields.description.value.trim() || null,hero.description), apply:{ type:'hero', column:'description' } }),
-    createDiff({ key:'enabled', label:'PublicaÃ§Ã£o', group:'Geral', before:hero.enabled, after:importedValue('active',fields.enabled.checked,hero.enabled), apply:{ type:'hero', column:'enabled' } }),
-    createDiff({ key:'display_order', label:'Ordem de exibiÃ§Ã£o', group:'Geral', before:hero.display_order, after:importedValue('displayOrder',toNumber(fields.displayOrder.value,0),hero.display_order), kind:'number', apply:{ type:'hero', column:'display_order' } })
+    createDiff({ key:'description', label:'Descrição', group:'Geral', before:hero.description, after:importedValue('description',fields.description.value.trim() || null,hero.description), apply:{ type:'hero', column:'description' } }),
+    createDiff({ key:'enabled', label:'Publicação', group:'Geral', before:hero.enabled, after:importedValue('active',fields.enabled.checked,hero.enabled), apply:{ type:'hero', column:'enabled' } }),
+    createDiff({ key:'display_order', label:'Ordem de exibição', group:'Geral', before:hero.display_order, after:importedValue('displayOrder',toNumber(fields.displayOrder.value,0),hero.display_order), kind:'number', apply:{ type:'hero', column:'display_order' } })
   ];
 
   for (const group of ['hero', 'weapon']) {
@@ -2148,7 +2242,7 @@ function buildUpdateDiffs(bundle) {
     ['gif','GIF',fields.gifFile.files?.[0],hero.gif_path]
   ];
   for (const [key,label,file,before] of media) {
-    diffs.push(createDiff({ key:`media.${key}`, label, group:'MÃ­dia', before:before ? 'Cadastrada' : 'NÃ£o cadastrada', after:file?.name || (before ? 'Cadastrada' : 'NÃ£o cadastrada'), apply:{ type:'media', media:key }, selected:Boolean(file) }));
+    diffs.push(createDiff({ key:`media.${key}`, label, group:'Mídia', before:before ? 'Cadastrada' : 'Não cadastrada', after:file?.name || (before ? 'Cadastrada' : 'Não cadastrada'), apply:{ type:'media', media:key }, selected:Boolean(file) }));
   }
   return diffs;
 }
@@ -2167,8 +2261,8 @@ function diffSummary(diffs) {
 function renderVersionHistory(targetId) {
   const history = readVersionHistory()[targetId] || [];
   if (!history.length) return '';
-  return `<section class="update-group"><div class="update-group-head">HISTÃ“RICO <span>${history.length} backup(s) neste navegador</span></div>${history.slice().reverse().slice(0,5).map(item => `
-    <div class="update-diff"><span></span><div class="update-diff-label"><strong>v${item.version}</strong><small>${escapeHtml(new Date(item.createdAt).toLocaleString('pt-BR'))}</small></div><div class="update-value">${escapeHtml(item.summary || 'Backup automÃ¡tico')}</div><span></span><button type="button" class="admin-button" data-restore-version="${item.version}">Restaurar versÃ£o</button></div>
+  return `<section class="update-group"><div class="update-group-head">HISTÓRICO <span>${history.length} backup(s) neste navegador</span></div>${history.slice().reverse().slice(0,5).map(item => `
+    <div class="update-diff"><span></span><div class="update-diff-label"><strong>v${item.version}</strong><small>${escapeHtml(new Date(item.createdAt).toLocaleString('pt-BR'))}</small></div><div class="update-value">${escapeHtml(item.summary || 'Backup automático')}</div><span></span><button type="button" class="admin-button" data-restore-version="${item.version}">Restaurar versão</button></div>
   `).join('')}</section>`;
 }
 
@@ -2180,30 +2274,30 @@ function renderUpdateAssistant() {
   const body = document.getElementById('update-assistant-body');
   const selectedCount = diffs.filter(item => item.changed && item.selected).length;
   summaryElement.innerHTML = [
-    [summary.changed,'alteraÃ§Ãµes'],[summary.increases,'aumentos'],[summary.decreases,'reduÃ§Ãµes'],[summary.texts,'textos modificados'],[summary.same,'campos iguais']
+    [summary.changed,'alterações'],[summary.increases,'aumentos'],[summary.decreases,'reduções'],[summary.texts,'textos modificados'],[summary.same,'campos iguais']
   ].map(([value,label]) => `<div class="update-summary-item"><strong>${value}</strong><span>${label}</span></div>`).join('');
 
   const newImage = fields.imageFile.files?.[0] ? URL.createObjectURL(fields.imageFile.files[0]) : getPublicUrl(bundle.hero.image_path);
   const identity = `<div class="update-identity-grid">
-    <article class="update-identity-card">${bundle.hero.image_path ? `<img src="${escapeHtml(getPublicUrl(bundle.hero.image_path))}" alt="">` : '<div class="update-avatar-placeholder">â—‡</div>'}<div><small>HERÃ“I CADASTRADO</small><h3>${escapeHtml(bundle.hero.name)}</h3><p>${escapeHtml(classNameForId(bundle.hero.class_id))} Â· versÃ£o ${pendingUpdate.nextVersion - 1}</p></div></article>
-    <article class="update-identity-card">${newImage ? `<img src="${escapeHtml(newImage)}" alt="">` : '<div class="update-avatar-placeholder">â—‡</div>'}<div><small>NOVO JSON</small><h3>${escapeHtml(fields.name.value.trim())}</h3><p>${escapeHtml(classNameForId(fields.classId.value))} Â· importado agora</p></div></article>
+    <article class="update-identity-card">${bundle.hero.image_path ? `<img src="${escapeHtml(getPublicUrl(bundle.hero.image_path))}" alt="">` : '<div class="update-avatar-placeholder">◇</div>'}<div><small>HERÓI CADASTRADO</small><h3>${escapeHtml(bundle.hero.name)}</h3><p>${escapeHtml(classNameForId(bundle.hero.class_id))} · versão ${pendingUpdate.nextVersion - 1}</p></div></article>
+    <article class="update-identity-card">${newImage ? `<img src="${escapeHtml(newImage)}" alt="">` : '<div class="update-avatar-placeholder">◇</div>'}<div><small>NOVO JSON</small><h3>${escapeHtml(fields.name.value.trim())}</h3><p>${escapeHtml(classNameForId(fields.classId.value))} · importado agora</p></div></article>
   </div>`;
 
-  const groups = ['Geral','Status','Arma','MÃ­dia','Habilidades'];
+  const groups = ['Geral','Status','Arma','Mídia','Habilidades'];
   const groupHtml = groups.map(group => {
     const items = diffs.filter(item => item.group === group);
-    if (!items.length) return `<section class="update-group"><div class="update-group-head">${group.toUpperCase()} <span>Nenhuma alteraÃ§Ã£o</span></div></section>`;
-    return `<section class="update-group"><div class="update-group-head">${group.toUpperCase()} <span>${items.filter(item=>item.changed).length ? `${items.filter(item=>item.changed).length} alteraÃ§Ã£o(Ãµes)` : 'Sem alteraÃ§Ãµes'}</span></div>${items.map(item => `
+    if (!items.length) return `<section class="update-group"><div class="update-group-head">${group.toUpperCase()} <span>Nenhuma alteração</span></div></section>`;
+    return `<section class="update-group"><div class="update-group-head">${group.toUpperCase()} <span>${items.filter(item=>item.changed).length ? `${items.filter(item=>item.changed).length} alteração(ões)` : 'Sem alterações'}</span></div>${items.map(item => `
       <div class="update-diff ${item.change} ${item.changed ? '' : 'is-same'}">
         <input type="checkbox" data-diff-key="${escapeHtml(item.key)}" ${item.selected ? 'checked' : ''} ${item.changed ? '' : 'disabled'} aria-label="Atualizar ${escapeHtml(item.label)}">
-        <div class="update-diff-label"><strong>${escapeHtml(item.label)}</strong><small>${item.changed ? (item.change === 'increase' ? 'â–² Aumento' : item.change === 'decrease' ? 'â–¼ ReduÃ§Ã£o' : 'âš  Modificado') : 'âœ” Sem alteraÃ§Ã£o'}</small></div>
-        <div class="update-value">${escapeHtml(item.key === 'class_id' ? classNameForId(item.before) : displayDiffValue(item.before))}</div><div class="update-arrow">â†’</div>
+        <div class="update-diff-label"><strong>${escapeHtml(item.label)}</strong><small>${item.changed ? (item.change === 'increase' ? '▲ Aumento' : item.change === 'decrease' ? '▼ Redução' : '⚠ Modificado') : '✔ Sem alteração'}</small></div>
+        <div class="update-value">${escapeHtml(item.key === 'class_id' ? classNameForId(item.before) : displayDiffValue(item.before))}</div><div class="update-arrow">→</div>
         <div class="update-value">${escapeHtml(item.key === 'class_id' ? classNameForId(item.after) : displayDiffValue(item.after))}</div>
-        ${item.risky ? '<div class="update-risk">âš  AlteraÃ§Ã£o muito grande â€” diferenÃ§a superior a 80%. Confirme com atenÃ§Ã£o; pode ser um erro de OCR.</div>' : ''}
+        ${item.risky ? '<div class="update-risk">⚠ Alteração muito grande — diferença superior a 80%. Confirme com atenção; pode ser um erro de OCR.</div>' : ''}
       </div>`).join('')}</section>`;
   }).join('');
-  body.innerHTML = identity + (summary.changed ? groupHtml : '<div class="update-empty"><strong>Nenhuma alteraÃ§Ã£o encontrada</strong><br>Os dados importados sÃ£o idÃªnticos aos jÃ¡ cadastrados. Nada serÃ¡ atualizado.</div>') + renderVersionHistory(bundle.hero.id);
-  document.getElementById('update-final-stats').innerHTML = `âœ” ${selectedCount} campos selecionados<br>âœ” ${summary.same + summary.changed - selectedCount} preservados Â· âœ” 0 apagados Â· âœ” backup serÃ¡ criado`;
+  body.innerHTML = identity + (summary.changed ? groupHtml : '<div class="update-empty"><strong>Nenhuma alteração encontrada</strong><br>Os dados importados são idênticos aos já cadastrados. Nada será atualizado.</div>') + renderVersionHistory(bundle.hero.id);
+  document.getElementById('update-final-stats').innerHTML = `✔ ${selectedCount} campos selecionados<br>✔ ${summary.same + summary.changed - selectedCount} preservados · ✔ 0 apagados · ✔ backup será criado`;
   const selectedButton = document.getElementById('update-selected');
   selectedButton.disabled = selectedCount === 0;
   document.getElementById('update-all').disabled = summary.changed === 0;
@@ -2247,7 +2341,7 @@ async function applySelectedUpdate(selectAll = false) {
   const chosen = pendingUpdate.diffs.filter(item => item.changed && (selectAll || item.selected));
   if (!chosen.length) return;
   const risky = chosen.filter(item => item.risky);
-  if (risky.length && !confirm(`${risky.length} alteraÃ§Ã£o(Ãµes) variam mais de 80%. Deseja continuar?`)) return;
+  if (risky.length && !confirm(`${risky.length} alteração(ões) variam mais de 80%. Deseja continuar?`)) return;
   isSaving = true;
   try {
     const { bundle } = pendingUpdate;
@@ -2274,11 +2368,11 @@ async function applySelectedUpdate(selectAll = false) {
     const modified = chosen.length;
     const preserved = pendingUpdate.diffs.length - modified;
     closeUpdateAssistant();
-    showMessage(`AtualizaÃ§Ã£o concluÃ­da: ${modified} campos modificados, ${preserved} preservados, 0 apagados e backup criado.`, 'ok');
+    showMessage(`Atualização concluída: ${modified} campos modificados, ${preserved} preservados, 0 apagados e backup criado.`, 'ok');
     setTimeout(() => { location.href = `./hero-editor.html?id=${bundle.hero.id}`; }, 900);
   } catch (error) {
-    console.error('Erro na atualizaÃ§Ã£o inteligente:', error);
-    showMessage(error.message || 'NÃ£o foi possÃ­vel atualizar o herÃ³i.', 'error');
+    console.error('Erro na atualização inteligente:', error);
+    showMessage(error.message || 'Não foi possível atualizar o herói.', 'error');
   } finally { isSaving = false; }
 }
 
@@ -2293,7 +2387,7 @@ async function uploadSelectedMediaSelective(slug, selected) {
 }
 
 async function restoreHeroVersion(version) {
-  if (!pendingUpdate || !confirm(`Restaurar a versÃ£o v${version}? Um backup do estado atual serÃ¡ criado antes.`)) return;
+  if (!pendingUpdate || !confirm(`Restaurar a versão v${version}? Um backup do estado atual será criado antes.`)) return;
   const id = pendingUpdate.bundle.hero.id;
   const record = (readVersionHistory()[id] || []).find(item => item.version === version);
   if (!record?.snapshot) return;
@@ -2312,14 +2406,14 @@ async function restoreHeroVersion(version) {
     await restoreStats('hero_base_stats',snapshot.heroStats);
     await restoreStats('hero_weapon_stats',snapshot.weaponStats,{weapon_name:snapshot.weaponName});
     closeUpdateAssistant();
-    showMessage(`VersÃ£o v${version} restaurada com sucesso.`, 'ok');
+    showMessage(`Versão v${version} restaurada com sucesso.`, 'ok');
     setTimeout(()=>location.reload(),700);
-  } catch(error) { showMessage(error.message || 'NÃ£o foi possÃ­vel restaurar a versÃ£o.','error'); }
+  } catch(error) { showMessage(error.message || 'Não foi possível restaurar a versão.','error'); }
 }
 
 function bindUpdateAssistant() {
   document.getElementById('update-cancel')?.addEventListener('click',()=>closeUpdateAssistant());
-  document.getElementById('update-discard')?.addEventListener('click',()=>{ closeUpdateAssistant({discard:true}); showMessage('ImportaÃ§Ã£o descartada.',''); });
+  document.getElementById('update-discard')?.addEventListener('click',()=>{ closeUpdateAssistant({discard:true}); showMessage('Importação descartada.',''); });
   document.getElementById('update-selected')?.addEventListener('click',()=>applySelectedUpdate(false));
   document.getElementById('update-all')?.addEventListener('click',()=>applySelectedUpdate(true));
 }
@@ -2434,7 +2528,7 @@ async function saveHero(event) {
   if (isSaving) return;
   isSaving = true;
 
-  const originalButtonText = saveButton?.textContent || 'Salvar herÃ³i';
+  const originalButtonText = saveButton?.textContent || 'Salvar herói';
 
   if (saveButton) {
     saveButton.disabled = true;
@@ -2448,14 +2542,14 @@ async function saveHero(event) {
 
     if (existingHero) {
       await openUpdateAssistant(existingHero);
-      showMessage('HerÃ³i existente encontrado. Revise as alteraÃ§Ãµes no assistente.');
+      showMessage('Herói existente encontrado. Revise as alterações no assistente.');
       return;
     }
 
-    showMessage('Enviando mÃ­dias...');
+    showMessage('Enviando mídias...');
     const uploadedMedia = await uploadSelectedMedia(slug);
 
-    showMessage(heroId ? 'Atualizando herÃ³i...' : 'Criando herÃ³i...');
+    showMessage(heroId ? 'Atualizando herói...' : 'Criando herói...');
     const payload = collectPayload(slug, uploadedMedia);
 
     const savedHero = heroId
@@ -2469,8 +2563,8 @@ async function saveHero(event) {
 
     showMessage(
       heroId
-        ? 'HerÃ³i, status e arma atualizados com sucesso.'
-        : 'HerÃ³i, status e arma criados com sucesso.',
+        ? 'Herói, status e arma atualizados com sucesso.'
+        : 'Herói, status e arma criados com sucesso.',
       'ok'
     );
 
@@ -2489,20 +2583,20 @@ async function saveHero(event) {
 
     updateAllPreviews();
   } catch (error) {
-    console.error('Erro ao salvar herÃ³i:', error);
-    showMessage(error.message || 'NÃ£o foi possÃ­vel salvar o herÃ³i.', 'error');
+    console.error('Erro ao salvar herói:', error);
+    showMessage(error.message || 'Não foi possível salvar o herói.', 'error');
   } finally {
     isSaving = false;
 
     if (saveButton) {
       saveButton.disabled = false;
-      saveButton.textContent = heroId ? 'Atualizar herÃ³i' : originalButtonText;
+      saveButton.textContent = heroId ? 'Atualizar herói' : originalButtonText;
     }
   }
 }
 
 /* =========================================================
-   INICIALIZAÃ‡ÃƒO
+   INICIALIZAÇÃO
 ========================================================= */
 
 async function initialize() {
@@ -2539,6 +2633,8 @@ async function initialize() {
     injectImportUi();
     refreshImportedStatsButton();
     updateAllPreviews();
+    repairDocumentEncoding();
+    bindEncodingRepairObserver();
 
     window.addEventListener('resize', () => {
       mainEditor.resize();
@@ -2547,7 +2643,7 @@ async function initialize() {
     });
   } catch (error) {
     console.error('Erro ao iniciar editor:', error);
-    showMessage(error.message || 'NÃ£o foi possÃ­vel carregar o editor.', 'error');
+    showMessage(error.message || 'Não foi possível carregar o editor.', 'error');
   }
 }
 
