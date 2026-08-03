@@ -3,6 +3,13 @@ import {
   logoutAdmin
 } from './admin-auth.js';
 
+import {
+  loadEquipmentMeta,
+  getEquipmentBySlug,
+  saveEquipmentBundle,
+  upsertSet
+} from './equipment-api.js';
+
 await requireAdmin();
 
 const logoutButton =
@@ -13,8 +20,32 @@ if (logoutButton) {
     logoutAdmin;
 }
 
-const IMPORT_KEY =
-  'equipment-import-draft';
+const REQUIRED_SLOT_OPTIONS = [
+  {
+    label: 'Cabeça',
+    slugs: ['cabeca']
+  },
+  {
+    label: 'Peito',
+    slugs: ['body', 'peito', 'corpo']
+  },
+  {
+    label: 'Mãos',
+    slugs: ['maos', 'hands']
+  },
+  {
+    label: 'Pés',
+    slugs: ['leg', 'pes', 'perna']
+  },
+  {
+    label: 'Anel',
+    slugs: ['ring', 'anel']
+  },
+  {
+    label: 'Gadget',
+    slugs: ['especial', 'gadget']
+  }
+];
 
 const RARITIES = [
   ['comum', 'Comum'],
@@ -35,14 +66,19 @@ const jsonArea =
     'equipment-ai-json'
   );
 
+const slotSelect =
+  document.getElementById(
+    'equipment-ai-slot'
+  );
+
 const validateButton =
   document.getElementById(
     'equipment-ai-validate'
   );
 
-const sendButton =
+const saveButton =
   document.getElementById(
-    'equipment-ai-send'
+    'equipment-ai-save'
   );
 
 const clearButton =
@@ -50,12 +86,29 @@ const clearButton =
     'equipment-ai-clear'
   );
 
+const newButton =
+  document.getElementById(
+    'equipment-ai-new'
+  );
+
 const statusBox =
   document.getElementById(
     'equipment-ai-status'
   );
 
+const successActions =
+  document.getElementById(
+    'equipment-ai-success-actions'
+  );
+
+const editLink =
+  document.getElementById(
+    'equipment-ai-edit-link'
+  );
+
+let meta = null;
 let validatedDraft = null;
+let isSaving = false;
 
 function escapeHtml(value = '') {
   return String(value)
@@ -64,6 +117,26 @@ function escapeHtml(value = '') {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
+}
+
+function normalizeText(value = '') {
+  return String(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function slugify(value = '') {
+  return String(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
 function nullableNumber(value) {
@@ -129,9 +202,7 @@ function extractJson(value = '') {
   );
 }
 
-function normalizeAttribute(
-  attribute
-) {
+function normalizeAttribute(attribute) {
   if (
     !attribute ||
     typeof attribute !== 'object'
@@ -157,42 +228,19 @@ function normalizeAttribute(
     return null;
   }
 
-  const number =
-    nullableNumber(
-      attribute.value
-    );
-
-  const percent =
-    Boolean(
-      attribute.percent ||
-      raw.includes('%') ||
-      label.includes('%')
-    );
+  const value =
+    attribute.value ??
+    '';
 
   return {
     label:
       label || raw,
-
     value:
-      number === null
-        ? (
-            attribute.value ??
-            ''
-          )
-        : (
-            `${number}${percent ? '%' : ''}`
-          ),
-
-    raw:
-      raw || label,
-
-    percent
+      String(value).trim()
   };
 }
 
-function normalizeBonus(
-  bonus
-) {
+function normalizeBonus(bonus) {
   if (
     !bonus ||
     typeof bonus !== 'object'
@@ -209,7 +257,7 @@ function normalizeBonus(
   const title =
     String(
       bonus.title ??
-      `Bônus de ${requiredPieces} peças`
+      `${requiredPieces} Equipamentos`
     ).trim();
 
   const description =
@@ -218,14 +266,13 @@ function normalizeBonus(
       ''
     ).trim();
 
-  if (!title && !description) {
+  if (!title || !description) {
     return null;
   }
 
   return {
     required_pieces:
       requiredPieces,
-
     title,
     description
   };
@@ -256,10 +303,7 @@ function normalizeData(source = {}) {
 
   const variants = {};
 
-  for (
-    const [slug]
-    of RARITIES
-  ) {
+  for (const [slug] of RARITIES) {
     variants[slug] =
       Array.isArray(
         sourceVariants[slug]
@@ -284,13 +328,6 @@ function normalizeData(source = {}) {
       String(
         equipment.slug ??
         source.slug ??
-        ''
-      ).trim(),
-
-    slot:
-      String(
-        equipment.slot ??
-        source.slot ??
         ''
       ).trim(),
 
@@ -356,18 +393,131 @@ function showStatus(
     `equipment-ai-status is-visible ${type}`.trim();
 }
 
+function populateSlots() {
+  slotSelect.innerHTML = `
+    <option value="">
+      Selecione um slot
+    </option>
+  `;
+
+  for (
+    const option
+    of REQUIRED_SLOT_OPTIONS
+  ) {
+    const match =
+      meta.slots.find(item => {
+        const itemSlug =
+          normalizeText(
+            item.slug
+          );
+
+        const itemName =
+          normalizeText(
+            item.name
+          );
+
+        return option.slugs.some(
+          candidate => {
+            const normalized =
+              normalizeText(
+                candidate
+              );
+
+            return (
+              itemSlug === normalized ||
+              itemName === normalized
+            );
+          }
+        );
+      });
+
+    if (!match) {
+      console.warn(
+        `[equipamento] Slot não encontrado para "${option.label}".`
+      );
+      continue;
+    }
+
+    const element =
+      document.createElement(
+        'option'
+      );
+
+    element.value =
+      match.id;
+
+    element.textContent =
+      option.label;
+
+    element.dataset.slug =
+      match.slug || '';
+
+    slotSelect.appendChild(
+      element
+    );
+  }
+}
+
+function findSet(value) {
+  const wanted =
+    normalizeText(value);
+
+  if (!wanted) {
+    return null;
+  }
+
+  return (
+    meta.sets.find(item =>
+      normalizeText(item.name) === wanted ||
+      normalizeText(item.slug) === wanted
+    ) ||
+    null
+  );
+}
+
+function countDraft() {
+  const rarityCount =
+    Object.values(
+      validatedDraft?.variants || {}
+    ).filter(
+      list =>
+        Array.isArray(list) &&
+        list.length
+    ).length;
+
+  const attributeCount =
+    Object.values(
+      validatedDraft?.variants || {}
+    ).reduce(
+      (total, list) =>
+        total +
+        (
+          Array.isArray(list)
+            ? list.length
+            : 0
+        ),
+      0
+    );
+
+  return {
+    rarityCount,
+    attributeCount
+  };
+}
+
+function updateSaveState() {
+  saveButton.disabled =
+    !validatedDraft ||
+    !slotSelect.value ||
+    isSaving;
+}
+
 function renderReview(draft) {
   const warnings = [];
 
   if (!draft.name) {
     warnings.push(
       'O nome do equipamento não foi informado.'
-    );
-  }
-
-  if (!draft.slot) {
-    warnings.push(
-      'O slot não foi informado.'
     );
   }
 
@@ -379,7 +529,6 @@ function renderReview(draft) {
 
   let rarityCount = 0;
   let attributeCount = 0;
-
   const rarityBlocks = [];
 
   for (
@@ -419,14 +568,6 @@ function renderReview(draft) {
     .textContent =
       draft.name ||
       'Sem nome';
-
-  document
-    .getElementById(
-      'review-slot'
-    )
-    .textContent =
-      draft.slot ||
-      'Não informado';
 
   document
     .getElementById(
@@ -470,19 +611,266 @@ function renderReview(draft) {
         `
       ).join('');
 
-  sendButton.disabled =
+  slotSelect.disabled =
     !draft.name;
+
+  updateSaveState();
 
   showStatus(
     warnings.length
-      ? `JSON válido com ${warnings.length} aviso(s).`
-      : 'JSON válido e pronto para preencher o editor.',
+      ? `JSON válido com ${warnings.length} aviso(s). Escolha o slot para salvar.`
+      : 'JSON válido. Escolha o slot para liberar o salvamento.',
     warnings.length
       ? 'warn'
       : 'ok'
   );
+}
 
-  return warnings;
+function buildVariants() {
+  return meta.rarities.map(
+    rarity => ({
+      rarity_id:
+        rarity.id,
+
+      attributes:
+        validatedDraft
+          .variants[
+            rarity.slug
+          ] || []
+    })
+  );
+}
+
+async function resolveSetId() {
+  if (!validatedDraft.setName) {
+    return null;
+  }
+
+  const existingSet =
+    findSet(
+      validatedDraft.setName
+    );
+
+  if (existingSet) {
+    return existingSet.id;
+  }
+
+  const createdSet =
+    await upsertSet({
+      name:
+        validatedDraft.setName,
+      slug:
+        slugify(
+          validatedDraft.setName
+        ),
+      description:
+        ''
+    });
+
+  meta.sets.push(
+    createdSet
+  );
+
+  return createdSet.id;
+}
+
+async function saveEquipment() {
+  if (
+    isSaving ||
+    !validatedDraft ||
+    !slotSelect.value
+  ) {
+    return;
+  }
+
+  isSaving = true;
+  updateSaveState();
+
+  const originalText =
+    saveButton.textContent;
+
+  saveButton.textContent =
+    'Salvando...';
+
+  successActions.classList.remove(
+    'is-visible'
+  );
+
+  try {
+    const slug =
+      validatedDraft.slug ||
+      slugify(
+        validatedDraft.name
+      );
+
+    if (!slug) {
+      throw new Error(
+        'Não foi possível gerar o slug do equipamento.'
+      );
+    }
+
+    const existing =
+      await getEquipmentBySlug(
+        slug
+      );
+
+    const setId =
+      await resolveSetId();
+
+    const saved =
+      await saveEquipmentBundle({
+        equipmentId:
+          existing?.id || null,
+
+        equipment: {
+          name:
+            validatedDraft.name,
+          slug,
+          slot_id:
+            slotSelect.value,
+          set_id:
+            setId,
+          description:
+            validatedDraft.description,
+          recommendation:
+            validatedDraft.recommendation,
+          image_path:
+            existing?.image_path || null,
+          enabled:
+            validatedDraft.enabled !== false,
+          display_order:
+            validatedDraft.displayOrder ??
+            existing?.display_order ??
+            0
+        },
+
+        variants:
+          buildVariants(),
+
+        bonuses:
+          validatedDraft.bonuses.map(
+            (
+              bonus,
+              index
+            ) => ({
+              ...bonus,
+              display_order:
+                index + 1
+            })
+          )
+      });
+
+    const operationText =
+      saved.operation === 'updated'
+        ? 'Equipamento existente atualizado com sucesso.'
+        : 'Equipamento criado com sucesso.';
+
+    showStatus(
+      operationText,
+      'ok'
+    );
+
+    editLink.href =
+      `./equipment-editor.html?id=${encodeURIComponent(
+        saved.id
+      )}`;
+
+    successActions.classList.add(
+      'is-visible'
+    );
+  } catch (error) {
+    console.error(
+      'Erro ao salvar equipamento:',
+      error
+    );
+
+    showStatus(
+      error.message ||
+      'Não foi possível salvar o equipamento.',
+      'error'
+    );
+  } finally {
+    isSaving = false;
+    saveButton.textContent =
+      originalText;
+    updateSaveState();
+  }
+}
+
+function clearAll() {
+  jsonArea.value = '';
+  validatedDraft = null;
+  slotSelect.value = '';
+  slotSelect.disabled = true;
+
+  slotSelect.innerHTML = `
+    <option value="">
+      Valide o JSON primeiro
+    </option>
+  `;
+
+  document
+    .getElementById(
+      'review-name'
+    )
+    .textContent =
+      'Aguardando JSON';
+
+  document
+    .getElementById(
+      'review-slot'
+    )
+    .textContent =
+      'Não selecionado';
+
+  document
+    .getElementById(
+      'review-set'
+    )
+    .textContent =
+      '—';
+
+  document
+    .getElementById(
+      'review-rarities'
+    )
+    .textContent =
+      '0';
+
+  document
+    .getElementById(
+      'review-attributes'
+    )
+    .textContent =
+      '0';
+
+  document
+    .getElementById(
+      'review-rarity-list'
+    )
+    .innerHTML =
+      '';
+
+  document
+    .getElementById(
+      'review-warnings'
+    )
+    .innerHTML =
+      '';
+
+  statusBox.className =
+    'equipment-ai-status';
+
+  statusBox.textContent =
+    '';
+
+  successActions.classList.remove(
+    'is-visible'
+  );
+
+  updateSaveState();
+
+  jsonArea.focus();
 }
 
 validateButton.addEventListener(
@@ -501,14 +889,20 @@ validateButton.addEventListener(
           parsed
         );
 
+      if (!validatedDraft.name) {
+        throw new Error(
+          'O JSON precisa conter o nome do equipamento.'
+        );
+      }
+
+      populateSlots();
       renderReview(
         validatedDraft
       );
     } catch (error) {
       validatedDraft = null;
-
-      sendButton.disabled =
-        true;
+      slotSelect.disabled = true;
+      updateSaveState();
 
       showStatus(
         error.message ||
@@ -519,100 +913,55 @@ validateButton.addEventListener(
   }
 );
 
-sendButton.addEventListener(
-  'click',
+slotSelect.addEventListener(
+  'change',
   () => {
-    if (!validatedDraft) {
-      showStatus(
-        'Valide o JSON antes de continuar.',
-        'error'
-      );
-
-      return;
-    }
-
-    sessionStorage.setItem(
-      IMPORT_KEY,
-      JSON.stringify(
-        validatedDraft
-      )
-    );
-
-    location.href =
-      './equipment-editor.html?import=1';
-  }
-);
-
-clearButton.addEventListener(
-  'click',
-  () => {
-    jsonArea.value = '';
-    validatedDraft = null;
-    sendButton.disabled = true;
-
-    document
-      .getElementById(
-        'review-name'
-      )
-      .textContent =
-        'Aguardando JSON';
+    const selectedOption =
+      slotSelect.options[
+        slotSelect.selectedIndex
+      ];
 
     document
       .getElementById(
         'review-slot'
       )
       .textContent =
-        '—';
+        selectedOption?.value
+          ? selectedOption.textContent
+          : 'Não selecionado';
 
-    document
-      .getElementById(
-        'review-set'
-      )
-      .textContent =
-        '—';
-
-    document
-      .getElementById(
-        'review-rarities'
-      )
-      .textContent =
-        '0';
-
-    document
-      .getElementById(
-        'review-attributes'
-      )
-      .textContent =
-        '0';
-
-    document
-      .getElementById(
-        'review-rarity-list'
-      )
-      .innerHTML =
-        '';
-
-    document
-      .getElementById(
-        'review-warnings'
-      )
-      .innerHTML =
-        '';
-
-    statusBox.className =
-      'equipment-ai-status';
-
-    statusBox.textContent =
-      '';
-
-    jsonArea.focus();
+    updateSaveState();
   }
+);
+
+saveButton.addEventListener(
+  'click',
+  saveEquipment
+);
+
+clearButton.addEventListener(
+  'click',
+  clearAll
+);
+
+newButton.addEventListener(
+  'click',
+  clearAll
 );
 
 jsonArea.addEventListener(
   'input',
   () => {
     validatedDraft = null;
-    sendButton.disabled = true;
+    slotSelect.disabled = true;
+    successActions.classList.remove(
+      'is-visible'
+    );
+    updateSaveState();
   }
 );
+
+meta =
+  await loadEquipmentMeta();
+
+updateSaveState();
