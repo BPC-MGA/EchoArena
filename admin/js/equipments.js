@@ -139,6 +139,23 @@ function populateFilters() {
           getEquipmentSlotName
         )
         .filter(Boolean)
+        .filter(slotName => {
+          const normalizedSlot =
+            normalizeText(slotName)
+              .replace(
+                /[^a-z0-9]/g,
+                ''
+              );
+
+          /*
+           * E.Y.E. é nome de equipamento,
+           * não uma categoria de slot.
+           *
+           * Mantemos os registros intactos,
+           * mas ocultamos essa opção do filtro.
+           */
+          return normalizedSlot !== 'eye';
+        })
     )
   ].sort(
     (first, second) =>
