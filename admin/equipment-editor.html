@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Editor de equipamento — Echo Arena Admin</title>
+<link rel="stylesheet" href="./css/admin.css">
+<link rel="stylesheet" href="./css/admin-shell.css">
+<link rel="stylesheet" href="./css/equipments.css">
+<style>
+.equipment-editor{display:grid;gap:18px}
+.equipment-editor-toolbar{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
+.equipment-editor-toolbar-copy strong{display:block;font-size:18px}
+.equipment-editor-toolbar-copy span{display:block;margin-top:5px;color:var(--admin-muted);font-size:12px}
+.equipment-editor-toolbar-actions{display:flex;gap:10px;flex-wrap:wrap}
+.equipment-editor-tabs{display:flex;gap:7px;overflow-x:auto;padding:7px;border:1px solid var(--admin-line);border-radius:13px;background:var(--admin-panel-2)}
+.equipment-editor-tab{flex:0 0 auto;min-height:42px;padding:10px 15px;border:0;border-radius:9px;background:transparent;color:var(--admin-muted);font-weight:800;cursor:pointer}
+.equipment-editor-tab:hover{color:white;background:#17213a}
+.equipment-editor-tab.is-active{color:white;background:linear-gradient(180deg,var(--admin-purple),var(--admin-purple-dark))}
+.equipment-editor-panel{display:none}.equipment-editor-panel.is-active{display:block}
+.equipment-form-card{padding:20px;border:1px solid var(--admin-line);border-radius:14px;background:var(--admin-panel)}
+.equipment-section-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:18px;flex-wrap:wrap}
+.equipment-section-heading h2{margin:0;font-size:22px}.equipment-section-heading p{margin:6px 0 0;color:var(--admin-muted);font-size:12px}
+.equipment-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}
+.equipment-form-field{display:grid;gap:7px}.equipment-form-field.full{grid-column:1/-1}
+.equipment-form-field label{color:#c8cfdd;font-size:12px;font-weight:700}
+.equipment-checkbox-field{display:flex;align-items:center;gap:9px;min-height:44px;padding:10px 12px;border:1px solid var(--admin-line);border-radius:9px;background:#08101e}
+.equipment-checkbox-field input{width:18px;height:18px;margin:0}
+.equipment-media-layout{display:grid;grid-template-columns:minmax(280px,.7fr) minmax(0,1.3fr);gap:18px;align-items:start}
+.equipment-media-field{display:grid;gap:10px;padding:14px;border:1px solid var(--admin-line);border-radius:12px;background:#09111f}
+.preview-large{min-height:390px;display:grid;place-items:center;overflow:hidden;border:1px solid var(--admin-line);border-radius:14px;background:radial-gradient(circle at 50% 45%,rgba(139,92,246,.18),transparent 50%),#050a12;color:var(--admin-muted)}
+.preview-large img{width:100%;height:100%;object-fit:contain}
+#rarities,#bonuses{display:grid;gap:12px}.rarity-card,.set-bonus-row{border:1px solid var(--admin-line);border-radius:12px;background:#09111f}
+.rarity-card{padding:14px}.rarity-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}.attrs{display:grid;gap:9px}
+.attr-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(150px,.45fr) auto;gap:9px}
+.attr-row input,.set-bonus-row input{width:100%;min-height:42px;padding:10px 12px;border:1px solid var(--admin-line);border-radius:8px;background:#050c18;color:white}
+.set-bonus-row{display:grid;grid-template-columns:110px minmax(180px,.45fr) minmax(0,1fr) auto;gap:9px;padding:14px}
+.eq-import-banner,.eq-import-summary{display:none}.eq-import-banner.is-visible{display:flex}.eq-import-summary.is-visible{display:block}
+.eq-import-banner{gap:12px;align-items:flex-start;justify-content:space-between;padding:14px;border:1px solid #6f5618;border-radius:12px;background:#2a2009;color:#ffd76d}
+.eq-import-banner-actions{display:flex;gap:8px;flex-wrap:wrap}.eq-import-summary{padding:14px;border:1px solid var(--admin-line);border-radius:12px;background:#09111f}
+.eq-import-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.eq-import-summary-grid div{padding:10px;border:1px solid #1f2b42;border-radius:9px;background:#07101d}
+.eq-import-warning-list{display:grid;gap:7px;margin-top:10px}
+.equipment-preview-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.equipment-preview-item{padding:13px;border:1px solid var(--admin-line);border-radius:10px;background:#09111f}
+.equipment-preview-item span{display:block;color:var(--admin-muted);font-size:9px;text-transform:uppercase;letter-spacing:.08em}
+.equipment-preview-item strong{display:block;margin-top:5px;font-size:16px;overflow-wrap:anywhere}
+#message{min-height:22px;color:var(--admin-muted);font-size:13px}#message.error{color:#ff8585}#message.ok{color:#4ade80}
+@media(max-width:900px){.equipment-media-layout,.equipment-form-grid{grid-template-columns:1fr}.equipment-form-field.full{grid-column:auto}.equipment-preview-grid{grid-template-columns:1fr}}
+@media(max-width:760px){.equipment-editor-toolbar-actions{width:100%}.equipment-editor-toolbar-actions .admin-button,.equipment-editor-toolbar-actions button{flex:1 1 100%;justify-content:center}.attr-row,.set-bonus-row{grid-template-columns:1fr}.eq-import-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style>
+</head>
+<body>
+<div data-admin-content>
+<form id="form" class="equipment-editor">
+<header class="equipment-editor-toolbar">
+<div class="equipment-editor-toolbar-copy"><strong id="page-title">Novo equipamento</strong><span>Cadastre informações, mídia, raridades e bônus.</span></div>
+<div class="equipment-editor-toolbar-actions">
+<a class="admin-button" href="./equipment-ai-import.html">Importar dados</a>
+<a class="admin-button" href="./equipments.html">Cancelar</a>
+<button class="admin-button primary" type="submit">Salvar equipamento</button>
+</div>
+</header>
+
+<nav class="equipment-editor-tabs" aria-label="Seções do editor">
+<button type="button" class="equipment-editor-tab is-active" data-tab="general">Informações</button>
+<button type="button" class="equipment-editor-tab" data-tab="media">Mídia</button>
+<button type="button" class="equipment-editor-tab" data-tab="rarities">Raridades</button>
+<button type="button" class="equipment-editor-tab" data-tab="bonuses">Bônus</button>
+<button type="button" class="equipment-editor-tab" data-tab="preview">Prévia</button>
+</nav>
+
+<section id="import-banner" class="eq-import-banner">
+<div><strong>Dados importados aplicados ao formulário</strong><span id="import-banner-text">Revise todos os campos antes de salvar.</span></div>
+<div class="eq-import-banner-actions"><button id="undo-import" type="button" class="admin-button">Desfazer preenchimento</button><a class="admin-button" href="./equipment-ai-import.html">Voltar ao importador</a></div>
+</section>
+
+<section id="import-summary" class="eq-import-summary">
+<h3>Resumo da importação</h3>
+<div class="eq-import-summary-grid">
+<div><small>Raridades</small><strong id="import-rarity-count">0</strong></div>
+<div><small>Atributos</small><strong id="import-attribute-count">0</strong></div>
+<div><small>Bônus</small><strong id="import-bonus-count">0</strong></div>
+<div><small>Correspondências</small><strong id="import-match-count">0</strong></div>
+</div>
+<div id="import-warnings" class="eq-import-warning-list"></div>
+</section>
+
+<section class="equipment-editor-panel is-active" data-panel="general">
+<article class="equipment-form-card">
+<div class="equipment-section-heading"><div><h2>Informações gerais</h2><p>Dados principais utilizados no frontend.</p></div></div>
+<div class="equipment-form-grid">
+<div class="equipment-form-field"><label for="name">Nome</label><input id="name" class="admin-input" required></div>
+<div class="equipment-form-field"><label for="slug">Slug</label><input id="slug" class="admin-input" required></div>
+<div class="equipment-form-field"><label for="slot-id">Slot</label><select id="slot-id" class="admin-select" required><option value="">Selecione um slot</option></select></div>
+<div class="equipment-form-field"><label for="display-order">Ordem</label><input id="display-order" class="admin-input" type="number" value="0"></div>
+<div class="equipment-form-field"><label for="set-id">Conjunto</label><select id="set-id" class="admin-select"><option value="">Sem conjunto</option></select></div>
+<div class="equipment-form-field"><label for="new-set-name">Novo conjunto</label><input id="new-set-name" class="admin-input" placeholder="Opcional"></div>
+<div class="equipment-form-field full"><label for="description">Descrição</label><textarea id="description" class="admin-textarea" rows="5"></textarea></div>
+<div class="equipment-form-field full"><label for="recommendation">Indicação / recomendação</label><textarea id="recommendation" class="admin-textarea" rows="5"></textarea></div>
+<div class="equipment-form-field"><label>Publicação</label><label class="equipment-checkbox-field"><input id="enabled" type="checkbox" checked><span>Equipamento ativo e visível</span></label></div>
+</div>
+</article>
+</section>
+
+<section class="equipment-editor-panel" data-panel="media"><article class="equipment-form-card">
+<div class="equipment-section-heading"><div><h2>Mídia do equipamento</h2><p>Selecione e confira a imagem antes de salvar.</p></div></div>
+<div class="equipment-media-layout"><div class="equipment-media-field"><label for="image-file">Imagem do item</label><input id="image-file" class="admin-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></div><div id="preview-image" class="preview-large">Prévia da imagem</div></div>
+</article></section>
+
+<section class="equipment-editor-panel" data-panel="rarities"><article class="equipment-form-card"><div class="equipment-section-heading"><div><h2>Raridades e atributos</h2><p>Configure os valores de cada raridade.</p></div></div><div id="rarities"></div></article></section>
+
+<section class="equipment-editor-panel" data-panel="bonuses"><article class="equipment-form-card">
+<div class="equipment-section-heading"><div><h2>Bônus do conjunto</h2><p>Cadastre os bônus de 2, 4 e 6 peças.</p></div><button type="button" class="admin-button" id="add-bonus">Adicionar bônus</button></div>
+<div id="bonuses"></div>
+</article></section>
+
+<section class="equipment-editor-panel" data-panel="preview"><article class="equipment-form-card">
+<div class="equipment-section-heading"><div><h2>Pré-visualização</h2><p>Resumo rápido do cadastro atual.</p></div></div>
+<div class="equipment-preview-grid">
+<div class="equipment-preview-item"><span>Nome</span><strong id="equipment-preview-name">Novo equipamento</strong></div>
+<div class="equipment-preview-item"><span>Slug</span><strong id="equipment-preview-slug">—</strong></div>
+<div class="equipment-preview-item"><span>Publicação</span><strong id="equipment-preview-enabled">Ativo</strong></div>
+</div>
+</article></section>
+<div id="message" class="eq-message" role="status" aria-live="polite"></div>
+</form>
+</div>
+
+<script type="module">
+import { initAdminShell } from './js/admin-shell.js';
+const params=new URLSearchParams(location.search);
+const editing=Boolean(params.get('id'));
+const shell=await initAdminShell({activeId:editing?'equipments-list':'equipment-new',pageTitle:editing?'Editar equipamento':'Novo equipamento',pageSubtitle:'Gerenciamento de equipamentos'});
+if(shell){
+const buttons=[...document.querySelectorAll('[data-tab]')];
+const panels=[...document.querySelectorAll('[data-panel]')];
+function activateTab(tabName){
+const valid=buttons.some(b=>b.dataset.tab===tabName)?tabName:'general';
+buttons.forEach(b=>b.classList.toggle('is-active',b.dataset.tab===valid));
+panels.forEach(p=>p.classList.toggle('is-active',p.dataset.panel===valid));
+const url=new URL(location.href);url.searchParams.set('tab',valid);history.replaceState({},'',url);
+}
+buttons.forEach(b=>b.addEventListener('click',()=>activateTab(b.dataset.tab)));
+activateTab(params.get('tab')||'general');
+const name=document.getElementById('name'),slug=document.getElementById('slug'),enabled=document.getElementById('enabled');
+function updatePreview(){
+document.getElementById('equipment-preview-name').textContent=name?.value.trim()||'Novo equipamento';
+document.getElementById('equipment-preview-slug').textContent=slug?.value.trim()||'—';
+document.getElementById('equipment-preview-enabled').textContent=enabled?.checked?'Ativo':'Inativo';
+}
+name?.addEventListener('input',updatePreview);slug?.addEventListener('input',updatePreview);enabled?.addEventListener('change',updatePreview);
+await import('./js/equipment-editor.js');
+updatePreview();
+}
+</script>
+</body>
+</html>
