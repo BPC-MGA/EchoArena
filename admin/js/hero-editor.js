@@ -100,6 +100,7 @@ let importedStatsSnapshot = null;
 
 let currentHero = null;
 let isSaving = false;
+let pendingUpdate = null;
 let mainEditor;
 let cardEditor;
 let gifEditor;
@@ -181,10 +182,10 @@ function getPublicUrl(path) {
 function validateFile(file, allowedTypes) {
   if (!file) return;
   if (!allowedTypes.includes(file.type)) {
-    throw new Error(`Formato não permitido para "${file.name}".`);
+    throw new Error(`Formato nÃ£o permitido para "${file.name}".`);
   }
   if (file.size > MAX_FILE_SIZE) {
-    throw new Error(`"${file.name}" deve ter no máximo 25 MB.`);
+    throw new Error(`"${file.name}" deve ter no mÃ¡ximo 25 MB.`);
   }
 }
 
@@ -215,7 +216,7 @@ function setFieldValue(field, value, eventName = 'input') {
 }
 
 /* =========================================================
-   EDITOR DE MÍDIA
+   EDITOR DE MÃDIA
 ========================================================= */
 
 function createMediaEditor({
@@ -302,7 +303,7 @@ function createMediaEditor({
     };
 
     image.onerror = () => {
-      console.warn(`Não foi possível carregar a mídia "${name}".`);
+      console.warn(`NÃ£o foi possÃ­vel carregar a mÃ­dia "${name}".`);
       canvas.classList.remove('has-image');
     };
 
@@ -376,7 +377,7 @@ function createMediaEditor({
 
   function bind() {
     if (!canvas || !image || !input) {
-      console.warn(`Editor de mídia incompleto: ${name}`);
+      console.warn(`Editor de mÃ­dia incompleto: ${name}`);
       return;
     }
 
@@ -513,23 +514,23 @@ function createAllMediaEditors() {
 }
 
 /* =========================================================
-   PRÉVIA E EVENTOS
+   PRÃ‰VIA E EVENTOS
 ========================================================= */
 
 function updateInformationPreview() {
   if (previewElements.name) {
     previewElements.name.textContent =
-      fields.name?.value.trim() || 'Novo herói';
+      fields.name?.value.trim() || 'Novo herÃ³i';
   }
 
   if (previewElements.slug) {
     previewElements.slug.textContent =
-      fields.slug?.value.trim() || '—';
+      fields.slug?.value.trim() || 'â€”';
   }
 
   if (previewElements.description) {
     previewElements.description.textContent =
-      fields.description?.value.trim() || 'Nenhuma descrição cadastrada.';
+      fields.description?.value.trim() || 'Nenhuma descriÃ§Ã£o cadastrada.';
   }
 
   if (previewElements.enabled) {
@@ -546,7 +547,7 @@ function updateLivePreview() {
   const state = mainEditor.getState();
 
   if (!source) {
-    container.textContent = 'Sem mídia selecionada';
+    container.textContent = 'Sem mÃ­dia selecionada';
     return;
   }
 
@@ -609,7 +610,7 @@ async function loadHeroClasses() {
   }
 
   if (result.error) {
-    console.warn('Não foi possível carregar as classes:', result.error);
+    console.warn('NÃ£o foi possÃ­vel carregar as classes:', result.error);
     return;
   }
 
@@ -636,7 +637,7 @@ async function loadNextDisplayOrder() {
     .limit(1);
 
   if (error) {
-    console.warn('Não foi possível calcular a ordem:', error);
+    console.warn('NÃ£o foi possÃ­vel calcular a ordem:', error);
     fields.displayOrder.value = '0';
     return;
   }
@@ -661,7 +662,7 @@ function formatIntegratedStatValue(value, definition = {}) {
   const number = Number(value);
 
   if (!Number.isFinite(number)) {
-    return '—';
+    return 'â€”';
   }
 
   const decimals = Math.max(0, toNumber(definition.decimals, 0));
@@ -737,7 +738,7 @@ function renderIntegratedStatsFields(heroValues = {}, weaponValues = {}) {
     if (!heroDefinitions.length) {
       integratedStats.heroGrid.innerHTML = `
         <div class="integrated-stats-empty">
-          Nenhuma definição de status do herói foi encontrada.
+          Nenhuma definiÃ§Ã£o de status do herÃ³i foi encontrada.
         </div>
       `;
     } else {
@@ -759,7 +760,7 @@ function renderIntegratedStatsFields(heroValues = {}, weaponValues = {}) {
     if (!weaponDefinitions.length) {
       integratedStats.weaponGrid.innerHTML = `
         <div class="integrated-stats-empty">
-          Nenhuma definição de status da arma foi encontrada.
+          Nenhuma definiÃ§Ã£o de status da arma foi encontrada.
         </div>
       `;
     } else {
@@ -798,7 +799,7 @@ function collectIntegratedStatFields(group) {
       const value = Number(item.rawValue);
 
       if (!Number.isFinite(value)) {
-        throw new Error(`Valor inválido em "${item.stat_key}".`);
+        throw new Error(`Valor invÃ¡lido em "${item.stat_key}".`);
       }
 
       return {
@@ -1182,7 +1183,7 @@ function applyImportedStatsData(data, {
       getIntegratedInput('hero', definition);
 
     if (!definition || !input) {
-      missing.push(`Herói: ${sourceKey}`);
+      missing.push(`HerÃ³i: ${sourceKey}`);
       continue;
     }
 
@@ -1228,7 +1229,7 @@ function applyImportedStatsData(data, {
 
     if (missing.length) {
       text +=
-        ` ${missing.length} campo(s) não possuem definição correspondente.`;
+        ` ${missing.length} campo(s) nÃ£o possuem definiÃ§Ã£o correspondente.`;
     }
 
     showMessage(
@@ -1262,7 +1263,7 @@ function bindIntegratedStatsControls() {
     () => {
       if (!importedStatsSnapshot) {
         showMessage(
-          'Não há preenchimento para desfazer.',
+          'NÃ£o hÃ¡ preenchimento para desfazer.',
           'error'
         );
         return;
@@ -1301,15 +1302,15 @@ function refreshImportedStatsButton() {
 
 
 /* =========================================================
-   IMPORTAÇÃO ASSISTIDA
+   IMPORTAÃ‡ÃƒO ASSISTIDA
 ========================================================= */
 
 function getImportPrompt() {
-  return `Analise os prints enviados de um herói do jogo Bullet Echo.
+  return `Analise os prints enviados de um herÃ³i do jogo Bullet Echo.
 
-Extraia apenas os dados claramente visíveis. Não estime, não invente e não calcule valores ausentes. Quando um campo não estiver visível ou não puder ser confirmado, use null.
+Extraia apenas os dados claramente visÃ­veis. NÃ£o estime, nÃ£o invente e nÃ£o calcule valores ausentes. Quando um campo nÃ£o estiver visÃ­vel ou nÃ£o puder ser confirmado, use null.
 
-Responda SOMENTE com JSON válido, sem explicações antes ou depois:
+Responda SOMENTE com JSON vÃ¡lido, sem explicaÃ§Ãµes antes ou depois:
 
 {
   "schemaVersion": 1,
@@ -1366,10 +1367,10 @@ Responda SOMENTE com JSON válido, sem explicações antes ou depois:
 }
 
 Regras:
-- Preserve números decimais.
-- Remova símbolos de unidade do valor numérico.
+- Preserve nÃºmeros decimais.
+- Remova sÃ­mbolos de unidade do valor numÃ©rico.
 - Em "class", use o nome mostrado no jogo.
-- Em "description", transcreva somente a descrição do herói.
+- Em "description", transcreva somente a descriÃ§Ã£o do herÃ³i.
 - Nunca coloque texto fora do JSON.`;
 }
 
@@ -1386,7 +1387,7 @@ function extractJsonText(value = '') {
   const lastBrace = candidate.lastIndexOf('}');
 
   if (firstBrace < 0 || lastBrace < firstBrace) {
-    throw new Error('Não foi encontrado um objeto JSON válido.');
+    throw new Error('NÃ£o foi encontrado um objeto JSON vÃ¡lido.');
   }
 
   return candidate.slice(firstBrace, lastBrace + 1);
@@ -1581,7 +1582,7 @@ function loadImportDraft() {
     const parsed = JSON.parse(raw);
     return parsed?.data ? parsed : null;
   } catch (error) {
-    console.warn('Rascunho de importação inválido:', error);
+    console.warn('Rascunho de importaÃ§Ã£o invÃ¡lido:', error);
     return null;
   }
 }
@@ -1616,13 +1617,13 @@ function applyImportedData(data) {
       fields.classId.dispatchEvent(new Event('change', { bubbles: true }));
       applied.push('classe');
     } else {
-      warnings.push(`Classe "${hero.class}" não encontrada.`);
+      warnings.push(`Classe "${hero.class}" nÃ£o encontrada.`);
     }
   }
 
   if (hero.description) {
     setFieldValue(fields.description, hero.description, 'input');
-    applied.push('descrição');
+    applied.push('descriÃ§Ã£o');
   }
 
   if (hero.displayOrder !== null) {
@@ -1632,7 +1633,7 @@ function applyImportedData(data) {
 
   if (hero.active !== null) {
     setFieldValue(fields.enabled, hero.active);
-    applied.push('publicação');
+    applied.push('publicaÃ§Ã£o');
   }
 
   const statsOutcome =
@@ -1651,7 +1652,7 @@ function applyImportedData(data) {
 
   if (statsOutcome.missing.length) {
     warnings.push(
-      `${statsOutcome.missing.length} campo(s) de status/arma sem correspondência.`
+      `${statsOutcome.missing.length} campo(s) de status/arma sem correspondÃªncia.`
     );
   }
 
@@ -1747,16 +1748,16 @@ function injectImportUi() {
     <section class="hero-import-modal" role="dialog" aria-modal="true">
       <header class="hero-import-head">
         <div>
-          <h2>Importar dados do herói</h2>
-          <p>Cole o JSON produzido pelo ChatGPT. Nada será salvo automaticamente.</p>
+          <h2>Importar dados do herÃ³i</h2>
+          <p>Cole o JSON produzido pelo ChatGPT. Nada serÃ¡ salvo automaticamente.</p>
         </div>
-        <button id="hero-import-close" type="button" class="admin-button">✕</button>
+        <button id="hero-import-close" type="button" class="admin-button">âœ•</button>
       </header>
 
       <div class="hero-import-body">
         <section class="hero-import-card">
           <h3>1. Prompt para o ChatGPT</h3>
-          <p>Envie os prints do herói e cole este prompt.</p>
+          <p>Envie os prints do herÃ³i e cole este prompt.</p>
           <textarea
             id="hero-import-prompt"
             class="admin-textarea hero-import-textarea"
@@ -1771,7 +1772,7 @@ function injectImportUi() {
 
         <section class="hero-import-card">
           <h3>2. JSON retornado</h3>
-          <p>É aceito JSON puro ou dentro de um bloco de código.</p>
+          <p>Ã‰ aceito JSON puro ou dentro de um bloco de cÃ³digo.</p>
           <textarea
             id="hero-import-json"
             class="admin-textarea hero-import-textarea"
@@ -1788,7 +1789,7 @@ function injectImportUi() {
               class="admin-button primary"
               disabled
             >
-              Preencher formulário
+              Preencher formulÃ¡rio
             </button>
             <button id="hero-import-clear" type="button" class="admin-button">
               Limpar
@@ -1799,8 +1800,8 @@ function injectImportUi() {
         </section>
 
         <div class="hero-import-note">
-          Informações gerais, status e arma são preenchidos nesta mesma tela.
-          Mídias e habilidades continuam manuais.
+          InformaÃ§Ãµes gerais, status e arma sÃ£o preenchidos nesta mesma tela.
+          MÃ­dias e habilidades continuam manuais.
         </div>
       </div>
     </section>
@@ -1851,7 +1852,7 @@ function injectImportUi() {
 
       resultArea.innerHTML = `
         <div class="hero-import-summary">
-          <div><small>Informações</small><strong>${countValues(validatedData.hero)}</strong></div>
+          <div><small>InformaÃ§Ãµes</small><strong>${countValues(validatedData.hero)}</strong></div>
           <div><small>Status</small><strong>${countValues(validatedData.status)}</strong></div>
           <div><small>Arma resumida</small><strong>${countValues(validatedData.weaponSummary)}</strong></div>
           <div><small>Arma detalhada</small><strong>${countValues(validatedData.weaponDetails)}</strong></div>
@@ -1860,7 +1861,7 @@ function injectImportUi() {
         <div class="hero-import-note ${validatedData.hero.name ? 'ok' : 'warn'}">
           ${validatedData.hero.name
             ? `Nome reconhecido: ${escapeHtml(validatedData.hero.name)}.`
-            : 'Nome não informado.'}
+            : 'Nome nÃ£o informado.'}
         </div>
 
         <div class="hero-import-note ${classOption ? 'ok' : 'warn'}">
@@ -1868,9 +1869,9 @@ function injectImportUi() {
             ? (
                 classOption
                   ? `Classe encontrada: ${escapeHtml(classOption.textContent.trim())}.`
-                  : `Classe não encontrada: ${escapeHtml(validatedData.hero.class)}.`
+                  : `Classe nÃ£o encontrada: ${escapeHtml(validatedData.hero.class)}.`
               )
-            : 'Classe não informada.'}
+            : 'Classe nÃ£o informada.'}
         </div>
       `;
 
@@ -1881,10 +1882,10 @@ function injectImportUi() {
       clearValidation();
       resultArea.innerHTML = `
         <div class="hero-import-note error">
-          ${escapeHtml(error.message || 'JSON inválido.')}
+          ${escapeHtml(error.message || 'JSON invÃ¡lido.')}
         </div>
       `;
-      showMessage(error.message || 'JSON inválido.', 'error');
+      showMessage(error.message || 'JSON invÃ¡lido.', 'error');
       return null;
     }
   }
@@ -1921,7 +1922,7 @@ function injectImportUi() {
     const outcome = applyImportedData(data);
     let text = outcome.applied.length
       ? `${outcome.applied.length} campo(s) preenchido(s): ${outcome.applied.join(', ')}.`
-      : 'Nenhum campo geral pôde ser preenchido.';
+      : 'Nenhum campo geral pÃ´de ser preenchido.';
 
     if (outcome.warnings.length) {
       text += ` ${outcome.warnings.join(' ')}`;
@@ -1941,7 +1942,7 @@ function injectImportUi() {
 }
 
 /* =========================================================
-   CARREGAMENTO DO HERÓI
+   CARREGAMENTO DO HERÃ“I
 ========================================================= */
 
 function populateHero(hero) {
@@ -1974,7 +1975,7 @@ function populateHero(hero) {
 
   const editorTitle = document.getElementById('editor-title');
   if (editorTitle) editorTitle.textContent = `Editar ${hero.name}`;
-  if (saveButton) saveButton.textContent = 'Atualizar herói';
+  if (saveButton) saveButton.textContent = 'Atualizar herÃ³i';
 
   updateAllPreviews();
 }
@@ -1982,7 +1983,7 @@ function populateHero(hero) {
 async function loadHero() {
   if (!heroId) return;
 
-  showMessage('Carregando herói...');
+  showMessage('Carregando herÃ³i...');
 
   const { data, error } = await supabase
     .from('heroes')
@@ -2004,17 +2005,17 @@ async function loadHero() {
 }
 
 /* =========================================================
-   VALIDAÇÃO, UPLOAD E SALVAMENTO
+   VALIDAÃ‡ÃƒO, UPLOAD E SALVAMENTO
 ========================================================= */
 
 function validateForm() {
   const name = fields.name.value.trim();
 
-  if (!name) throw new Error('Informe o nome do herói.');
+  if (!name) throw new Error('Informe o nome do herÃ³i.');
 
   const slug = slugify(name);
 
-  if (!slug) throw new Error('Não foi possível gerar o identificador.');
+  if (!slug) throw new Error('NÃ£o foi possÃ­vel gerar o identificador.');
 
   fields.slug.value = slug;
   return slug;
@@ -2033,9 +2034,294 @@ async function validateSlugAvailability(slug) {
 
   if (error) throw error;
 
-  if (data?.length) {
-    throw new Error(`Já existe outro herói usando o identificador "${slug}".`);
+  return data?.[0] || null;
+}
+
+/* =========================================================
+   ASSISTENTE DE ATUALIZAÃ‡ÃƒO INTELIGENTE
+========================================================= */
+
+const UPDATE_HISTORY_KEY = 'echo-arena-hero-version-history';
+
+function readVersionHistory() {
+  try { return JSON.parse(localStorage.getItem(UPDATE_HISTORY_KEY) || '{}'); }
+  catch { return {}; }
+}
+
+function writeVersionHistory(history) {
+  localStorage.setItem(UPDATE_HISTORY_KEY, JSON.stringify(history));
+}
+
+function valuesEqual(a, b) {
+  if (a === null || a === undefined || a === '') return b === null || b === undefined || b === '';
+  if (b === null || b === undefined || b === '') return false;
+  const aNumber = Number(a);
+  const bNumber = Number(b);
+  if (Number.isFinite(aNumber) && Number.isFinite(bNumber)) return aNumber === bNumber;
+  return String(a).trim() === String(b).trim();
+}
+
+function displayDiffValue(value) {
+  if (value === null || value === undefined || value === '') return 'â€”';
+  if (typeof value === 'boolean') return value ? 'Ativo' : 'Inativo';
+  return String(value);
+}
+
+function classifyDifference(before, after, kind = 'text') {
+  if (valuesEqual(before, after)) return 'same';
+  if (kind !== 'number') return 'text';
+  return Number(after) > Number(before) ? 'increase' : 'decrease';
+}
+
+function isLargeNumericChange(before, after) {
+  const oldNumber = Number(before);
+  const newNumber = Number(after);
+  if (!Number.isFinite(oldNumber) || !Number.isFinite(newNumber) || oldNumber === 0) return false;
+  return Math.abs(newNumber - oldNumber) / Math.abs(oldNumber) > .8;
+}
+
+function createDiff({ key, label, group, before, after, kind = 'text', apply, selected = true }) {
+  const change = classifyDifference(before, after, kind);
+  return {
+    key, label, group, before, after, kind, change, apply,
+    changed: change !== 'same',
+    selected: change !== 'same' && selected,
+    risky: kind === 'number' && change !== 'same' && isLargeNumericChange(before, after)
+  };
+}
+
+async function loadExistingHeroBundle(targetId) {
+  const [heroResult, heroStatsResult, weaponStatsResult] = await Promise.all([
+    supabase.from('heroes').select(`
+      id, name, slug, description, class_id, enabled, display_order,
+      image_path, image_scale, image_offset_x, image_offset_y,
+      card_image_path, card_image_scale, card_image_offset_x, card_image_offset_y,
+      gif_path, gif_scale, gif_offset_x, gif_offset_y
+    `).eq('id', targetId).single(),
+    supabase.from('hero_base_stats').select('stat_key,value').eq('hero_id', targetId),
+    supabase.from('hero_weapon_stats').select('stat_key,value,weapon_name').eq('hero_id', targetId)
+  ]);
+  if (heroResult.error) throw heroResult.error;
+  if (heroStatsResult.error) throw heroStatsResult.error;
+  if (weaponStatsResult.error) throw weaponStatsResult.error;
+  return {
+    hero: heroResult.data,
+    heroStats: Object.fromEntries((heroStatsResult.data || []).map(row => [row.stat_key, row.value])),
+    weaponStats: Object.fromEntries((weaponStatsResult.data || []).map(row => [row.stat_key, row.value])),
+    weaponName: weaponStatsResult.data?.[0]?.weapon_name || null
+  };
+}
+
+function classNameForId(id) {
+  const option = [...(fields.classId?.options || [])].find(item => item.value === String(id || ''));
+  return option?.textContent.trim() || 'Sem classe';
+}
+
+function buildUpdateDiffs(bundle) {
+  const hero = bundle.hero;
+  const imported = loadImportDraft()?.data?.hero || {};
+  const importedValue = (key, formValue, currentValue) =>
+    imported[key] === null || imported[key] === undefined ? currentValue : formValue;
+  const diffs = [
+    createDiff({ key:'name', label:'Nome', group:'Geral', before:hero.name, after:importedValue('name',fields.name.value.trim(),hero.name), apply:{ type:'hero', column:'name' } }),
+    createDiff({ key:'class_id', label:'Classe', group:'Geral', before:hero.class_id, after:importedValue('class',fields.classId.value || null,hero.class_id), apply:{ type:'hero', column:'class_id' } }),
+    createDiff({ key:'description', label:'DescriÃ§Ã£o', group:'Geral', before:hero.description, after:importedValue('description',fields.description.value.trim() || null,hero.description), apply:{ type:'hero', column:'description' } }),
+    createDiff({ key:'enabled', label:'PublicaÃ§Ã£o', group:'Geral', before:hero.enabled, after:importedValue('active',fields.enabled.checked,hero.enabled), apply:{ type:'hero', column:'enabled' } }),
+    createDiff({ key:'display_order', label:'Ordem de exibiÃ§Ã£o', group:'Geral', before:hero.display_order, after:importedValue('displayOrder',toNumber(fields.displayOrder.value,0),hero.display_order), kind:'number', apply:{ type:'hero', column:'display_order' } })
+  ];
+
+  for (const group of ['hero', 'weapon']) {
+    const existing = group === 'hero' ? bundle.heroStats : bundle.weaponStats;
+    for (const row of collectIntegratedStatFields(group)) {
+      const definition = statDefinitions.find(item => item.key === row.stat_key) || {};
+      diffs.push(createDiff({
+        key:`${group}.${row.stat_key}`, label:definition.name || row.stat_key,
+        group:group === 'hero' ? 'Status' : 'Arma', before:existing[row.stat_key], after:row.value,
+        kind:'number', apply:{ type:'stat', table:group === 'hero' ? 'hero_base_stats' : 'hero_weapon_stats', statKey:row.stat_key, weaponName:integratedStats.weaponName?.value.trim() || bundle.weaponName || null }
+      }));
+    }
   }
+
+  const media = [
+    ['image','Imagem principal',fields.imageFile.files?.[0],hero.image_path],
+    ['card','Imagem do card',fields.cardFile.files?.[0],hero.card_image_path],
+    ['gif','GIF',fields.gifFile.files?.[0],hero.gif_path]
+  ];
+  for (const [key,label,file,before] of media) {
+    diffs.push(createDiff({ key:`media.${key}`, label, group:'MÃ­dia', before:before ? 'Cadastrada' : 'NÃ£o cadastrada', after:file?.name || (before ? 'Cadastrada' : 'NÃ£o cadastrada'), apply:{ type:'media', media:key }, selected:Boolean(file) }));
+  }
+  return diffs;
+}
+
+function diffSummary(diffs) {
+  const changed = diffs.filter(item => item.changed);
+  return {
+    changed: changed.length,
+    increases: changed.filter(item => item.change === 'increase').length,
+    decreases: changed.filter(item => item.change === 'decrease').length,
+    texts: changed.filter(item => item.change === 'text').length,
+    same: diffs.length - changed.length
+  };
+}
+
+function renderVersionHistory(targetId) {
+  const history = readVersionHistory()[targetId] || [];
+  if (!history.length) return '';
+  return `<section class="update-group"><div class="update-group-head">HISTÃ“RICO <span>${history.length} backup(s) neste navegador</span></div>${history.slice().reverse().slice(0,5).map(item => `
+    <div class="update-diff"><span></span><div class="update-diff-label"><strong>v${item.version}</strong><small>${escapeHtml(new Date(item.createdAt).toLocaleString('pt-BR'))}</small></div><div class="update-value">${escapeHtml(item.summary || 'Backup automÃ¡tico')}</div><span></span><button type="button" class="admin-button" data-restore-version="${item.version}">Restaurar versÃ£o</button></div>
+  `).join('')}</section>`;
+}
+
+function renderUpdateAssistant() {
+  if (!pendingUpdate) return;
+  const { bundle, diffs } = pendingUpdate;
+  const summary = diffSummary(diffs);
+  const summaryElement = document.getElementById('update-assistant-summary');
+  const body = document.getElementById('update-assistant-body');
+  const selectedCount = diffs.filter(item => item.changed && item.selected).length;
+  summaryElement.innerHTML = [
+    [summary.changed,'alteraÃ§Ãµes'],[summary.increases,'aumentos'],[summary.decreases,'reduÃ§Ãµes'],[summary.texts,'textos modificados'],[summary.same,'campos iguais']
+  ].map(([value,label]) => `<div class="update-summary-item"><strong>${value}</strong><span>${label}</span></div>`).join('');
+
+  const newImage = fields.imageFile.files?.[0] ? URL.createObjectURL(fields.imageFile.files[0]) : getPublicUrl(bundle.hero.image_path);
+  const identity = `<div class="update-identity-grid">
+    <article class="update-identity-card">${bundle.hero.image_path ? `<img src="${escapeHtml(getPublicUrl(bundle.hero.image_path))}" alt="">` : '<div class="update-avatar-placeholder">â—‡</div>'}<div><small>HERÃ“I CADASTRADO</small><h3>${escapeHtml(bundle.hero.name)}</h3><p>${escapeHtml(classNameForId(bundle.hero.class_id))} Â· versÃ£o ${pendingUpdate.nextVersion - 1}</p></div></article>
+    <article class="update-identity-card">${newImage ? `<img src="${escapeHtml(newImage)}" alt="">` : '<div class="update-avatar-placeholder">â—‡</div>'}<div><small>NOVO JSON</small><h3>${escapeHtml(fields.name.value.trim())}</h3><p>${escapeHtml(classNameForId(fields.classId.value))} Â· importado agora</p></div></article>
+  </div>`;
+
+  const groups = ['Geral','Status','Arma','MÃ­dia','Habilidades'];
+  const groupHtml = groups.map(group => {
+    const items = diffs.filter(item => item.group === group);
+    if (!items.length) return `<section class="update-group"><div class="update-group-head">${group.toUpperCase()} <span>Nenhuma alteraÃ§Ã£o</span></div></section>`;
+    return `<section class="update-group"><div class="update-group-head">${group.toUpperCase()} <span>${items.filter(item=>item.changed).length ? `${items.filter(item=>item.changed).length} alteraÃ§Ã£o(Ãµes)` : 'Sem alteraÃ§Ãµes'}</span></div>${items.map(item => `
+      <div class="update-diff ${item.change} ${item.changed ? '' : 'is-same'}">
+        <input type="checkbox" data-diff-key="${escapeHtml(item.key)}" ${item.selected ? 'checked' : ''} ${item.changed ? '' : 'disabled'} aria-label="Atualizar ${escapeHtml(item.label)}">
+        <div class="update-diff-label"><strong>${escapeHtml(item.label)}</strong><small>${item.changed ? (item.change === 'increase' ? 'â–² Aumento' : item.change === 'decrease' ? 'â–¼ ReduÃ§Ã£o' : 'âš  Modificado') : 'âœ” Sem alteraÃ§Ã£o'}</small></div>
+        <div class="update-value">${escapeHtml(item.key === 'class_id' ? classNameForId(item.before) : displayDiffValue(item.before))}</div><div class="update-arrow">â†’</div>
+        <div class="update-value">${escapeHtml(item.key === 'class_id' ? classNameForId(item.after) : displayDiffValue(item.after))}</div>
+        ${item.risky ? '<div class="update-risk">âš  AlteraÃ§Ã£o muito grande â€” diferenÃ§a superior a 80%. Confirme com atenÃ§Ã£o; pode ser um erro de OCR.</div>' : ''}
+      </div>`).join('')}</section>`;
+  }).join('');
+  body.innerHTML = identity + (summary.changed ? groupHtml : '<div class="update-empty"><strong>Nenhuma alteraÃ§Ã£o encontrada</strong><br>Os dados importados sÃ£o idÃªnticos aos jÃ¡ cadastrados. Nada serÃ¡ atualizado.</div>') + renderVersionHistory(bundle.hero.id);
+  document.getElementById('update-final-stats').innerHTML = `âœ” ${selectedCount} campos selecionados<br>âœ” ${summary.same + summary.changed - selectedCount} preservados Â· âœ” 0 apagados Â· âœ” backup serÃ¡ criado`;
+  const selectedButton = document.getElementById('update-selected');
+  selectedButton.disabled = selectedCount === 0;
+  document.getElementById('update-all').disabled = summary.changed === 0;
+
+  body.querySelectorAll('[data-diff-key]').forEach(input => input.addEventListener('change', () => {
+    const diff = diffs.find(item => item.key === input.dataset.diffKey);
+    if (diff) diff.selected = input.checked;
+    renderUpdateAssistant();
+  }));
+  body.querySelectorAll('[data-restore-version]').forEach(button => button.addEventListener('click', () => restoreHeroVersion(Number(button.dataset.restoreVersion))));
+}
+
+function closeUpdateAssistant({ discard = false } = {}) {
+  document.getElementById('update-assistant-backdrop')?.classList.remove('is-open');
+  document.body.classList.remove('update-assistant-open');
+  if (discard) sessionStorage.removeItem(IMPORT_KEY);
+  pendingUpdate = null;
+}
+
+async function openUpdateAssistant(existing) {
+  const bundle = await loadExistingHeroBundle(existing.id);
+  const history = readVersionHistory()[existing.id] || [];
+  pendingUpdate = { bundle, diffs:buildUpdateDiffs(bundle), nextVersion:history.length + 2 };
+  renderUpdateAssistant();
+  document.getElementById('update-assistant-backdrop').classList.add('is-open');
+  document.getElementById('update-assistant-backdrop').setAttribute('aria-hidden','false');
+  document.body.classList.add('update-assistant-open');
+}
+
+function createVersionBackup(bundle, diffs) {
+  const history = readVersionHistory();
+  const list = history[bundle.hero.id] || [];
+  list.push({ version:list.length + 1, createdAt:new Date().toISOString(), summary:`${diffs.filter(item=>item.changed && item.selected).length} campo(s) alterado(s)`, snapshot:bundle });
+  history[bundle.hero.id] = list.slice(-25);
+  writeVersionHistory(history);
+  return list.length;
+}
+
+async function applySelectedUpdate(selectAll = false) {
+  if (!pendingUpdate || isSaving) return;
+  const chosen = pendingUpdate.diffs.filter(item => item.changed && (selectAll || item.selected));
+  if (!chosen.length) return;
+  const risky = chosen.filter(item => item.risky);
+  if (risky.length && !confirm(`${risky.length} alteraÃ§Ã£o(Ãµes) variam mais de 80%. Deseja continuar?`)) return;
+  isSaving = true;
+  try {
+    const { bundle } = pendingUpdate;
+    createVersionBackup(bundle, chosen);
+    const mediaChosen = new Set(chosen.filter(item=>item.apply.type==='media').map(item=>item.apply.media));
+    const upload = await uploadSelectedMediaSelective(bundle.hero.slug, mediaChosen);
+    const heroPatch = {};
+    for (const item of chosen.filter(item=>item.apply.type==='hero')) {
+      if (item.after !== null && item.after !== undefined) heroPatch[item.apply.column] = item.after;
+    }
+    if (upload.imagePath) heroPatch.image_path = upload.imagePath;
+    if (upload.cardImagePath) heroPatch.card_image_path = upload.cardImagePath;
+    if (upload.gifPath) heroPatch.gif_path = upload.gifPath;
+    if (Object.keys(heroPatch).length) {
+      const { error } = await supabase.from('heroes').update(heroPatch).eq('id', bundle.hero.id);
+      if (error) throw error;
+    }
+    for (const item of chosen.filter(item=>item.apply.type==='stat')) {
+      const payload = { hero_id:bundle.hero.id, stat_key:item.apply.statKey, value:item.after };
+      if (item.apply.table === 'hero_weapon_stats') payload.weapon_name = item.apply.weaponName;
+      const { error } = await supabase.from(item.apply.table).upsert(payload,{ onConflict:'hero_id,stat_key' });
+      if (error) throw error;
+    }
+    const modified = chosen.length;
+    const preserved = pendingUpdate.diffs.length - modified;
+    closeUpdateAssistant();
+    showMessage(`AtualizaÃ§Ã£o concluÃ­da: ${modified} campos modificados, ${preserved} preservados, 0 apagados e backup criado.`, 'ok');
+    setTimeout(() => { location.href = `./hero-editor.html?id=${bundle.hero.id}`; }, 900);
+  } catch (error) {
+    console.error('Erro na atualizaÃ§Ã£o inteligente:', error);
+    showMessage(error.message || 'NÃ£o foi possÃ­vel atualizar o herÃ³i.', 'error');
+  } finally { isSaving = false; }
+}
+
+async function uploadSelectedMediaSelective(slug, selected) {
+  const imageTypes = ['image/png','image/jpeg','image/webp','image/gif'];
+  const [imagePath, cardImagePath, gifPath] = await Promise.all([
+    selected.has('image') ? uploadFile({file:fields.imageFile.files?.[0],heroSlug:slug,mediaType:'Main',allowedTypes:imageTypes}) : null,
+    selected.has('card') ? uploadFile({file:fields.cardFile.files?.[0],heroSlug:slug,mediaType:'Card',allowedTypes:imageTypes}) : null,
+    selected.has('gif') ? uploadFile({file:fields.gifFile.files?.[0],heroSlug:slug,mediaType:'GIF',allowedTypes:['image/gif']}) : null
+  ]);
+  return { imagePath, cardImagePath, gifPath };
+}
+
+async function restoreHeroVersion(version) {
+  if (!pendingUpdate || !confirm(`Restaurar a versÃ£o v${version}? Um backup do estado atual serÃ¡ criado antes.`)) return;
+  const id = pendingUpdate.bundle.hero.id;
+  const record = (readVersionHistory()[id] || []).find(item => item.version === version);
+  if (!record?.snapshot) return;
+  try {
+    createVersionBackup(pendingUpdate.bundle, []);
+    const snapshot = record.snapshot;
+    const { id:ignored, ...heroPayload } = snapshot.hero;
+    const { error } = await supabase.from('heroes').update(heroPayload).eq('id', id);
+    if (error) throw error;
+    const restoreStats = async (table, stats, extra={}) => {
+      const { error:deleteError } = await supabase.from(table).delete().eq('hero_id',id);
+      if (deleteError) throw deleteError;
+      const rows = Object.entries(stats || {}).map(([stat_key,value]) => ({hero_id:id,stat_key,value,...extra}));
+      if (rows.length) { const { error:insertError } = await supabase.from(table).insert(rows); if (insertError) throw insertError; }
+    };
+    await restoreStats('hero_base_stats',snapshot.heroStats);
+    await restoreStats('hero_weapon_stats',snapshot.weaponStats,{weapon_name:snapshot.weaponName});
+    closeUpdateAssistant();
+    showMessage(`VersÃ£o v${version} restaurada com sucesso.`, 'ok');
+    setTimeout(()=>location.reload(),700);
+  } catch(error) { showMessage(error.message || 'NÃ£o foi possÃ­vel restaurar a versÃ£o.','error'); }
+}
+
+function bindUpdateAssistant() {
+  document.getElementById('update-cancel')?.addEventListener('click',()=>closeUpdateAssistant());
+  document.getElementById('update-discard')?.addEventListener('click',()=>{ closeUpdateAssistant({discard:true}); showMessage('ImportaÃ§Ã£o descartada.',''); });
+  document.getElementById('update-selected')?.addEventListener('click',()=>applySelectedUpdate(false));
+  document.getElementById('update-all')?.addEventListener('click',()=>applySelectedUpdate(true));
 }
 
 async function uploadFile({ file, heroSlug, mediaType, allowedTypes }) {
@@ -2148,7 +2434,7 @@ async function saveHero(event) {
   if (isSaving) return;
   isSaving = true;
 
-  const originalButtonText = saveButton?.textContent || 'Salvar herói';
+  const originalButtonText = saveButton?.textContent || 'Salvar herÃ³i';
 
   if (saveButton) {
     saveButton.disabled = true;
@@ -2158,12 +2444,18 @@ async function saveHero(event) {
   try {
     const slug = validateForm();
 
-    await validateSlugAvailability(slug);
+    const existingHero = await validateSlugAvailability(slug);
 
-    showMessage('Enviando mídias...');
+    if (existingHero) {
+      await openUpdateAssistant(existingHero);
+      showMessage('HerÃ³i existente encontrado. Revise as alteraÃ§Ãµes no assistente.');
+      return;
+    }
+
+    showMessage('Enviando mÃ­dias...');
     const uploadedMedia = await uploadSelectedMedia(slug);
 
-    showMessage(heroId ? 'Atualizando herói...' : 'Criando herói...');
+    showMessage(heroId ? 'Atualizando herÃ³i...' : 'Criando herÃ³i...');
     const payload = collectPayload(slug, uploadedMedia);
 
     const savedHero = heroId
@@ -2177,8 +2469,8 @@ async function saveHero(event) {
 
     showMessage(
       heroId
-        ? 'Herói, status e arma atualizados com sucesso.'
-        : 'Herói, status e arma criados com sucesso.',
+        ? 'HerÃ³i, status e arma atualizados com sucesso.'
+        : 'HerÃ³i, status e arma criados com sucesso.',
       'ok'
     );
 
@@ -2197,20 +2489,20 @@ async function saveHero(event) {
 
     updateAllPreviews();
   } catch (error) {
-    console.error('Erro ao salvar herói:', error);
-    showMessage(error.message || 'Não foi possível salvar o herói.', 'error');
+    console.error('Erro ao salvar herÃ³i:', error);
+    showMessage(error.message || 'NÃ£o foi possÃ­vel salvar o herÃ³i.', 'error');
   } finally {
     isSaving = false;
 
     if (saveButton) {
       saveButton.disabled = false;
-      saveButton.textContent = heroId ? 'Atualizar herói' : originalButtonText;
+      saveButton.textContent = heroId ? 'Atualizar herÃ³i' : originalButtonText;
     }
   }
 }
 
 /* =========================================================
-   INICIALIZAÇÃO
+   INICIALIZAÃ‡ÃƒO
 ========================================================= */
 
 async function initialize() {
@@ -2221,6 +2513,7 @@ async function initialize() {
     bindAutomaticSlug();
     bindGeneralPreview();
     bindIntegratedStatsControls();
+    bindUpdateAssistant();
 
     form?.addEventListener('submit', saveHero);
 
@@ -2254,7 +2547,7 @@ async function initialize() {
     });
   } catch (error) {
     console.error('Erro ao iniciar editor:', error);
-    showMessage(error.message || 'Não foi possível carregar o editor.', 'error');
+    showMessage(error.message || 'NÃ£o foi possÃ­vel carregar o editor.', 'error');
   }
 }
 
