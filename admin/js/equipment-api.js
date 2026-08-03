@@ -1,15 +1,7 @@
 import { supabase } from '../../js/supabase.js';
 
-/* =========================================================
-   METADADOS DOS EQUIPAMENTOS
-========================================================= */
-
 export async function loadEquipmentMeta() {
-  const [
-    rarities,
-    slots,
-    sets
-  ] = await Promise.all([
+  const [rarities, slots, sets] = await Promise.all([
     supabase
       .from('equipment_rarities')
       .select('*')
@@ -26,17 +18,9 @@ export async function loadEquipmentMeta() {
       .order('name')
   ]);
 
-  if (rarities.error) {
-    throw rarities.error;
-  }
-
-  if (slots.error) {
-    throw slots.error;
-  }
-
-  if (sets.error) {
-    throw sets.error;
-  }
+  if (rarities.error) throw rarities.error;
+  if (slots.error) throw slots.error;
+  if (sets.error) throw sets.error;
 
   return {
     rarities: rarities.data || [],
@@ -45,46 +29,19 @@ export async function loadEquipmentMeta() {
   };
 }
 
-/* =========================================================
-   LISTAGEM
-========================================================= */
-
 export async function listEquipments() {
-  const {
-    data,
-    error
-  } = await supabase
+  const { data, error } = await supabase
     .from('equipments')
-    .select(`
-      *,
-      equipment_sets(
-        name,
-        slug
-      ),
-      equipment_slots(
-        name,
-        slug
-      )
-    `)
+    .select('*,equipment_sets(name,slug),equipment_slots(name,slug)')
     .order('display_order')
     .order('name');
 
-  if (error) {
-    throw error;
-  }
-
+  if (error) throw error;
   return data || [];
 }
 
-/* =========================================================
-   EQUIPAMENTO COMPLETO
-========================================================= */
-
 export async function getEquipmentBundle(id) {
-  const [
-    equipment,
-    variants
-  ] = await Promise.all([
+  const [equipment, variants] = await Promise.all([
     supabase
       .from('equipments')
       .select('*')
@@ -93,38 +50,23 @@ export async function getEquipmentBundle(id) {
 
     supabase
       .from('equipment_variants')
-      .select(`
-        *,
-        equipment_rarities(*)
-      `)
+      .select('*,equipment_rarities(*)')
       .eq('equipment_id', id)
   ]);
 
-  if (equipment.error) {
-    throw equipment.error;
-  }
+  if (equipment.error) throw equipment.error;
+  if (variants.error) throw variants.error;
 
-  if (variants.error) {
-    throw variants.error;
-  }
-
-  let bonuses = {
-    data: []
-  };
+  let bonuses = { data: [] };
 
   if (equipment.data.set_id) {
     bonuses = await supabase
       .from('equipment_set_bonuses')
       .select('*')
-      .eq(
-        'set_id',
-        equipment.data.set_id
-      )
+      .eq('set_id', equipment.data.set_id)
       .order('display_order');
 
-    if (bonuses.error) {
-      throw bonuses.error;
-    }
+    if (bonuses.error) throw bonuses.error;
   }
 
   return {
@@ -134,9 +76,18 @@ export async function getEquipmentBundle(id) {
   };
 }
 
-/* =========================================================
-   CONJUNTOS
-========================================================= */
+export async function getEquipmentBySlug(slug) {
+  if (!slug) return null;
+
+  const { data, error } = await supabase
+    .from('equipments')
+    .select('*')
+    .eq('slug', slug)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || null;
+}
 
 export async function upsertSet({
   id,
@@ -150,34 +101,19 @@ export async function upsertSet({
     description
   };
 
-  if (id) {
-    payload.id = id;
-  }
+  if (id) payload.id = id;
 
-  const {
-    data,
-    error
-  } = await supabase
+  const { data, error } = await supabase
     .from('equipment_sets')
-    .upsert(
-      payload,
-      {
-        onConflict: 'slug'
-      }
-    )
+    .upsert(payload, {
+      onConflict: 'slug'
+    })
     .select()
     .single();
 
-  if (error) {
-    throw error;
-  }
-
+  if (error) throw error;
   return data;
 }
-
-/* =========================================================
-   SALVAMENTO COMPLETO
-========================================================= */
 
 export async function saveEquipmentBundle({
   equipmentId,
@@ -188,27 +124,15 @@ export async function saveEquipmentBundle({
   let resolvedEquipmentId =
     equipmentId || null;
 
-  /*
-   * Se a tela está criando um equipamento, mas já existe outro
-   * com o mesmo slug, entramos automaticamente no modo atualização.
-   */
   if (!resolvedEquipmentId && equipment.slug) {
-    const {
-      data: existingEquipment,
-      error: existingEquipmentError
-    } = await supabase
-      .from('equipments')
-      .select('id')
-      .eq('slug', equipment.slug)
-      .maybeSingle();
+    const existing =
+      await getEquipmentBySlug(
+        equipment.slug
+      );
 
-    if (existingEquipmentError) {
-      throw existingEquipmentError;
-    }
-
-    if (existingEquipment?.id) {
+    if (existing?.id) {
       resolvedEquipmentId =
-        existingEquipment.id;
+        existing.id;
     }
   }
 
@@ -233,12 +157,6 @@ export async function saveEquipmentBundle({
     throw equipmentError;
   }
 
-  const savedEquipmentId =
-    saved.id;
-
-  /*
-   * Salva ou atualiza todas as raridades.
-   */
   for (const variant of variants) {
     const {
       error: variantError
@@ -246,14 +164,9 @@ export async function saveEquipmentBundle({
       .from('equipment_variants')
       .upsert(
         {
-          equipment_id:
-            savedEquipmentId,
-
-          rarity_id:
-            variant.rarity_id,
-
-          attributes:
-            variant.attributes
+          equipment_id: saved.id,
+          rarity_id: variant.rarity_id,
+          attributes: variant.attributes
         },
         {
           onConflict:
@@ -266,9 +179,6 @@ export async function saveEquipmentBundle({
     }
   }
 
-  /*
-   * Salva ou atualiza os bônus do conjunto.
-   */
   if (saved.set_id) {
     for (const bonus of bonuses) {
       const {
@@ -277,20 +187,15 @@ export async function saveEquipmentBundle({
         .from('equipment_set_bonuses')
         .upsert(
           {
-            set_id:
-              saved.set_id,
-
+            set_id: saved.set_id,
             required_pieces:
               Number(
                 bonus.required_pieces
               ),
-
             title:
               bonus.title,
-
             description:
               bonus.description,
-
             display_order:
               bonus.display_order || 0
           },
@@ -308,7 +213,6 @@ export async function saveEquipmentBundle({
 
   return {
     ...saved,
-
     operation:
       resolvedEquipmentId
         ? 'updated'
@@ -316,98 +220,11 @@ export async function saveEquipmentBundle({
   };
 }
 
-  /* =======================================================
-     SALVAR RARIDADES E ATRIBUTOS
-  ======================================================= */
-
-  for (const variant of variants) {
-    const {
-      error: variantError
-    } = await supabase
-      .from('equipment_variants')
-      .upsert(
-        {
-          equipment_id:
-            equipmentIdSaved,
-
-          rarity_id:
-            variant.rarity_id,
-
-          attributes:
-            variant.attributes
-        },
-        {
-          onConflict:
-            'equipment_id,rarity_id'
-        }
-      );
-
-    if (variantError) {
-      throw variantError;
-    }
-  }
-
-  /* =======================================================
-     SALVAR BÔNUS DO CONJUNTO
-
-     A tabela equipment_set_bonuses não possui a coluna
-     "attributes". Por isso, salvamos apenas os campos que
-     realmente existem no banco.
-  ======================================================= */
-
-  if (saved.set_id) {
-    for (const bonus of bonuses) {
-      const {
-        error: bonusError
-      } = await supabase
-        .from('equipment_set_bonuses')
-        .upsert(
-          {
-            set_id:
-              saved.set_id,
-
-            required_pieces:
-              Number(
-                bonus.required_pieces
-              ),
-
-            title:
-              bonus.title,
-
-            description:
-              bonus.description,
-
-            display_order:
-              bonus.display_order || 0
-          },
-          {
-            onConflict:
-              'set_id,required_pieces,title'
-          }
-        );
-
-      if (bonusError) {
-        throw bonusError;
-      }
-    }
-  }
-
-  return saved;
-}
-
-/* =========================================================
-   EXCLUSÃO
-========================================================= */
-
 export async function deleteEquipment(id) {
-  const {
-    error
-  } = await supabase
+  const { error } = await supabase
     .from('equipments')
     .delete()
     .eq('id', id);
 
-  if (error) {
-    throw error;
-  }
+  if (error) throw error;
 }
