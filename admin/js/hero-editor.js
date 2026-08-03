@@ -3,6 +3,7 @@ import { supabase } from '../../js/supabase.js';
 const STORAGE_BUCKET = 'game-media';
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
 const IMPORT_KEY = 'hero-import-draft';
+const SAVE_RECEIPT_KEY = 'hero-save-success-receipt';
 const IMPORT_SCHEMA_VERSION = 1;
 
 const params = new URLSearchParams(location.search);
@@ -111,6 +112,31 @@ function showMessage(text = '', type = '') {
   message.className = type;
 }
 
+function clearSaveReceipt() {
+  sessionStorage.removeItem(SAVE_RECEIPT_KEY);
+}
+
+function storeSaveReceipt(options) {
+  sessionStorage.setItem(SAVE_RECEIPT_KEY, JSON.stringify({
+    ...options,
+    savedAt: Date.now()
+  }));
+}
+
+function readSaveReceipt() {
+  try {
+    const receipt = JSON.parse(sessionStorage.getItem(SAVE_RECEIPT_KEY) || 'null');
+    if (!receipt?.id || Date.now() - Number(receipt.savedAt || 0) > 30 * 60 * 1000) {
+      clearSaveReceipt();
+      return null;
+    }
+    return receipt;
+  } catch {
+    clearSaveReceipt();
+    return null;
+  }
+}
+
 function ensureSaveSuccessUi() {
   if (document.getElementById('hero-save-success')) return;
 
@@ -184,10 +210,13 @@ function ensureSaveSuccessUi() {
   `;
   document.body.appendChild(backdrop);
   document.getElementById('hero-success-continue').addEventListener('click', () => {
+    clearSaveReceipt();
     backdrop.classList.remove('is-open');
     backdrop.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('hero-success-open');
   });
+  document.getElementById('hero-success-list').addEventListener('click', clearSaveReceipt);
+  document.getElementById('hero-success-open').addEventListener('click', clearSaveReceipt);
 }
 
 function showSaveSuccess({ id, name, updated = false, details = [] }) {
@@ -216,6 +245,7 @@ function showSaveSuccess({ id, name, updated = false, details = [] }) {
 }
 
 function announceSaveSuccess(options) {
+  storeSaveReceipt(options);
   try {
     showSaveSuccess(options);
   } catch (error) {
@@ -225,6 +255,13 @@ function announceSaveSuccess(options) {
       `${options.name || 'Herói'}\n\nOs dados foram confirmados no banco de dados.`
     );
   }
+}
+
+function restorePendingSaveSuccess() {
+  const receipt = readSaveReceipt();
+  if (!receipt) return false;
+  showSaveSuccess(receipt);
+  return true;
 }
 
 function slugify(value = '') {
@@ -2771,6 +2808,7 @@ async function initialize() {
     updateAllPreviews();
     repairDocumentEncoding();
     bindEncodingRepairObserver();
+    restorePendingSaveSuccess();
 
     window.addEventListener('resize', () => {
       mainEditor.resize();
