@@ -111,6 +111,122 @@ function showMessage(text = '', type = '') {
   message.className = type;
 }
 
+function ensureSaveSuccessUi() {
+  if (document.getElementById('hero-save-success')) return;
+
+  const style = document.createElement('style');
+  style.id = 'hero-save-success-style';
+  style.textContent = `
+    body.hero-success-open{overflow:hidden}
+    .hero-save-success{
+      position:fixed;inset:0;z-index:12000;display:none;place-items:center;
+      padding:20px;background:rgba(2,7,16,.9);backdrop-filter:blur(10px)
+    }
+    .hero-save-success.is-open{display:grid}
+    .hero-save-success-card{
+      position:relative;width:min(520px,100%);overflow:hidden;text-align:center;
+      padding:34px;border:1px solid rgba(74,222,128,.38);border-radius:22px;
+      background:linear-gradient(160deg,#0d1c27,#08111f 65%);
+      box-shadow:0 30px 100px rgba(0,0,0,.68),0 0 45px rgba(74,222,128,.1)
+    }
+    .hero-save-success-card::before{
+      content:'';position:absolute;inset:0 0 auto;height:4px;
+      background:linear-gradient(90deg,#22c55e,#86efac,#22c55e)
+    }
+    .hero-success-icon{
+      width:82px;height:82px;margin:0 auto 18px;display:grid;place-items:center;
+      border:2px solid #4ade80;border-radius:50%;background:rgba(34,197,94,.12);
+      color:#86efac;font-size:42px;font-weight:900;
+      box-shadow:0 0 0 10px rgba(34,197,94,.05)
+    }
+    .hero-success-eyebrow{
+      color:#86efac;font-size:11px;font-weight:900;letter-spacing:.14em;text-transform:uppercase
+    }
+    .hero-save-success h2{margin:9px 0 7px;font-size:28px;color:#fff}
+    .hero-save-success p{margin:0;color:#aeb9ca;font-size:13px;line-height:1.6}
+    .hero-success-name{
+      margin:20px 0 0;padding:15px;border:1px solid #26384a;border-radius:12px;
+      background:#08101d;color:#fff;font-size:18px;font-weight:900
+    }
+    .hero-success-details{
+      display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px
+    }
+    .hero-success-details span{
+      padding:10px;border:1px solid #203247;border-radius:9px;background:#0a1422;
+      color:#9facc0;font-size:11px
+    }
+    .hero-success-actions{display:flex;justify-content:center;gap:9px;flex-wrap:wrap;margin-top:24px}
+    @media(max-width:520px){
+      .hero-save-success{padding:0}.hero-save-success-card{min-height:100vh;border-radius:0;display:grid;align-content:center}
+      .hero-success-actions{display:grid}.hero-success-actions .admin-button{width:100%}
+    }
+  `;
+  document.head.appendChild(style);
+
+  const backdrop = document.createElement('div');
+  backdrop.id = 'hero-save-success';
+  backdrop.className = 'hero-save-success';
+  backdrop.setAttribute('aria-hidden', 'true');
+  backdrop.innerHTML = `
+    <section class="hero-save-success-card" role="alertdialog" aria-modal="true" aria-labelledby="hero-success-title">
+      <div class="hero-success-icon">✓</div>
+      <div class="hero-success-eyebrow" id="hero-success-eyebrow">Operação concluída</div>
+      <h2 id="hero-success-title">Herói salvo com sucesso!</h2>
+      <p id="hero-success-copy">Todos os dados foram enviados e confirmados.</p>
+      <div id="hero-success-name" class="hero-success-name"></div>
+      <div id="hero-success-details" class="hero-success-details"></div>
+      <div class="hero-success-actions">
+        <button id="hero-success-continue" type="button" class="admin-button">Continuar editando</button>
+        <a id="hero-success-list" class="admin-button" href="./heroes.html">Voltar à lista</a>
+        <a id="hero-success-open" class="admin-button primary" href="#">Abrir herói salvo</a>
+      </div>
+    </section>
+  `;
+  document.body.appendChild(backdrop);
+  document.getElementById('hero-success-continue').addEventListener('click', () => {
+    backdrop.classList.remove('is-open');
+    backdrop.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('hero-success-open');
+  });
+}
+
+function showSaveSuccess({ id, name, updated = false, details = [] }) {
+  ensureSaveSuccessUi();
+  const backdrop = document.getElementById('hero-save-success');
+  document.getElementById('hero-success-eyebrow').textContent =
+    updated ? 'Atualização concluída' : 'Cadastro concluído';
+  document.getElementById('hero-success-title').textContent =
+    updated ? 'Herói atualizado com sucesso!' : 'Herói salvo com sucesso!';
+  document.getElementById('hero-success-copy').textContent =
+    updated
+      ? 'As alterações foram confirmadas no banco de dados.'
+      : 'O cadastro, os status e os dados da arma foram confirmados no banco de dados.';
+  document.getElementById('hero-success-name').textContent = name || 'Herói';
+  document.getElementById('hero-success-details').innerHTML =
+    (details.length ? details : ['✓ Dados gerais salvos', '✓ Status e arma salvos'])
+      .map(item => `<span>${escapeHtml(item)}</span>`).join('');
+  const openLink = document.getElementById('hero-success-open');
+  openLink.href = `./hero-editor.html?id=${encodeURIComponent(id)}&tab=stats`;
+  document.getElementById('hero-success-continue').style.display = heroId ? '' : 'none';
+  backdrop.classList.add('is-open');
+  backdrop.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('hero-success-open');
+  openLink.focus();
+  repairDocumentEncoding(backdrop);
+}
+
+function announceSaveSuccess(options) {
+  try {
+    showSaveSuccess(options);
+  } catch (error) {
+    console.error('Falha ao abrir confirmação visual:', error);
+    window.alert(
+      `✓ ${options.updated ? 'Herói atualizado' : 'Herói salvo'} com sucesso!\n\n` +
+      `${options.name || 'Herói'}\n\nOs dados foram confirmados no banco de dados.`
+    );
+  }
+}
+
 function slugify(value = '') {
   return String(value)
     .normalize('NFD')
@@ -2369,7 +2485,17 @@ async function applySelectedUpdate(selectAll = false) {
     const preserved = pendingUpdate.diffs.length - modified;
     closeUpdateAssistant();
     showMessage(`Atualização concluída: ${modified} campos modificados, ${preserved} preservados, 0 apagados e backup criado.`, 'ok');
-    setTimeout(() => { location.href = `./hero-editor.html?id=${bundle.hero.id}`; }, 900);
+    announceSaveSuccess({
+      id: bundle.hero.id,
+      name: fields.name.value.trim() || bundle.hero.name,
+      updated: true,
+      details: [
+        `✓ ${modified} campos modificados`,
+        `✓ ${preserved} campos preservados`,
+        '✓ Nenhum dado apagado',
+        '✓ Backup criado'
+      ]
+    });
   } catch (error) {
     console.error('Erro na atualização inteligente:', error);
     showMessage(error.message || 'Não foi possível atualizar o herói.', 'error');
@@ -2568,10 +2694,19 @@ async function saveHero(event) {
       'ok'
     );
 
+    announceSaveSuccess({
+      id: savedHero.id,
+      name: savedHero.name || fields.name.value.trim(),
+      updated: Boolean(heroId),
+      details: [
+        '✓ Informações gerais salvas',
+        '✓ Status confirmados',
+        '✓ Dados da arma confirmados',
+        '✓ Operação concluída'
+      ]
+    });
+
     if (!heroId) {
-      setTimeout(() => {
-        location.href = `./hero-editor.html?id=${savedHero.id}&tab=stats`;
-      }, 700);
       return;
     }
 
@@ -2608,6 +2743,7 @@ async function initialize() {
     bindGeneralPreview();
     bindIntegratedStatsControls();
     bindUpdateAssistant();
+    ensureSaveSuccessUi();
 
     form?.addEventListener('submit', saveHero);
 
