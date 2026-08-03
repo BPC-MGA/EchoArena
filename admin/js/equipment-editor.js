@@ -1236,72 +1236,73 @@ form.onsubmit =
           item.description
       );
 
-      await saveEquipmentBundle({
-        equipmentId,
+      const savedEquipment =
+        await saveEquipmentBundle({
+          equipmentId,
 
-        equipment: {
-          name:
-            document
-              .getElementById(
-                'name'
-              )
-              .value
-              .trim(),
-
-          slug:
-            document
-              .getElementById(
-                'slug'
-              )
-              .value
-              .trim(),
-
-          slot_id:
-            selectedSlotId,
-
-          set_id:
-            setId,
-
-          description:
-            document
-              .getElementById(
-                'description'
-              )
-              .value
-              .trim(),
-
-          recommendation:
-            document
-              .getElementById(
-                'recommendation'
-              )
-              .value
-              .trim(),
-
-          image_path:
-            imagePath,
-
-          enabled:
-            document
-              .getElementById(
-                'enabled'
-              )
-              .checked,
-
-          display_order:
-            Number(
+          equipment: {
+            name:
               document
                 .getElementById(
-                  'display-order'
+                  'name'
                 )
-                .value ||
-              0
-            )
-        },
+                .value
+                .trim(),
 
-        variants,
-        bonuses
-      });
+            slug:
+              document
+                .getElementById(
+                  'slug'
+                )
+                .value
+                .trim(),
+
+            slot_id:
+              selectedSlotId,
+
+            set_id:
+              setId,
+
+            description:
+              document
+                .getElementById(
+                  'description'
+                )
+                .value
+                .trim(),
+
+            recommendation:
+              document
+                .getElementById(
+                  'recommendation'
+                )
+                .value
+                .trim(),
+
+            image_path:
+              imagePath,
+
+            enabled:
+              document
+                .getElementById(
+                  'enabled'
+                )
+                .checked,
+
+            display_order:
+              Number(
+                document
+                  .getElementById(
+                    'display-order'
+                  )
+                  .value ||
+                0
+              )
+          },
+
+          variants,
+          bonuses
+        });
 
       sessionStorage.removeItem(
         IMPORT_KEY
@@ -1309,15 +1310,30 @@ form.onsubmit =
 
       clearImportBackup();
 
+      const wasUpdated =
+        savedEquipment?.operation ===
+        'updated';
+
       setMessage(
-        'Equipamento salvo.',
+        wasUpdated
+          ? 'Equipamento existente atualizado com sucesso.'
+          : 'Equipamento criado com sucesso.',
         'ok'
       );
 
       setTimeout(
-        () =>
+        () => {
+          if (savedEquipment?.id) {
+            location.href =
+              `./equipment-editor.html?id=${encodeURIComponent(
+                savedEquipment.id
+              )}`;
+            return;
+          }
+
           location.href =
-            './equipments.html',
+            './equipments.html';
+        },
         700
       );
     } catch (error) {
