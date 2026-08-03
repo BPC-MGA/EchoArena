@@ -45,7 +45,6 @@ const DEFAULT_MENU = [
       { id: 'equipments-list', label: 'Lista', href: './equipments.html' },
       { id: 'equipment-new', label: 'Novo equipamento', href: './equipment-editor.html' },
       { id: 'equipment-ai-import', label: 'Importar por JSON', href: './equipment-ai-import.html' },
-      { id: 'equipment-import', label: 'Importar por print', href: './equipment-import.html' }
     ]
   },
   { id: 'classes', label: 'Classes', href: './classes.html' },
