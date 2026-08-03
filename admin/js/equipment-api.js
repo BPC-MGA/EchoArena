@@ -185,29 +185,136 @@ export async function saveEquipmentBundle({
   variants,
   bonuses
 }) {
+  let resolvedEquipmentId =
+    equipmentId || null;
+
+  /*
+   * Se a tela está criando um equipamento, mas já existe outro
+   * com o mesmo slug, entramos automaticamente no modo atualização.
+   */
+  if (!resolvedEquipmentId && equipment.slug) {
+    const {
+      data: existingEquipment,
+      error: existingEquipmentError
+    } = await supabase
+      .from('equipments')
+      .select('id')
+      .eq('slug', equipment.slug)
+      .maybeSingle();
+
+    if (existingEquipmentError) {
+      throw existingEquipmentError;
+    }
+
+    if (existingEquipment?.id) {
+      resolvedEquipmentId =
+        existingEquipment.id;
+    }
+  }
+
   const equipmentQuery =
-    equipmentId
+    resolvedEquipmentId
       ? supabase
           .from('equipments')
           .update(equipment)
-          .eq('id', equipmentId)
+          .eq('id', resolvedEquipmentId)
       : supabase
           .from('equipments')
           .insert(equipment);
 
   const {
     data: saved,
-    error
+    error: equipmentError
   } = await equipmentQuery
     .select()
     .single();
 
-  if (error) {
-    throw error;
+  if (equipmentError) {
+    throw equipmentError;
   }
 
-  const equipmentIdSaved =
+  const savedEquipmentId =
     saved.id;
+
+  /*
+   * Salva ou atualiza todas as raridades.
+   */
+  for (const variant of variants) {
+    const {
+      error: variantError
+    } = await supabase
+      .from('equipment_variants')
+      .upsert(
+        {
+          equipment_id:
+            savedEquipmentId,
+
+          rarity_id:
+            variant.rarity_id,
+
+          attributes:
+            variant.attributes
+        },
+        {
+          onConflict:
+            'equipment_id,rarity_id'
+        }
+      );
+
+    if (variantError) {
+      throw variantError;
+    }
+  }
+
+  /*
+   * Salva ou atualiza os bônus do conjunto.
+   */
+  if (saved.set_id) {
+    for (const bonus of bonuses) {
+      const {
+        error: bonusError
+      } = await supabase
+        .from('equipment_set_bonuses')
+        .upsert(
+          {
+            set_id:
+              saved.set_id,
+
+            required_pieces:
+              Number(
+                bonus.required_pieces
+              ),
+
+            title:
+              bonus.title,
+
+            description:
+              bonus.description,
+
+            display_order:
+              bonus.display_order || 0
+          },
+          {
+            onConflict:
+              'set_id,required_pieces,title'
+          }
+        );
+
+      if (bonusError) {
+        throw bonusError;
+      }
+    }
+  }
+
+  return {
+    ...saved,
+
+    operation:
+      resolvedEquipmentId
+        ? 'updated'
+        : 'created'
+  };
+}
 
   /* =======================================================
      SALVAR RARIDADES E ATRIBUTOS
