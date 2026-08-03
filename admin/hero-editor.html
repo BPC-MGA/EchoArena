@@ -432,6 +432,61 @@
       color: #4ade80;
     }
 
+    body.update-assistant-open { overflow: hidden; }
+    .update-assistant-backdrop {
+      position: fixed; inset: 0; z-index: 10000; display: none;
+      align-items: center; justify-content: center; padding: 24px;
+      background: rgba(2, 6, 15, .88); backdrop-filter: blur(10px);
+    }
+    .update-assistant-backdrop.is-open { display: flex; }
+    .update-assistant {
+      width: min(1180px, 100%); max-height: calc(100vh - 48px); overflow: hidden;
+      display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto;
+      border: 1px solid #2a3852; border-radius: 20px; background: #080f1d;
+      box-shadow: 0 30px 90px rgba(0,0,0,.6);
+    }
+    .update-assistant-head, .update-assistant-footer { padding: 20px 24px; }
+    .update-assistant-head { border-bottom: 1px solid #243149; }
+    .update-assistant-eyebrow { color: #ffcb66; font-size: 12px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+    .update-assistant-head h2 { margin: 7px 0 4px; font-size: 28px; }
+    .update-assistant-head p { margin: 0; color: var(--admin-muted); }
+    .update-summary { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 10px; padding: 16px 24px; border-bottom: 1px solid #243149; }
+    .update-summary-item { padding: 12px; border: 1px solid #26344d; border-radius: 12px; background: #0d1728; }
+    .update-summary-item strong { display: block; font-size: 20px; }
+    .update-summary-item span { color: var(--admin-muted); font-size: 10px; text-transform: uppercase; }
+    .update-assistant-body { overflow: auto; padding: 20px 24px; }
+    .update-identity-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
+    .update-identity-card { display: grid; grid-template-columns: 72px 1fr; gap: 14px; align-items: center; padding: 15px; border: 1px solid #27354d; border-radius: 14px; background: #0b1424; }
+    .update-identity-card img, .update-avatar-placeholder { width: 72px; height: 82px; object-fit: contain; border-radius: 10px; background: #111c30; }
+    .update-avatar-placeholder { display:grid;place-items:center;color:#53617a;font-size:24px; }
+    .update-identity-card small { color: var(--admin-muted); font-size: 10px; font-weight: 800; letter-spacing: .08em; }
+    .update-identity-card h3 { margin: 5px 0; }
+    .update-identity-card p { margin: 0; color: #a9b4c7; font-size: 12px; }
+    .update-group { margin-top: 12px; border: 1px solid #26344c; border-radius: 14px; overflow: hidden; }
+    .update-group-head { display:flex;justify-content:space-between;align-items:center;padding:12px 15px;background:#101a2c;font-weight:900; }
+    .update-group-head span { color:var(--admin-muted);font-size:11px;font-weight:700; }
+    .update-diff { display:grid;grid-template-columns:28px minmax(150px,.7fr) 1fr 28px 1fr;gap:10px;align-items:center;padding:13px 15px;border-top:1px solid #202d43; }
+    .update-diff.is-same { opacity:.55; }
+    .update-diff input { width:17px;height:17px; }
+    .update-diff-label strong { display:block; }
+    .update-diff-label small { color:var(--admin-muted); }
+    .update-value { min-width:0;overflow-wrap:anywhere;padding:9px 10px;border-radius:8px;background:#0a1220;color:#b7c1d2;font-size:12px; }
+    .update-arrow { text-align:center;color:#77859d; }
+    .update-diff.increase .update-value:last-child { color:#77e69a;background:#10251a; }
+    .update-diff.decrease .update-value:last-child { color:#ff8d91;background:#2a1218; }
+    .update-diff.text .update-value:last-child { color:#ffd36e;background:#2a2110; }
+    .update-risk { grid-column:2/-1;padding:9px 11px;border:1px solid #7b5921;border-radius:8px;background:#2a200e;color:#ffd26d;font-size:11px; }
+    .update-empty { padding:34px;text-align:center;color:var(--admin-muted); }
+    .update-assistant-footer { display:flex;justify-content:space-between;gap:12px;align-items:center;border-top:1px solid #243149;background:#0a1220; }
+    .update-footer-actions { display:flex;gap:9px;flex-wrap:wrap;justify-content:flex-end; }
+    .update-final-stats { color:var(--admin-muted);font-size:11px;line-height:1.7; }
+    @media(max-width:760px){
+      .update-assistant-backdrop{padding:0}.update-assistant{max-height:100vh;height:100vh;border-radius:0}
+      .update-summary{grid-template-columns:repeat(2,1fr)}.update-identity-grid{grid-template-columns:1fr}
+      .update-diff{grid-template-columns:24px 1fr 20px 1fr}.update-diff-label{grid-column:2/-1}
+      .update-assistant-footer{align-items:stretch;flex-direction:column}.update-footer-actions{display:grid;grid-template-columns:1fr}
+    }
+
     @media (max-width: 1180px) {
       .hero-media-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1314,6 +1369,27 @@
 
       <div id="message"></div>
     </form>
+  </div>
+
+  <div id="update-assistant-backdrop" class="update-assistant-backdrop" aria-hidden="true">
+    <section class="update-assistant" role="dialog" aria-modal="true" aria-labelledby="update-assistant-title">
+      <header class="update-assistant-head">
+        <div class="update-assistant-eyebrow">⚠ Herói já cadastrado</div>
+        <h2 id="update-assistant-title">Revisar atualização</h2>
+        <p>Encontramos um herói existente. Revise as alterações antes de atualizar.</p>
+      </header>
+      <div id="update-assistant-summary" class="update-summary"></div>
+      <div id="update-assistant-body" class="update-assistant-body"></div>
+      <footer class="update-assistant-footer">
+        <div id="update-final-stats" class="update-final-stats"></div>
+        <div class="update-footer-actions">
+          <button id="update-cancel" class="admin-button" type="button">Cancelar · voltar ao editor</button>
+          <button id="update-discard" class="admin-button" type="button">Descartar importação</button>
+          <button id="update-all" class="admin-button" type="button">Atualizar TODOS</button>
+          <button id="update-selected" class="admin-button primary" type="button">Atualizar campos selecionados</button>
+        </div>
+      </footer>
+    </section>
   </div>
 
   <script type="module">
