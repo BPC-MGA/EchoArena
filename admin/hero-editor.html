@@ -862,6 +862,43 @@
             </div>
 
             <div class="hero-form-field">
+              <label for="rarity-id">
+                Raridade do herói
+              </label>
+
+              <select
+                id="rarity-id"
+                class="admin-select"
+              >
+                <option value="">
+                  Sem raridade
+                </option>
+              </select>
+
+              <span class="hero-field-help">
+                Carregada da tabela hero_rarities.
+              </span>
+            </div>
+
+            <div class="hero-form-field">
+              <label for="faction">
+                Facção
+              </label>
+
+              <input
+                id="faction"
+                class="admin-input"
+                type="text"
+                maxlength="100"
+                placeholder="Ex.: Força e Armas"
+              >
+
+              <span class="hero-field-help">
+                O valor importado do JSON será preenchido automaticamente.
+              </span>
+            </div>
+
+            <div class="hero-form-field">
               <label for="display-order">
                 Ordem de exibição
               </label>
@@ -1485,7 +1522,7 @@
       );
 
       await import(
-        './js/hero-editor.js?v=20260803-success-receipt-3'
+        './js/hero-editor.js?v=20260803-rarity-faction-1'
       );
     }
   </script>
