@@ -250,7 +250,6 @@ let slotAtivo = null;
 let etapa = 1;
 let equipamentoSelecionado = null;
 let buscaPop = '';
-let slotElAtivo = null;
 
 /* ---------- topo ---------- */
 pintar($('user-av'), CONFIG.usuario.media);
@@ -288,7 +287,7 @@ function renderSlots() {
 
     el.onclick = e => {
       if (e.target.closest('.rm')) { limparSlot(s.key); return; }
-      abrirPop(s.key, el);
+      abrirPop(s.key);
     };
 
     if (mobile) {
@@ -325,9 +324,8 @@ function slotAtual() {
   return CONFIG.slots.find(s => s.key === slotAtivo) || null;
 }
 
-function abrirPop(key, elemento) {
+function abrirPop(key) {
   slotAtivo = key;
-  slotElAtivo = elemento || null;
   buscaPop = '';
   $('pop-search').value = '';
 
@@ -349,7 +347,6 @@ function abrirPop(key, elemento) {
 function fecharPop() {
   $('pop').hidden = true;
   $('pop-back').hidden = true;
-  slotElAtivo = null;
   renderSlots();
 }
 
@@ -365,7 +362,9 @@ function posicionarPop() {
     return;
   }
 
-  const alvo = slotElAtivo || document.querySelector('.slot.active');
+  /* Sempre consultar o DOM: renderSlots() recria os slots e
+     qualquer referência guardada antes fica órfã. */
+  const alvo = document.querySelector('.slot.active');
   if (!alvo) return;
 
   const r = alvo.getBoundingClientRect();
