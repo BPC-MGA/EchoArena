@@ -392,6 +392,7 @@ function initSaveFeedback(params) {
 
   const overlay = ensureSaveFeedbackUi();
   const wasEditing = Boolean(params.get('id'));
+  const receiptKey = 'equipment-save-success-receipt';
   let savePending = false;
   let timeoutId = null;
 
@@ -404,6 +405,7 @@ function initSaveFeedback(params) {
   };
 
   const closeOverlay = () => {
+    sessionStorage.removeItem(receiptKey);
     overlay.className = 'equipment-save-feedback';
     overlay.innerHTML = '';
     document.documentElement.style.overflow = '';
@@ -421,23 +423,41 @@ function initSaveFeedback(params) {
     </div></div>`;
   };
 
-  const showSuccess = text => {
+  const showSuccess = (text, restoredReceipt = null) => {
     savePending = false;
     window.clearTimeout(timeoutId);
-    const editingNow = wasEditing || Boolean(new URLSearchParams(location.search).get('id'));
-    const stats = equipmentFormStats();
-    const savedId = new URLSearchParams(location.search).get('id');
+    const currentParams = new URLSearchParams(location.search);
+    const editingNow = restoredReceipt?.editing ?? (wasEditing || Boolean(currentParams.get('id')));
+    const stats = restoredReceipt?.stats || equipmentFormStats();
+    const savedId = restoredReceipt?.savedId || currentParams.get('id');
+    const savedName = restoredReceipt?.name || equipmentName();
+    const confirmedText = restoredReceipt?.text || text || 'Os dados foram confirmados no banco de dados.';
+
+    if (!restoredReceipt) {
+      sessionStorage.setItem(receiptKey, JSON.stringify({
+        editing: editingNow,
+        stats,
+        savedId: savedId || null,
+        name: savedName,
+        text: confirmedText,
+        createdAt: Date.now()
+      }));
+    }
+
     openOverlay('success');
     overlay.innerHTML = `<div class="equipment-save-feedback-card"><div class="equipment-save-feedback-line"></div><div class="equipment-save-feedback-body">
       <div class="equipment-save-feedback-icon">✓</div>
       <div class="equipment-save-feedback-kicker">${editingNow ? 'ATUALIZAÇÃO CONCLUÍDA' : 'CADASTRO CONCLUÍDO'}</div>
       <h2>Equipamento ${editingNow ? 'atualizado' : 'salvo'} com sucesso!</h2>
-      <div class="equipment-save-feedback-copy">${escapeHtml(text || 'Os dados foram confirmados no banco de dados.')}</div>
-      <div class="equipment-save-feedback-name">${escapeHtml(equipmentName())}</div>
+      <div class="equipment-save-feedback-copy">${escapeHtml(confirmedText)}</div>
+      <div class="equipment-save-feedback-name">${escapeHtml(savedName)}</div>
       <div class="equipment-save-feedback-details"><div>✓ Informações gerais confirmadas</div><div>✓ ${stats.rarityCount} raridades processadas</div><div>✓ ${stats.attributeCount} atributos confirmados</div><div>✓ ${stats.bonusCount} bônus processados</div></div>
       <div class="equipment-save-feedback-actions"><button type="button" class="equipment-save-feedback-button" data-save-action="continue">Continuar editando</button><a class="equipment-save-feedback-button" href="./equipments.html">Voltar à lista</a><a class="equipment-save-feedback-button primary" href="${savedId ? `./equipment-editor.html?id=${encodeURIComponent(savedId)}` : './equipments.html'}">${savedId ? 'Abrir equipamento salvo' : 'Ver equipamentos'}</a></div>
     </div></div>`;
     overlay.querySelector('[data-save-action="continue"]')?.addEventListener('click', closeOverlay);
+    overlay.querySelectorAll('a').forEach(link => {
+      link.addEventListener('click', () => sessionStorage.removeItem(receiptKey));
+    });
   };
 
   const showError = text => {
@@ -479,6 +499,24 @@ function initSaveFeedback(params) {
     }, 45000);
     window.setTimeout(inspectMessage, 0);
   }, true);
+
+  try {
+    const receipt = JSON.parse(sessionStorage.getItem(receiptKey) || 'null');
+    const currentId = new URLSearchParams(location.search).get('id');
+    const currentName = equipmentName();
+    const fresh = receipt?.createdAt && Date.now() - receipt.createdAt < 10 * 60 * 1000;
+    const sameEquipment =
+      (receipt?.savedId && currentId && receipt.savedId === currentId) ||
+      (receipt?.name && currentName && normalizeKey(receipt.name) === normalizeKey(currentName));
+
+    if (receipt && fresh && sameEquipment) {
+      window.setTimeout(() => showSuccess(receipt.text, receipt), 0);
+    } else if (receipt) {
+      sessionStorage.removeItem(receiptKey);
+    }
+  } catch {
+    sessionStorage.removeItem(receiptKey);
+  }
 }
 
 export async function initEquipmentEditorEnhancements({params, importedDraft}) {
