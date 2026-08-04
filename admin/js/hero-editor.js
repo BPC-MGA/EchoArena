@@ -17,6 +17,8 @@ const fields = {
   name: document.getElementById('name'),
   slug: document.getElementById('slug'),
   classId: document.getElementById('class-id'),
+  rarityId: document.getElementById('rarity-id'),
+  faction: document.getElementById('faction'),
   displayOrder: document.getElementById('display-order'),
   description: document.getElementById('description'),
   enabled: document.getElementById('enabled'),
@@ -834,6 +836,34 @@ async function loadHeroClasses() {
         value="${heroClass.id}"
         data-slug="${heroClass.slug || ''}"
       >${heroClass.name}</option>
+    `).join('')}
+  `;
+}
+
+async function loadHeroRarities() {
+  const { data, error } = await supabase
+    .from('hero_rarities')
+    .select('id,name,slug,rank,color')
+    .order('rank', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  const rarities = data || [];
+
+  if (!fields.rarityId) {
+    return;
+  }
+
+  fields.rarityId.innerHTML = `
+    <option value="">Sem raridade</option>
+    ${rarities.map(rarity => `
+      <option
+        value="${rarity.id}"
+        data-slug="${rarity.slug || ''}"
+        data-color="${rarity.color || ''}"
+      >${rarity.name}</option>
     `).join('')}
   `;
 }
@@ -1802,6 +1832,40 @@ function findClassOption(className) {
   }) || null;
 }
 
+function findRarityOption(rarityName) {
+  if (!fields.rarityId || !rarityName) {
+    return null;
+  }
+
+  const wanted = normalizeText(rarityName);
+  const options = [...fields.rarityId.options];
+
+  return options.find(option => {
+    if (!option.value) {
+      return false;
+    }
+
+    return (
+      normalizeText(option.textContent) === wanted ||
+      normalizeText(option.dataset.slug) === wanted
+    );
+  }) || options.find(option => {
+    if (!option.value) {
+      return false;
+    }
+
+    const text = normalizeText(option.textContent);
+    const slug = normalizeText(option.dataset.slug);
+
+    return (
+      text.includes(wanted) ||
+      wanted.includes(text) ||
+      slug.includes(wanted) ||
+      wanted.includes(slug)
+    );
+  }) || null;
+}
+
 function saveImportDraft(data) {
   sessionStorage.setItem(
     IMPORT_KEY,
@@ -1864,6 +1928,31 @@ function applyImportedData(data) {
   if (hero.description) {
     setFieldValue(fields.description, hero.description, 'input');
     applied.push('descrição');
+  }
+
+  if (data.meta?.rarity) {
+    const rarityOption = findRarityOption(data.meta.rarity);
+
+    if (rarityOption) {
+      fields.rarityId.value = rarityOption.value;
+      fields.rarityId.dispatchEvent(
+        new Event('change', { bubbles: true })
+      );
+      applied.push('raridade');
+    } else {
+      warnings.push(
+        `Raridade "${data.meta.rarity}" não encontrada.`
+      );
+    }
+  }
+
+  if (data.meta?.faction) {
+    setFieldValue(
+      fields.faction,
+      data.meta.faction,
+      'input'
+    );
+    applied.push('facção');
   }
 
   if (hero.displayOrder !== null) {
@@ -2090,6 +2179,10 @@ function injectImportUi() {
         ? findClassOption(validatedData.hero.class)
         : null;
 
+      const rarityOption = validatedData.meta?.rarity
+        ? findRarityOption(validatedData.meta.rarity)
+        : null;
+
       resultArea.innerHTML = `
         <div class="hero-import-summary">
           <div><small>Informações</small><strong>${countValues(validatedData.hero)}</strong></div>
@@ -2115,11 +2208,31 @@ function injectImportUi() {
             : 'Classe não informada.'}
         </div>
 
-        ${countValues(validatedData.meta) ? `
-          <div class="hero-import-note warn">
-            Nível e raridade foram reconhecidos, mas o editor atual ainda não possui campos de destino para salvá-los.
-          </div>
-        ` : ''}
+        <div class="hero-import-note ${
+          validatedData.meta?.rarity
+            ? (rarityOption ? 'ok' : 'warn')
+            : 'warn'
+        }">
+          ${
+            validatedData.meta?.rarity
+              ? (
+                  rarityOption
+                    ? `Raridade encontrada: ${escapeHtml(rarityOption.textContent.trim())}.`
+                    : `Raridade não encontrada: ${escapeHtml(validatedData.meta.rarity)}.`
+                )
+              : 'Raridade não informada.'
+          }
+        </div>
+
+        <div class="hero-import-note ${
+          validatedData.meta?.faction ? 'ok' : 'warn'
+        }">
+          ${
+            validatedData.meta?.faction
+              ? `Facção reconhecida: ${escapeHtml(validatedData.meta.faction)}.`
+              : 'Facção não informada.'
+          }
+        </div>
       `;
 
       applyButton.disabled = false;
@@ -2198,6 +2311,8 @@ function populateHero(hero) {
   fields.name.value = hero.name ?? '';
   fields.slug.value = hero.slug ?? '';
   fields.classId.value = hero.class_id ?? '';
+  fields.rarityId.value = hero.rarity_id ?? '';
+  fields.faction.value = hero.faction ?? '';
   fields.displayOrder.value = String(hero.display_order ?? 0);
   fields.description.value = hero.description ?? '';
   fields.enabled.checked = hero.enabled !== false;
@@ -2235,7 +2350,7 @@ async function loadHero() {
   const { data, error } = await supabase
     .from('heroes')
     .select(`
-      id, name, slug, description, class_id, enabled, display_order,
+      id, name, slug, description, class_id, rarity_id, faction, enabled, display_order,
       image_path, image_scale, image_offset_x, image_offset_y,
       card_image_path, card_image_scale, card_image_offset_x, card_image_offset_y,
       gif_path, gif_scale, gif_offset_x, gif_offset_y
@@ -2340,7 +2455,7 @@ function createDiff({ key, label, group, before, after, kind = 'text', apply, se
 async function loadExistingHeroBundle(targetId) {
   const [heroResult, heroStatsResult, weaponStatsResult] = await Promise.all([
     supabase.from('heroes').select(`
-      id, name, slug, description, class_id, enabled, display_order,
+      id, name, slug, description, class_id, rarity_id, faction, enabled, display_order,
       image_path, image_scale, image_offset_x, image_offset_y,
       card_image_path, card_image_scale, card_image_offset_x, card_image_offset_y,
       gif_path, gif_scale, gif_offset_x, gif_offset_y
@@ -2360,8 +2475,31 @@ async function loadExistingHeroBundle(targetId) {
 }
 
 function classNameForId(id) {
-  const option = [...(fields.classId?.options || [])].find(item => item.value === String(id || ''));
+  const option = [...(fields.classId?.options || [])].find(
+    item => item.value === String(id || '')
+  );
+
   return option?.textContent.trim() || 'Sem classe';
+}
+
+function rarityNameForId(id) {
+  const option = [...(fields.rarityId?.options || [])].find(
+    item => item.value === String(id || '')
+  );
+
+  return option?.textContent.trim() || 'Sem raridade';
+}
+
+function formatHeroDiffValue(item, value) {
+  if (item.key === 'class_id') {
+    return classNameForId(value);
+  }
+
+  if (item.key === 'rarity_id') {
+    return rarityNameForId(value);
+  }
+
+  return displayDiffValue(value);
 }
 
 function buildUpdateDiffs(bundle) {
@@ -2372,6 +2510,8 @@ function buildUpdateDiffs(bundle) {
   const diffs = [
     createDiff({ key:'name', label:'Nome', group:'Geral', before:hero.name, after:importedValue('name',fields.name.value.trim(),hero.name), apply:{ type:'hero', column:'name' } }),
     createDiff({ key:'class_id', label:'Classe', group:'Geral', before:hero.class_id, after:importedValue('class',fields.classId.value || null,hero.class_id), apply:{ type:'hero', column:'class_id' } }),
+    createDiff({ key:'rarity_id', label:'Raridade', group:'Geral', before:hero.rarity_id, after:loadImportDraft()?.data?.meta?.rarity == null ? hero.rarity_id : (fields.rarityId.value || null), apply:{ type:'hero', column:'rarity_id' } }),
+    createDiff({ key:'faction', label:'Facção', group:'Geral', before:hero.faction, after:loadImportDraft()?.data?.meta?.faction == null ? hero.faction : (fields.faction.value.trim() || null), apply:{ type:'hero', column:'faction' } }),
     createDiff({ key:'description', label:'Descrição', group:'Geral', before:hero.description, after:importedValue('description',fields.description.value.trim() || null,hero.description), apply:{ type:'hero', column:'description' } }),
     createDiff({ key:'enabled', label:'Publicação', group:'Geral', before:hero.enabled, after:importedValue('active',fields.enabled.checked,hero.enabled), apply:{ type:'hero', column:'enabled' } }),
     createDiff({ key:'display_order', label:'Ordem de exibição', group:'Geral', before:hero.display_order, after:importedValue('displayOrder',toNumber(fields.displayOrder.value,0),hero.display_order), kind:'number', apply:{ type:'hero', column:'display_order' } })
@@ -2444,8 +2584,8 @@ function renderUpdateAssistant() {
       <div class="update-diff ${item.change} ${item.changed ? '' : 'is-same'}">
         <input type="checkbox" data-diff-key="${escapeHtml(item.key)}" ${item.selected ? 'checked' : ''} ${item.changed ? '' : 'disabled'} aria-label="Atualizar ${escapeHtml(item.label)}">
         <div class="update-diff-label"><strong>${escapeHtml(item.label)}</strong><small>${item.changed ? (item.change === 'increase' ? '▲ Aumento' : item.change === 'decrease' ? '▼ Redução' : '⚠ Modificado') : '✔ Sem alteração'}</small></div>
-        <div class="update-value">${escapeHtml(item.key === 'class_id' ? classNameForId(item.before) : displayDiffValue(item.before))}</div><div class="update-arrow">→</div>
-        <div class="update-value">${escapeHtml(item.key === 'class_id' ? classNameForId(item.after) : displayDiffValue(item.after))}</div>
+        <div class="update-value">${escapeHtml(formatHeroDiffValue(item, item.before))}</div><div class="update-arrow">→</div>
+        <div class="update-value">${escapeHtml(formatHeroDiffValue(item, item.after))}</div>
         ${item.risky ? '<div class="update-risk">⚠ Alteração muito grande — diferença superior a 80%. Confirme com atenção; pode ser um erro de OCR.</div>' : ''}
       </div>`).join('')}</section>`;
   }).join('');
@@ -2639,6 +2779,8 @@ function collectPayload(slug, uploadedMedia) {
     slug,
     description: fields.description.value.trim() || null,
     class_id: fields.classId.value || null,
+    rarity_id: fields.rarityId.value || null,
+    faction: fields.faction.value.trim() || null,
     enabled: fields.enabled.checked,
     display_order: toNumber(fields.displayOrder.value, 0),
 
@@ -2786,6 +2928,7 @@ async function initialize() {
 
     await Promise.all([
       loadHeroClasses(),
+      loadHeroRarities(),
       loadStatDefinitions()
     ]);
 
