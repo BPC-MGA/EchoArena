@@ -186,6 +186,9 @@ img,video{display:block;max-width:100%}
 .dots i.on{background:var(--pur);width:22px}
 
 /* ===== BOX FLUTUANTE DE EQUIPAMENTOS ===== */
+/* [hidden] precisa vencer o display do .pop, senão a caixa
+   fica invisível mas ainda por cima da tela, comendo os cliques. */
+.pop[hidden],.pop-back[hidden]{display:none!important}
 .pop-back{position:fixed;inset:0;z-index:70}
 .pop{position:fixed;z-index:71;width:322px;max-width:calc(100vw - 24px);
   display:flex;flex-direction:column;max-height:min(62vh,520px);
