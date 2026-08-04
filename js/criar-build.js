@@ -1,0 +1,674 @@
+import { supabase } from './supabase.js';
+
+/* ============================================================
+   CRIAR BUILD — lógica da página
+   Mídia aceita .png .jpg .gif (transparente) .mp4 .webm
+   media: { src, fit, pos, scale, x, y }
+   ============================================================ */
+
+const MEDIA_BUCKET = 'game-media';
+
+const RARIDADES = {
+  comum:{ nome:'Comum', cor:'#8A93AD' }, raro:{ nome:'Raro', cor:'#4CC7E8' },
+  epico:{ nome:'Épico', cor:'#A855F7' }, divino:{ nome:'Divino', cor:'#FBBF24' },
+  lendario:{ nome:'Lendário', cor:'#FBBF24' }, mitico:{ nome:'Mítico', cor:'#FB923C' },
+  supremo:{ nome:'Supremo', cor:'#F87171' }, grandioso:{ nome:'Grandioso', cor:'#C084FC' },
+  celestial:{ nome:'Celestial', cor:'#38BDF8' }, estelar:{ nome:'Estelar', cor:'#A78BFA' },
+  imortal:{ nome:'Imortal', cor:'#FB7185' }
+};
+
+/* Slots de reserva — só aparecem se equipment_slots vier vazio. */
+const SLOTS_PADRAO = [
+  { key:'coracao', label:'Coração' }, { key:'arma', label:'Arma' },
+  { key:'gadget', label:'Gadget' },   { key:'suporte', label:'Suporte' },
+  { key:'modulo', label:'Módulo' },   { key:'especial', label:'Especial' }
+];
+
+let CONFIG = {
+  usuario: { nome:'SlayerX', nivel:42, media:{ src:'', fit:'cover' } },
+  heroi: { id:'', nome:'—', classe:'', media:{ src:'', fit:'contain' } },
+  slots: SLOTS_PADRAO.map((s, i, a) => ({ ...s, ...posicaoAnel(i, a.length) })),
+  equipados: {},
+  herois: [],
+  catalogo: [],
+
+  /* ETAPA 6 (pendente): números fixos até existir a base de stats do herói
+     por nível e o mapeamento equipamento → macro-atributo. */
+  stats: [
+    { nome:'Poder de fogo',  valor:8450, delta:'+32%', pct:84, cor:'#FF5470', icone:'🚀' },
+    { nome:'Sobrevivência',  valor:9120, delta:'+28%', pct:91, cor:'#4ADE80', icone:'🛡' },
+    { nome:'Mobilidade',     valor:7210, delta:'+18%', pct:72, cor:'#FBBF24', icone:'⚡' },
+    { nome:'Suporte',        valor:6340, delta:'+12%', pct:63, cor:'#5B8DEF', icone:'✚' },
+    { nome:'Controle',       valor:7890, delta:'+22%', pct:79, cor:'#A855F7', icone:'✧' }
+  ],
+  bonus: [],
+  resumo: { tagA:'—', tagB:'—', texto:'Escolha um herói e monte o loadout para ver o resumo.' }
+};
+
+/* ---------- helpers ---------- */
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const isVid = s => /\.(mp4|webm)$/i.test(s || '');
+const mStyle = m => m ? `--fit:${m.fit||'contain'};--pos:${m.pos||'50% 50%'};--scale:${m.scale==null?1:m.scale};--x:${m.x||0};--y:${m.y||0}` : '';
+const mInner = m => (!m || !m.src) ? '' : (isVid(m.src)
+  ? `<video src="${esc(m.src)}" autoplay muted loop playsinline></video>`
+  : `<img src="${esc(m.src)}" alt="" loading="lazy">`);
+const rc = r => (RARIDADES[r] || RARIDADES.comum).cor;
+const rn = r => (RARIDADES[r] || RARIDADES.comum).nome;
+const normalizar = s => String(s ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+function pintar(el, m) {
+  if (!el) return;
+  el.setAttribute('style', mStyle(m));
+  el.innerHTML = mInner(m);
+  el.classList.toggle('ph', !(m && m.src));
+}
+
+/* Cor do nível cadastrado no banco; cai no mapa local se o item não tiver níveis. */
+function corDoItem(item) {
+  if (!item) return '#332B63';
+  const level = nivelAtual(item);
+  return level?.cor || rc(item.raridade);
+}
+function nomeDoNivel(item) {
+  const level = nivelAtual(item);
+  return level?.nome || rn(item?.raridade);
+}
+function nivelAtual(item) {
+  return item?.levels?.find(level => level.slug === item.raridade) || item?.levels?.[0] || null;
+}
+
+/* Posição do slot no anel: duas colunas espelhadas, barriga pra fora no meio.
+   Funciona com qualquer quantidade de slots vinda do banco. */
+function posicaoAnel(indice, total) {
+  const esquerda = Math.ceil(total / 2);
+  const naEsquerda = indice % 2 === 0;
+  const ordemNaColuna = Math.floor(indice / 2);
+  const qtdColuna = naEsquerda ? esquerda : total - esquerda;
+  const t = qtdColuna <= 1 ? 0.5 : ordemNaColuna / (qtdColuna - 1);
+  const curva = Math.sin(t * Math.PI);
+  return { y: 12 + t * 72, x: naEsquerda ? 22 - 12 * curva : 78 + 12 * curva };
+}
+
+function getMediaUrl(path, legacyUrl = '') {
+  if (path) {
+    const { data } = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(path);
+    return data?.publicUrl || legacyUrl || '';
+  }
+  return legacyUrl || '';
+}
+
+/* ============================================================
+   SUPABASE — conteúdo administrável
+   ============================================================ */
+async function carregarConteudoSupabase() {
+  const [
+    heroesResult, classesResult, equipmentsResult, slotsResult,
+    rarityLevelsResult, equipmentSetsResult, setBonusesResult
+  ] = await Promise.all([
+    supabase.from('heroes').select(`
+        id, name, slug, class_id, enabled, display_order,
+        image_path, card_image_path, gif_path,
+        image_url, card_image_url, gif_url,
+        image_fit, image_position, image_scale, image_offset_x, image_offset_y
+      `).eq('enabled', true)
+      .order('display_order', { ascending: true })
+      .order('name', { ascending: true }),
+
+    supabase.from('hero_classes').select('id,name,slug,color,icon')
+      .order('name', { ascending: true }),
+
+    supabase.from('equipments').select(`
+        id, name, description, image_path, image_url, rarity,
+        slot_id, set_id, recommendation_text, enabled, display_order
+      `).eq('enabled', true)
+      .order('display_order', { ascending: true })
+      .order('name', { ascending: true }),
+
+    supabase.from('equipment_slots').select('id,name,slug,display_order')
+      .order('display_order', { ascending: true }),
+
+    supabase.from('equipment_rarity_levels')
+      .select('equipment_id,rarity_slug,rarity_name,rarity_order,rarity_color,stats')
+      .order('rarity_order', { ascending: true }),
+
+    supabase.from('equipment_sets').select('id,name,slug,description,image_path'),
+
+    supabase.from('equipment_set_bonuses')
+      .select('id,set_id,required_pieces,title,description,display_order')
+      .order('required_pieces', { ascending: true })
+      .order('display_order', { ascending: true })
+  ]);
+
+  const falhas = [
+    ['heróis', heroesResult], ['classes', classesResult], ['equipamentos', equipmentsResult],
+    ['slots', slotsResult], ['níveis', rarityLevelsResult],
+    ['conjuntos', equipmentSetsResult], ['bônus de conjunto', setBonusesResult]
+  ].filter(([, r]) => r.error);
+  falhas.forEach(([nome, r]) => console.error(`Erro ao carregar ${nome}:`, r.error));
+
+  const classes = new Map((classesResult.data || []).map(i => [i.id, i]));
+  const sets = new Map((equipmentSetsResult.data || []).map(i => [i.id, i]));
+
+  const slotsPorId = new Map((slotsResult.data || []).map(i => [i.id, i]));
+
+  const rarityLevels = new Map();
+  for (const level of (rarityLevelsResult.data || [])) {
+    if (!rarityLevels.has(level.equipment_id)) rarityLevels.set(level.equipment_id, []);
+    rarityLevels.get(level.equipment_id).push(level);
+  }
+
+  const setBonuses = new Map();
+  for (const bonus of (setBonusesResult.data || [])) {
+    if (!setBonuses.has(bonus.set_id)) setBonuses.set(bonus.set_id, []);
+    setBonuses.get(bonus.set_id).push(bonus);
+  }
+
+  /* --- slots do anel vêm do banco (sem apelidos, sem colisão) --- */
+  const slotsDb = (slotsResult.data || []).filter(s => s.slug);
+  if (slotsDb.length) {
+    CONFIG.slots = slotsDb.map((s, i) => ({
+      key: s.slug,
+      label: s.name || s.slug,
+      slotId: s.id,
+      ...posicaoAnel(i, slotsDb.length)
+    }));
+  }
+
+  /* --- heróis --- */
+  const heroes = (heroesResult.data || []).map(hero => {
+    const heroClass = classes.get(hero.class_id);
+    const offsetX = `${Number(hero.image_offset_x ?? 0)}%`;
+    const offsetY = `${Number(hero.image_offset_y ?? 0)}%`;
+    const cardX = `${Number(hero.card_image_offset_x ?? 0)}%`;
+    const cardY = `${Number(hero.card_image_offset_y ?? 0)}%`;
+
+    const mainSource = getMediaUrl(
+      hero.image_path || hero.card_image_path || hero.gif_path,
+      hero.image_url || hero.card_image_url || hero.gif_url
+    );
+    const cardSource = getMediaUrl(
+      hero.card_image_path || hero.image_path || hero.gif_path,
+      hero.card_image_url || hero.image_url || hero.gif_url
+    );
+
+    return {
+      id: hero.slug || hero.id,
+      databaseId: hero.id,
+      nome: hero.name,
+      classe: heroClass?.name || 'Sem classe',
+      cor: heroClass?.color || '#A855F7',
+      media: { src: cardSource, fit:'cover', pos:'50% 50%', scale: Number(hero.card_image_scale ?? 1), x: cardX, y: cardY },
+      destaque: { src: mainSource, fit:'contain', pos:'50% 50%', scale: Number(hero.image_scale ?? 1), x: offsetX, y: offsetY }
+    };
+  });
+
+  /* --- equipamentos --- */
+  const equipments = (equipmentsResult.data || []).map(item => {
+    const slot = slotsPorId.get(item.slot_id);
+    const levels = rarityLevels.get(item.id) || [];
+    const initialLevel = levels[0];
+    const equipmentSet = sets.get(item.set_id) || null;
+
+    return {
+      databaseId: item.id,
+      nome: item.name,
+      slot: slot?.slug || null,
+      slotLabel: slot?.name || '',
+      raridade: initialLevel?.rarity_slug || String(item.rarity || 'comum').toLowerCase(),
+      descricao: item.description || '',
+      recommendation: item.recommendation_text || '',
+      setId: item.set_id || null,
+      set: equipmentSet ? {
+        id: equipmentSet.id, nome: equipmentSet.name, slug: equipmentSet.slug,
+        descricao: equipmentSet.description || '', bonus: setBonuses.get(equipmentSet.id) || []
+      } : null,
+      levels: levels.map(level => ({
+        slug: level.rarity_slug, nome: level.rarity_name, ordem: level.rarity_order,
+        cor: level.rarity_color || rc(level.rarity_slug), stats: level.stats || {}
+      })),
+      media: { src: getMediaUrl(item.image_path, item.image_url), fit:'contain', pos:'50% 50%', scale:1, x:0, y:0 }
+    };
+  });
+
+  if (heroes.length) {
+    CONFIG.herois = heroes;
+    const first = heroes[0];
+    CONFIG.heroi = {
+      id: first.id, databaseId: first.databaseId, nome: first.nome.toUpperCase(),
+      classe: first.classe, media: first.destaque
+    };
+  }
+
+  CONFIG.catalogo = equipments;
+  CONFIG.equipados = {};
+}
+
+/* ---------- estado ---------- */
+let heroiAtual = '';
+let slotAtivo = null;
+let etapa = 1;
+let equipamentoSelecionado = null;
+let buscaGaveta = '';
+let mostrarTodos = false;
+
+/* ---------- topo ---------- */
+pintar($('user-av'), CONFIG.usuario.media);
+$('user-nm').innerHTML = esc(CONFIG.usuario.nome) + '<small>Nível ' + esc(CONFIG.usuario.nivel) + '</small>';
+
+/* ---------- herói + slots ---------- */
+function renderHeroi() {
+  $('hero-name').textContent = CONFIG.heroi.nome;
+  $('hero-role').textContent = CONFIG.heroi.classe;
+  pintar($('hero-art'), CONFIG.heroi.media);
+  renderSlots();
+}
+
+function renderSlots() {
+  const ring = $('ring');
+  ring.querySelectorAll('.slot').forEach(s => s.remove());
+  const mob = $('slots-mobile');
+  mob.innerHTML = '';
+  const mobile = window.matchMedia('(max-width:720px)').matches;
+
+  CONFIG.slots.forEach(s => {
+    const it = CONFIG.equipados[s.key];
+    const el = document.createElement('div');
+    el.className = 'slot' + (it ? '' : ' empty') + (slotAtivo === s.key ? ' active' : '');
+    el.dataset.slot = s.key;
+    el.style.setProperty('--rc', corDoItem(it));
+    el.innerHTML =
+      '<div class="lb">' + esc(s.label) + '</div>' +
+      (it ? '<button class="rm" type="button" aria-label="Remover">✕</button>' : '') +
+      '<div class="hex">' + (it
+        ? '<div class="media ' + (it.media && it.media.src ? '' : 'ph') + '" style="' + mStyle(it.media) + '">' + mInner(it.media) + '</div>'
+        : '<span class="plus">+</span>') + '</div>' +
+      (it ? '<div class="in"><b>' + esc(it.nome) + '</b><i>' + esc(nomeDoNivel(it)) + '</i></div>'
+          : '<div class="in"><b>Vazio</b></div>');
+
+    el.onclick = e => {
+      if (e.target.closest('.rm')) { limparSlot(s.key); return; }
+      abrirGaveta(s.key);
+    };
+
+    if (mobile) {
+      mob.appendChild(el);
+    } else {
+      el.style.position = 'absolute';
+      el.style.left = s.x + '%';
+      el.style.top = s.y + '%';
+      el.style.transform = 'translate(-50%,-50%)';
+      ring.appendChild(el);
+    }
+  });
+
+  atualizarContagem();
+}
+
+function atualizarContagem() {
+  const n = CONFIG.slots.filter(s => CONFIG.equipados[s.key]).length;
+  $('eq-count').textContent = n + '/' + CONFIG.slots.length;
+}
+
+function limparSlot(key) {
+  delete CONFIG.equipados[key];
+  if (equipamentoSelecionado && slotAtivo === key) equipamentoSelecionado = null;
+  renderSlots();
+  renderSinergia();
+  renderDetalheEquipamento(CONFIG.equipados[slotAtivo] || null);
+  if (!$('dw').hidden) renderCatalogo();
+}
+
+/* ---------- gaveta de equipamentos ---------- */
+function slotAtual() {
+  return CONFIG.slots.find(s => s.key === slotAtivo) || null;
+}
+
+function abrirGaveta(key) {
+  slotAtivo = key;
+  buscaGaveta = '';
+  mostrarTodos = false;
+  $('dw-search').value = '';
+  $('dw-scope').classList.remove('on');
+  $('dw-scope').dataset.all = '0';
+  $('dw-scope').textContent = 'Só deste slot';
+
+  const s = slotAtual();
+  $('dw-eyebrow').textContent = 'Slot ' + (CONFIG.slots.findIndex(x => x.key === key) + 1) + ' de ' + CONFIG.slots.length;
+  $('dw-title').textContent = s ? s.label : 'Equipamento';
+  $('dw-clear').hidden = !CONFIG.equipados[key];
+
+  $('dw').hidden = false;
+  $('dw-back').hidden = false;
+  document.body.style.overflow = 'hidden';
+
+  renderSlots();
+  renderCatalogo();
+  renderDetalheEquipamento(CONFIG.equipados[key] || null);
+  progresso(3);
+  $('dw-search').focus({ preventScroll: true });
+}
+
+function fecharGaveta() {
+  $('dw').hidden = true;
+  $('dw-back').hidden = true;
+  document.body.style.overflow = '';
+}
+
+function itensDaGaveta() {
+  const termo = normalizar(buscaGaveta).trim();
+  return CONFIG.catalogo.filter(i => {
+    const doSlot = mostrarTodos || !slotAtivo || i.slot === slotAtivo;
+    const bate = !termo || normalizar(i.nome).includes(termo) || normalizar(i.set?.nome).includes(termo);
+    return doSlot && bate;
+  });
+}
+
+function renderCatalogo() {
+  const lista = itensDaGaveta();
+  const alvo = $('ilist');
+
+  if (!lista.length) {
+    alvo.innerHTML = '<div class="message">Nenhum equipamento cadastrado para este slot.'
+      + (mostrarTodos ? '' : ' Toque em “Mostrar todos” para ver o catálogo inteiro.') + '</div>';
+    return;
+  }
+
+  const equipado = slotAtivo ? CONFIG.equipados[slotAtivo] : null;
+
+  alvo.innerHTML = lista.map((i, idx) => {
+    const sel = equipado && equipado.databaseId === i.databaseId;
+    return `
+      <div class="item ${sel ? 'sel' : ''}" data-i="${idx}" style="--rc:${esc(corDoItem(i))}">
+        <div class="ic media ${i.media && i.media.src ? '' : 'ph'}" style="${mStyle(i.media)}">${mInner(i.media)}</div>
+        <div class="tx">
+          <b>${esc(i.nome)}</b>
+          <i>${esc(nomeDoNivel(i))}</i>
+          <u>${esc(i.set?.nome || i.slotLabel || 'Equipamento individual')}</u>
+        </div>
+        ${sel ? '<span class="ok">✓</span>' : ''}
+      </div>`;
+  }).join('');
+
+  alvo.onclick = e => {
+    const el = e.target.closest('.item');
+    if (!el) return;
+    equipar(lista[+el.dataset.i]);
+  };
+}
+
+function equipar(item) {
+  if (!item) return;
+  const destino = slotAtivo || item.slot || CONFIG.slots[0]?.key;
+  if (!destino) return;
+
+  CONFIG.equipados[destino] = {
+    databaseId:item.databaseId, nome:item.nome, raridade:item.raridade, media:item.media,
+    setId:item.setId, set:item.set, levels:item.levels, descricao:item.descricao,
+    recommendation:item.recommendation, slot:item.slot, slotLabel:item.slotLabel
+  };
+
+  slotAtivo = destino;
+  $('dw-clear').hidden = false;
+  renderSlots();
+  renderCatalogo();
+  renderDetalheEquipamento(CONFIG.equipados[destino]);
+  renderSinergia();
+  progresso(3);
+}
+
+/* ---------- detalhe do equipamento ---------- */
+function formatStatLabel(key) {
+  const labels = {
+    vision_range: 'Alcance de visão do herói',
+    weapon_damage_to_armor_pct: 'Dano da arma à armadura inimiga',
+    weapon_damage_to_health_pct: 'Dano da arma à vida inimiga',
+    weapon_range_franco: 'Alcance de tiro do Franco',
+    special_ability_cooldown_pct: 'Recarga da habilidade especial',
+    crate_opening_cooldown_pct: 'Tempo de abertura da caixa'
+  };
+  return labels[key] || key.replaceAll('_', ' ');
+}
+
+function formatStatValue(key, value) {
+  if (key.endsWith('_pct')) return `${Number(value) >= 0 ? '+' : ''}${value}%`;
+  return `${Number(value) >= 0 ? '+' : ''}${value}`;
+}
+
+function quantidadeDoConjunto(setId) {
+  if (!setId) return 0;
+  return Object.values(CONFIG.equipados).filter(item => item?.setId === setId).length;
+}
+
+function renderDetalheEquipamento(item = equipamentoSelecionado) {
+  const detail = $('equipment-detail');
+
+  if (!item) {
+    equipamentoSelecionado = null;
+    detail.className = 'eq-detail empty';
+    detail.textContent = 'Toque num slot ao redor do herói para escolher e ver níveis, atributos e bônus do conjunto.';
+    return;
+  }
+
+  equipamentoSelecionado = item;
+  const level = nivelAtual(item);
+  const stats = level?.stats || {};
+  const pieces = quantidadeDoConjunto(item.setId);
+  const bonuses = item.set?.bonus || [];
+  const maxPieces = Math.max(CONFIG.slots.length, ...bonuses.map(b => b.required_pieces || 0));
+  const cor = corDoItem(item);
+  const slotDoItem = CONFIG.slots.find(s => CONFIG.equipados[s.key]?.databaseId === item.databaseId);
+
+  detail.className = 'eq-detail';
+  detail.innerHTML = `
+    ${slotDoItem ? `<div class="eq-slotline"><span>Equipado em</span><b>${esc(slotDoItem.label)}</b></div>` : ''}
+
+    <div class="eq-head">
+      <div class="art media ${item.media?.src ? '' : 'ph'}" style="${mStyle(item.media)}">${mInner(item.media)}</div>
+      <div>
+        <div class="set-name">${esc(item.set?.nome || 'Equipamento individual')}</div>
+        <h3>${esc(item.nome)}</h3>
+        <span style="font-size:10px;font-weight:800;color:${esc(cor)}">${esc(nomeDoNivel(item))}</span>
+        <p>${esc(item.descricao)}</p>
+      </div>
+    </div>
+
+    <div class="eq-section">
+      <div class="eq-section-title"><span>Escolha sua classificação</span><span>${esc(level?.nome || '')}</span></div>
+      <div class="rarity-picker">
+        ${(item.levels || []).map(l => `<button class="rarity-btn ${l.slug === item.raridade ? 'on' : ''}" type="button" data-rarity="${esc(l.slug)}" style="--rc:${esc(l.cor)}">${esc(l.nome)}</button>`).join('')}
+      </div>
+    </div>
+
+    <div class="eq-section">
+      <div class="eq-section-title"><span>Atributos neste nível</span><span>${Object.keys(stats).length}</span></div>
+      <div class="eq-stats">
+        ${Object.entries(stats).map(([key,value]) => `<div class="eq-stat" style="--rc:${esc(cor)}"><span>${esc(formatStatLabel(key))}</span><strong>${esc(formatStatValue(key,value))}</strong></div>`).join('') || '<div class="message">Sem atributos cadastrados.</div>'}
+      </div>
+    </div>
+
+    ${item.set ? `<div class="eq-section">
+      <div class="eq-section-title"><span>${esc(item.set.nome)}</span><span>${pieces}/${maxPieces} peças</span></div>
+      <div class="set-progress"><div class="track2"><i style="width:${Math.min(100,(pieces/maxPieces)*100)}%"></i></div><b>${pieces}/${maxPieces}</b></div>
+      <div class="set-bonuses">
+        ${bonuses.map(b => `<div class="set-bonus ${pieces >= b.required_pieces ? 'active' : ''}"><div class="pieces">${esc(b.required_pieces)}</div><div><b>${esc(b.title)}</b><p>${esc(b.description)}</p></div></div>`).join('')}
+      </div>
+    </div>` : ''}
+
+    ${item.recommendation ? `<div class="eq-section"><div class="recommendation"><b>Indicação</b>${esc(item.recommendation)}</div></div>` : ''}
+  `;
+
+  detail.querySelectorAll('[data-rarity]').forEach(button => {
+    button.onclick = () => {
+      item.raridade = button.dataset.rarity;
+      const equipado = Object.values(CONFIG.equipados).find(eq => eq?.databaseId === item.databaseId);
+      if (equipado) equipado.raridade = item.raridade;
+      const noCatalogo = CONFIG.catalogo.find(c => c.databaseId === item.databaseId);
+      if (noCatalogo) noCatalogo.raridade = item.raridade;
+      renderDetalheEquipamento(item);
+      renderSlots();
+      renderSinergia();
+      if (!$('dw').hidden) renderCatalogo();
+    };
+  });
+}
+
+/* ---------- carrossel de heróis ---------- */
+function renderHerois() {
+  const tk = $('track');
+  tk.innerHTML = CONFIG.herois.map(h => `
+    <div class="hcard ${h.id === heroiAtual ? 'on' : ''}" data-id="${esc(h.id)}">
+      <div class="im">
+        <div class="media ${h.media && h.media.src ? '' : 'ph'}" style="${mStyle(h.media)}">${mInner(h.media)}</div>
+        <div class="fd"></div>
+      </div>
+      <div class="cp"><b>${esc(h.nome)}</b><i style="color:${esc(h.cor)}">${esc(h.classe)}</i></div>
+    </div>`).join('');
+
+  tk.onclick = e => {
+    const c = e.target.closest('.hcard');
+    if (!c) return;
+    heroiAtual = c.dataset.id;
+    const h = CONFIG.herois.find(x => x.id === heroiAtual);
+    if (h) {
+      CONFIG.heroi.id = h.id;
+      CONFIG.heroi.databaseId = h.databaseId;
+      CONFIG.heroi.nome = h.nome.toUpperCase();
+      CONFIG.heroi.classe = h.classe;
+      if (h.destaque && h.destaque.src) CONFIG.heroi.media = Object.assign({}, h.destaque);
+      else if (h.media && h.media.src) CONFIG.heroi.media = Object.assign({}, h.media, { fit:'contain' });
+      renderHeroi();
+      CONFIG.resumo.tagA = h.classe;
+      renderBonus();
+    }
+    tk.querySelectorAll('.hcard').forEach(x => x.classList.toggle('on', x === c));
+    progresso(2);
+  };
+
+  const n = Math.max(1, Math.ceil(CONFIG.herois.length / 5));
+  $('dots').innerHTML = Array.from({length:n}, (_,i) => `<i class="${i?'':'on'}"></i>`).join('');
+}
+
+/* ---------- stats / sinergia / bônus ---------- */
+function renderStats() {
+  $('stats').innerHTML = CONFIG.stats.map(s => `
+    <div class="stat">
+      <div class="h"><span class="ic">${esc(s.icone)}</span><span class="nm">${esc(s.nome)}</span>
+        <span class="v">${s.valor.toLocaleString('pt-BR')}</span><span class="d">${esc(s.delta)}</span></div>
+      <div class="tr"><i style="width:${s.pct}%;background:${esc(s.cor)};box-shadow:0 0 8px ${esc(s.cor)}66"></i></div>
+    </div>`).join('');
+}
+
+function renderSinergia() {
+  $('syn').innerHTML = CONFIG.slots.map(s => {
+    const it = CONFIG.equipados[s.key];
+    return `<div class="s media ${it && it.media && it.media.src ? '' : 'ph'}"
+      style="--rc:${esc(corDoItem(it))};${mStyle(it && it.media)}" title="${esc(s.label)}">${mInner(it && it.media)}</div>`;
+  }).join('');
+}
+
+/* Bônus ativos = bônus de conjunto realmente atingidos pelo loadout. */
+function bonusAtivos() {
+  const contagem = new Map();
+  Object.values(CONFIG.equipados).forEach(it => {
+    if (!it?.setId) return;
+    contagem.set(it.setId, (contagem.get(it.setId) || 0) + 1);
+  });
+
+  const ativos = [];
+  const vistos = new Set();
+  Object.values(CONFIG.equipados).forEach(it => {
+    if (!it?.set || vistos.has(it.setId)) return;
+    vistos.add(it.setId);
+    const pecas = contagem.get(it.setId) || 0;
+    (it.set.bonus || [])
+      .filter(b => pecas >= (b.required_pieces || 0))
+      .forEach(b => ativos.push({ nome: b.title, desc: b.description, icone: '◈' }));
+  });
+  return ativos;
+}
+
+function renderBonus() {
+  CONFIG.bonus = bonusAtivos();
+  $('bn-count').textContent = CONFIG.bonus.length;
+  $('bonus').innerHTML = CONFIG.bonus.length
+    ? CONFIG.bonus.map(b => `
+      <div class="b"><span class="ic">${esc(b.icone)}</span>
+        <div><b>${esc(b.nome)}</b><small>${esc(b.desc)}</small></div></div>`).join('')
+    : '<div style="font-size:11.5px;color:var(--faint)">Complete peças de um mesmo conjunto para ativar bônus.</div>';
+
+  $('sum-a').textContent = CONFIG.resumo.tagA;
+  $('sum-b').textContent = CONFIG.resumo.tagB;
+  $('sum-txt').textContent = CONFIG.resumo.texto;
+}
+
+/* ---------- etapas / progresso ---------- */
+function progresso(n) {
+  if (n > etapa) etapa = n;
+  const pct = Math.min(100, etapa * 25);
+  $('prog-pct').textContent = pct + '%';
+  $('prog-bar').style.width = pct + '%';
+  document.querySelectorAll('.step').forEach(s => {
+    const i = +s.dataset.s;
+    s.classList.toggle('on', i === etapa);
+    s.classList.toggle('done', i < etapa);
+  });
+}
+
+/* ---------- eventos ---------- */
+$('steps').onclick = e => {
+  const s = e.target.closest('.step');
+  if (s) progresso(+s.dataset.s);
+};
+$('next-equip').onclick = () => {
+  progresso(4);
+  document.querySelector('.col4').scrollIntoView({ behavior:'smooth', block:'start' });
+};
+$('clear-all').onclick = () => {
+  CONFIG.equipados = {};
+  equipamentoSelecionado = null;
+  renderSlots(); renderSinergia(); renderBonus(); renderDetalheEquipamento(null);
+  if (!$('dw').hidden) { $('dw-clear').hidden = true; renderCatalogo(); }
+};
+$('tk-l').onclick = () => $('track').scrollBy({ left:-300, behavior:'smooth' });
+$('tk-r').onclick = () => $('track').scrollBy({ left: 300, behavior:'smooth' });
+
+$('dw-close').onclick = fecharGaveta;
+$('dw-back').onclick = fecharGaveta;
+$('dw-clear').onclick = () => {
+  if (!slotAtivo) return;
+  limparSlot(slotAtivo);
+  $('dw-clear').hidden = true;
+};
+$('dw-search').oninput = e => { buscaGaveta = e.target.value; renderCatalogo(); };
+$('dw-scope').onclick = e => {
+  mostrarTodos = e.currentTarget.dataset.all !== '1';
+  e.currentTarget.dataset.all = mostrarTodos ? '1' : '0';
+  e.currentTarget.classList.toggle('on', mostrarTodos);
+  e.currentTarget.textContent = mostrarTodos ? 'Mostrar todos' : 'Só deste slot';
+  renderCatalogo();
+};
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !$('dw').hidden) fecharGaveta();
+});
+
+$('b-name').oninput = e => { $('c-name').textContent = e.target.value.length; if (e.target.value) progresso(1); };
+$('b-desc').oninput = e => { $('c-desc').textContent = e.target.value.length; };
+$('b-vis').onchange = e => {
+  $('vis-hint').textContent = e.target.value === 'public'
+    ? 'Sua build poderá ser vista por todos.' : 'Somente você poderá ver esta build.';
+};
+$('burger').onclick = () => $('side').classList.toggle('open');
+window.addEventListener('resize', () => { clearTimeout(window._r); window._r = setTimeout(renderSlots, 200); });
+
+/* ---------- init ---------- */
+await carregarConteudoSupabase();
+heroiAtual = CONFIG.heroi.id;
+CONFIG.resumo.tagA = CONFIG.heroi.classe || '—';
+renderHeroi();
+renderHerois();
+renderDetalheEquipamento(null);
+renderStats();
+renderSinergia();
+renderBonus();
+progresso(1);
