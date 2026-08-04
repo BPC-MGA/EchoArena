@@ -296,6 +296,133 @@ img,video{display:block;max-width:100%}
 .h4 .i{width:17px;height:17px;border-radius:50%;border:1px solid var(--line2);color:var(--faint);
   font-size:10px;display:grid;place-items:center}
 
+
+
+/* ===== ANÁLISE DA BUILD ===== */
+.build-analysis{
+  display:flex;
+  flex-direction:column;
+  gap:16px;
+}
+
+.analysis-group{
+  padding:12px;
+  border:1px solid var(--line);
+  border-radius:11px;
+  background:linear-gradient(180deg,#0f0c22,#0b0919);
+}
+
+.analysis-title{
+  margin-bottom:8px;
+  color:var(--pur-lt);
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+}
+
+.analysis-list{
+  list-style:none;
+  display:flex;
+  flex-direction:column;
+  gap:7px;
+}
+
+.analysis-list li{
+  position:relative;
+  padding:8px 10px 8px 28px;
+  border:1px solid var(--line);
+  border-radius:8px;
+  background:var(--bg2);
+  color:var(--dim);
+  font-size:11.5px;
+  line-height:1.45;
+}
+
+.analysis-list li::before{
+  position:absolute;
+  left:10px;
+  top:50%;
+  transform:translateY(-50%);
+  font-size:13px;
+  font-weight:900;
+}
+
+.analysis-list-positive li::before{
+  content:"✓";
+  color:var(--grn);
+}
+
+.analysis-list-negative li::before{
+  content:"!";
+  color:var(--red);
+}
+
+.analysis-text{
+  padding:10px;
+  border:1px solid var(--line);
+  border-radius:8px;
+  background:var(--bg2);
+  color:var(--dim);
+  font-size:11.5px;
+  line-height:1.6;
+}
+
+.analysis-difficulty-row{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:12px;
+}
+
+.difficulty-badge,
+.analysis-status{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-height:30px;
+  padding:7px 12px;
+  border-radius:999px;
+  border:1px solid var(--line2);
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+}
+
+.difficulty-badge.neutral{
+  background:#1a1740;
+  color:var(--dim);
+}
+
+.difficulty-badge.easy{
+  border-color:#4ade8066;
+  background:#10241b;
+  color:var(--grn);
+}
+
+.difficulty-badge.medium{
+  border-color:#fbbf2466;
+  background:#2a2110;
+  color:var(--gold);
+}
+
+.difficulty-badge.hard{
+  border-color:#ff547066;
+  background:#2b1118;
+  color:var(--red);
+}
+
+.analysis-status{
+  background:#161331;
+  color:var(--pur-lt);
+}
+
+@media(max-width:720px){
+  .analysis-difficulty-row{
+    grid-template-columns:1fr;
+  }
+}
+
 /* ===== RESPONSIVO ===== */
 @media(max-width:1400px){
   .shell{grid-template-columns:210px minmax(0,1fr) 280px}
