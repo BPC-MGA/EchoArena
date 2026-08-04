@@ -341,7 +341,148 @@ function initImageCrop() {
   applyPreviewTransform();
 }
 
+function ensureSaveFeedbackUi() {
+  let overlay = document.getElementById('equipment-save-feedback');
+  if (overlay) return overlay;
+
+  const style = document.createElement('style');
+  style.id = 'equipment-save-feedback-style';
+  style.textContent = `
+    .equipment-save-feedback{position:fixed;inset:0;z-index:20000;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(1,7,17,.95);backdrop-filter:blur(9px);color:#f8fafc}
+    .equipment-save-feedback.is-visible{display:flex}
+    .equipment-save-feedback-card{width:min(680px,100%);overflow:hidden;border:1px solid #2a405d;border-radius:24px;background:#081525;box-shadow:0 35px 100px rgba(0,0,0,.65);text-align:center}
+    .equipment-save-feedback-line{height:4px;background:linear-gradient(90deg,#6d28d9,#a855f7)}
+    .equipment-save-feedback.is-success .equipment-save-feedback-card{border-color:#19875c}.equipment-save-feedback.is-success .equipment-save-feedback-line{background:#35df8d}
+    .equipment-save-feedback.is-error .equipment-save-feedback-card{border-color:#b83f52}.equipment-save-feedback.is-error .equipment-save-feedback-line{background:#fb7185}
+    .equipment-save-feedback-body{padding:34px 36px 30px}
+    .equipment-save-feedback-icon{width:96px;height:96px;margin:0 auto 20px;display:grid;place-items:center;border:2px solid #9b5cf6;border-radius:50%;color:#c4a1ff;font-size:48px;box-shadow:0 0 0 12px rgba(139,92,246,.06)}
+    .equipment-save-feedback.is-success .equipment-save-feedback-icon{border-color:#35df8d;color:#70efae}.equipment-save-feedback.is-error .equipment-save-feedback-icon{border-color:#fb7185;color:#fda4af}
+    .equipment-save-spinner{width:38px;height:38px;border:4px solid rgba(255,255,255,.13);border-top-color:#b384ff;border-radius:50%;animation:equipment-save-spin .8s linear infinite}
+    @keyframes equipment-save-spin{to{transform:rotate(360deg)}}
+    .equipment-save-feedback-kicker{color:#b994f5;font-size:11px;font-weight:900;letter-spacing:.15em}.equipment-save-feedback.is-success .equipment-save-feedback-kicker{color:#79edae}.equipment-save-feedback.is-error .equipment-save-feedback-kicker{color:#fda4af}
+    .equipment-save-feedback h2{margin:9px 0;font-size:30px;line-height:1.2}.equipment-save-feedback-copy{color:#aab6c8;font-size:13px;line-height:1.6}
+    .equipment-save-feedback-name{margin:22px 0;padding:17px;border:1px solid #283a55;border-radius:13px;background:#07101d;color:#fff;font-size:21px;font-weight:900}
+    .equipment-save-feedback-details{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:14px}.equipment-save-feedback-details div{padding:12px;border:1px solid #283a55;border-radius:10px;color:#b9c4d5;font-size:11px}
+    .equipment-save-feedback-actions{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:25px}.equipment-save-feedback-button{display:inline-flex;align-items:center;justify-content:center;min-height:46px;padding:0 17px;border:1px solid #344763;border-radius:11px;background:#101d31;color:#fff;text-decoration:none;font-size:12px;font-weight:800;cursor:pointer}.equipment-save-feedback-button.primary{border:0;background:linear-gradient(135deg,#9857f7,#6d28d9);box-shadow:0 9px 26px rgba(124,58,237,.28)}
+    @media(max-width:600px){.equipment-save-feedback{padding:10px}.equipment-save-feedback-body{padding:26px 18px}.equipment-save-feedback h2{font-size:24px}.equipment-save-feedback-details{grid-template-columns:1fr}.equipment-save-feedback-button{flex:1}}
+  `;
+  document.head.appendChild(style);
+
+  overlay = document.createElement('div');
+  overlay.id = 'equipment-save-feedback';
+  overlay.className = 'equipment-save-feedback';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-live', 'assertive');
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
+function equipmentFormStats() {
+  const rarityCount = document.querySelectorAll('[data-rarity], .rarity-card, .rarity-block').length || Number(document.getElementById('import-rarity-count')?.textContent) || 0;
+  const attributeCount = document.querySelectorAll('.attr-row').length || Number(document.getElementById('import-attribute-count')?.textContent) || 0;
+  const bonusCount = document.querySelectorAll('.bonus-row').length || Number(document.getElementById('import-bonus-count')?.textContent) || 0;
+  return {rarityCount, attributeCount, bonusCount};
+}
+
+function initSaveFeedback(params) {
+  const form = document.getElementById('form');
+  const message = document.getElementById('message');
+  if (!form || !message) return;
+
+  const overlay = ensureSaveFeedbackUi();
+  const wasEditing = Boolean(params.get('id'));
+  let savePending = false;
+  let timeoutId = null;
+
+  const equipmentName = () =>
+    document.getElementById('name')?.value?.trim() || 'Equipamento';
+
+  const openOverlay = state => {
+    overlay.className = `equipment-save-feedback is-visible ${state ? `is-${state}` : ''}`;
+    document.documentElement.style.overflow = 'hidden';
+  };
+
+  const closeOverlay = () => {
+    overlay.className = 'equipment-save-feedback';
+    overlay.innerHTML = '';
+    document.documentElement.style.overflow = '';
+    document.querySelectorAll('#form button[type="submit"]').forEach(button => { button.disabled = false; });
+  };
+
+  const showSaving = () => {
+    openOverlay('saving');
+    overlay.innerHTML = `<div class="equipment-save-feedback-card"><div class="equipment-save-feedback-line"></div><div class="equipment-save-feedback-body">
+      <div class="equipment-save-feedback-icon"><span class="equipment-save-spinner"></span></div>
+      <div class="equipment-save-feedback-kicker">GRAVANDO NO BANCO DE DADOS</div>
+      <h2>Salvando equipamento...</h2>
+      <div class="equipment-save-feedback-copy">Aguarde a confirmação. Não feche esta página.</div>
+      <div class="equipment-save-feedback-name">${escapeHtml(equipmentName())}</div>
+    </div></div>`;
+  };
+
+  const showSuccess = text => {
+    savePending = false;
+    window.clearTimeout(timeoutId);
+    const editingNow = wasEditing || Boolean(new URLSearchParams(location.search).get('id'));
+    const stats = equipmentFormStats();
+    const savedId = new URLSearchParams(location.search).get('id');
+    openOverlay('success');
+    overlay.innerHTML = `<div class="equipment-save-feedback-card"><div class="equipment-save-feedback-line"></div><div class="equipment-save-feedback-body">
+      <div class="equipment-save-feedback-icon">✓</div>
+      <div class="equipment-save-feedback-kicker">${editingNow ? 'ATUALIZAÇÃO CONCLUÍDA' : 'CADASTRO CONCLUÍDO'}</div>
+      <h2>Equipamento ${editingNow ? 'atualizado' : 'salvo'} com sucesso!</h2>
+      <div class="equipment-save-feedback-copy">${escapeHtml(text || 'Os dados foram confirmados no banco de dados.')}</div>
+      <div class="equipment-save-feedback-name">${escapeHtml(equipmentName())}</div>
+      <div class="equipment-save-feedback-details"><div>✓ Informações gerais confirmadas</div><div>✓ ${stats.rarityCount} raridades processadas</div><div>✓ ${stats.attributeCount} atributos confirmados</div><div>✓ ${stats.bonusCount} bônus processados</div></div>
+      <div class="equipment-save-feedback-actions"><button type="button" class="equipment-save-feedback-button" data-save-action="continue">Continuar editando</button><a class="equipment-save-feedback-button" href="./equipments.html">Voltar à lista</a><a class="equipment-save-feedback-button primary" href="${savedId ? `./equipment-editor.html?id=${encodeURIComponent(savedId)}` : './equipments.html'}">${savedId ? 'Abrir equipamento salvo' : 'Ver equipamentos'}</a></div>
+    </div></div>`;
+    overlay.querySelector('[data-save-action="continue"]')?.addEventListener('click', closeOverlay);
+  };
+
+  const showError = text => {
+    savePending = false;
+    window.clearTimeout(timeoutId);
+    openOverlay('error');
+    overlay.innerHTML = `<div class="equipment-save-feedback-card"><div class="equipment-save-feedback-line"></div><div class="equipment-save-feedback-body">
+      <div class="equipment-save-feedback-icon">!</div><div class="equipment-save-feedback-kicker">FALHA NO SALVAMENTO</div><h2>O equipamento não foi salvo</h2>
+      <div class="equipment-save-feedback-copy">${escapeHtml(text || 'Revise os dados e tente novamente.')}</div>
+      <div class="equipment-save-feedback-actions"><button type="button" class="equipment-save-feedback-button primary" data-save-action="close">Voltar ao editor</button></div>
+    </div></div>`;
+    overlay.querySelector('[data-save-action="close"]')?.addEventListener('click', closeOverlay);
+  };
+
+  const inspectMessage = () => {
+    if (!savePending) return;
+    const text = message.textContent?.trim() || '';
+    if (!text) return;
+    if (/sucesso|\bsalv[oa]\b|\batualizad[oa]\b|conclu[ií]d/i.test(text)) {
+      showSuccess(text);
+    } else if (/erro|falha|n[aã]o foi poss[ií]vel|inv[aá]lid|obrigat[oó]ri/i.test(text)) {
+      showError(text);
+    }
+  };
+
+  new MutationObserver(inspectMessage).observe(message, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+    attributes: true
+  });
+
+  form.addEventListener('submit', () => {
+    savePending = true;
+    document.querySelectorAll('#form button[type="submit"]').forEach(button => { button.disabled = true; });
+    showSaving();
+    timeoutId = window.setTimeout(() => {
+      if (savePending) showError('O banco de dados não confirmou o salvamento dentro do tempo esperado. Confira sua conexão e tente novamente.');
+    }, 45000);
+    window.setTimeout(inspectMessage, 0);
+  }, true);
+}
+
 export async function initEquipmentEditorEnhancements({params, importedDraft}) {
   await initComparison(params, importedDraft);
   initImageCrop();
+  initSaveFeedback(params);
 }
