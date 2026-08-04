@@ -9,25 +9,34 @@ import { supabase } from './supabase.js';
 const MEDIA_BUCKET = 'game-media';
 
 const RARIDADES = {
-  comum:{ nome:'Comum', cor:'#8A93AD' }, raro:{ nome:'Raro', cor:'#4CC7E8' },
-  epico:{ nome:'Épico', cor:'#A855F7' }, divino:{ nome:'Divino', cor:'#FBBF24' },
-  lendario:{ nome:'Lendário', cor:'#FBBF24' }, mitico:{ nome:'Mítico', cor:'#FB923C' },
-  supremo:{ nome:'Supremo', cor:'#F87171' }, grandioso:{ nome:'Grandioso', cor:'#C084FC' },
-  celestial:{ nome:'Celestial', cor:'#38BDF8' }, estelar:{ nome:'Estelar', cor:'#A78BFA' },
-  imortal:{ nome:'Imortal', cor:'#FB7185' }
+  comum:      { nome: 'Comum',      cor: '#8A93AD' },
+  raro:       { nome: 'Raro',       cor: '#4CC7E8' },
+  epico:      { nome: 'Épico',      cor: '#A855F7' },
+  divino:     { nome: 'Divino',     cor: '#FBBF24' },
+  lendario:   { nome: 'Lendário',   cor: '#FBBF24' },
+  mitico:     { nome: 'Mítico',     cor: '#FB923C' },
+  supremo:    { nome: 'Supremo',    cor: '#F87171' },
+  grandioso:  { nome: 'Grandioso',  cor: '#C084FC' },
+  celestial:  { nome: 'Celestial',  cor: '#38BDF8' },
+  estelar:    { nome: 'Estelar',    cor: '#A78BFA' },
+  imortal:    { nome: 'Imortal',    cor: '#FB7185' }
 };
 
-/* Slots de reserva — só aparecem se equipment_slots vier vazio. */
+/* Slots de reserva — só aparecem se equipment_slots vier vazio.
+   Segue a ordem oficial do anel: ímpares à esquerda, pares à direita. */
 const SLOTS_PADRAO = [
-  { key:'coracao', label:'Coração' }, { key:'arma', label:'Arma' },
-  { key:'gadget', label:'Gadget' },   { key:'suporte', label:'Suporte' },
-  { key:'modulo', label:'Módulo' },   { key:'especial', label:'Especial' }
+  { key: 'cabeca',    label: 'Cabeça' },
+  { key: 'peito',     label: 'Peito' },
+  { key: 'mao',       label: 'Mão' },
+  { key: 'pe',        label: 'Pé' },
+  { key: 'acessorio', label: 'Acessório' },
+  { key: 'gadget',    label: 'Gadget' }
 ];
 
 let CONFIG = {
-  usuario: { nome:'SlayerX', nivel:42, media:{ src:'', fit:'cover' } },
-  heroi: { id:'', nome:'—', classe:'', media:{ src:'', fit:'contain' } },
-  slots: SLOTS_PADRAO.map((s, i, a) => ({ ...s, ...posicaoAnel(i, a.length) })),
+  usuario: { nome: 'SlayerX', nivel: 42, media: { src: '', fit: 'cover' } },
+  heroi:   { id: '', nome: '—', classe: '', media: { src: '', fit: 'contain' } },
+  slots:   SLOTS_PADRAO.map((s, i, a) => ({ ...s, ...posicaoAnel(i, a.length) })),
   equipados: {},
   herois: [],
   catalogo: [],
@@ -35,27 +44,54 @@ let CONFIG = {
   /* ETAPA 6 (pendente): números fixos até existir a base de stats do herói
      por nível e o mapeamento equipamento → macro-atributo. */
   stats: [
-    { nome:'Poder de fogo',  valor:8450, delta:'+32%', pct:84, cor:'#FF5470', icone:'🚀' },
-    { nome:'Sobrevivência',  valor:9120, delta:'+28%', pct:91, cor:'#4ADE80', icone:'🛡' },
-    { nome:'Mobilidade',     valor:7210, delta:'+18%', pct:72, cor:'#FBBF24', icone:'⚡' },
-    { nome:'Suporte',        valor:6340, delta:'+12%', pct:63, cor:'#5B8DEF', icone:'✚' },
-    { nome:'Controle',       valor:7890, delta:'+22%', pct:79, cor:'#A855F7', icone:'✧' }
+    { nome: 'Poder de fogo', valor: 8450, delta: '+32%', pct: 84, cor: '#FF5470', icone: '🚀' },
+    { nome: 'Sobrevivência',  valor: 9120, delta: '+28%', pct: 91, cor: '#4ADE80', icone: '🛡' },
+    { nome: 'Mobilidade',     valor: 7210, delta: '+18%', pct: 72, cor: '#FBBF24', icone: '⚡' },
+    { nome: 'Suporte',        valor: 6340, delta: '+12%', pct: 63, cor: '#5B8DEF', icone: '✚' },
+    { nome: 'Controle',       valor: 7890, delta: '+22%', pct: 79, cor: '#A855F7', icone: '✧' }
   ],
   bonus: [],
-  resumo: { tagA:'—', tagB:'—', texto:'Escolha um herói e monte o loadout para ver o resumo.' }
+  resumo: { tagA: '—', tagB: '—', texto: 'Escolha um herói e monte o loadout para ver o resumo.' }
 };
 
 /* ---------- helpers ---------- */
 const $ = id => document.getElementById(id);
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const isVid = s => /\.(mp4|webm)$/i.test(s || '');
-const mStyle = m => m ? `--fit:${m.fit||'contain'};--pos:${m.pos||'50% 50%'};--scale:${m.scale==null?1:m.scale};--x:${m.x||0};--y:${m.y||0}` : '';
-const mInner = m => (!m || !m.src) ? '' : (isVid(m.src)
-  ? `<video src="${esc(m.src)}" autoplay muted loop playsinline></video>`
-  : `<img src="${esc(m.src)}" alt="" loading="lazy">`);
+
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+}[c]));
+
+/* Sanitização de valores que entram em atributo style ou src.
+   Impede que um cadastro no banco injete CSS/URL arbitrária. */
+const cssSafe = v => String(v ?? '').replace(/[^\w\s%.,+-]/g, '');
+const numSafe = (v, padrao) => (Number.isFinite(Number(v)) ? Number(v) : padrao);
+const srcSafe = s => {
+  const v = String(s ?? '').trim();
+  return /^(https?:\/\/|data:image\/|\.{0,2}\/)/i.test(v) ? v : '';
+};
+
+const isVid = s => /\.(mp4|webm)(\?.*)?$/i.test(s || '');
+
+const mStyle = m => m
+  ? `--fit:${cssSafe(m.fit || 'contain')};--pos:${cssSafe(m.pos || '50% 50%')};` +
+    `--scale:${numSafe(m.scale, 1)};--x:${cssSafe(m.x || 0)};--y:${cssSafe(m.y || 0)}`
+  : '';
+
+const mInner = m => {
+  const src = srcSafe(m?.src);
+  if (!src) return '';
+  return isVid(src)
+    ? `<video src="${esc(src)}" autoplay muted loop playsinline></video>`
+    : `<img src="${esc(src)}" alt="" loading="lazy">`;
+};
+
 const rc = r => (RARIDADES[r] || RARIDADES.comum).cor;
 const rn = r => (RARIDADES[r] || RARIDADES.comum).nome;
-const normalizar = s => String(s ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+const normalizar = s => String(s ?? '')
+  .toLowerCase()
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '');
 
 function pintar(el, m) {
   if (!el) return;
@@ -70,10 +106,12 @@ function corDoItem(item) {
   const level = nivelAtual(item);
   return level?.cor || rc(item.raridade);
 }
+
 function nomeDoNivel(item) {
   const level = nivelAtual(item);
   return level?.nome || rn(item?.raridade);
 }
+
 function nivelAtual(item) {
   return item?.levels?.find(level => level.slug === item.raridade) || item?.levels?.[0] || null;
 }
@@ -87,7 +125,10 @@ function posicaoAnel(indice, total) {
   const qtdColuna = naEsquerda ? esquerda : total - esquerda;
   const t = qtdColuna <= 1 ? 0.5 : ordemNaColuna / (qtdColuna - 1);
   const curva = Math.sin(t * Math.PI);
-  return { y: 12 + t * 72, x: naEsquerda ? 22 - 12 * curva : 78 + 12 * curva };
+  return {
+    y: 12 + t * 72,
+    x: naEsquerda ? 22 - 12 * curva : 78 + 12 * curva
+  };
 }
 
 function getMediaUrl(path, legacyUrl = '') {
@@ -111,7 +152,8 @@ async function carregarConteudoSupabase() {
         image_path, card_image_path, gif_path,
         image_url, card_image_url, gif_url,
         image_fit, image_position, image_scale, image_offset_x, image_offset_y
-      `).eq('enabled', true)
+      `)
+      .eq('enabled', true)
       .order('display_order', { ascending: true })
       .order('name', { ascending: true }),
 
@@ -121,7 +163,8 @@ async function carregarConteudoSupabase() {
     supabase.from('equipments').select(`
         id, name, description, image_path, image_url, rarity,
         slot_id, set_id, recommendation_text, enabled, display_order
-      `).eq('enabled', true)
+      `)
+      .eq('enabled', true)
       .order('display_order', { ascending: true })
       .order('name', { ascending: true }),
 
@@ -145,11 +188,11 @@ async function carregarConteudoSupabase() {
     ['slots', slotsResult], ['níveis', rarityLevelsResult],
     ['conjuntos', equipmentSetsResult], ['bônus de conjunto', setBonusesResult]
   ].filter(([, r]) => r.error);
+
   falhas.forEach(([nome, r]) => console.error(`Erro ao carregar ${nome}:`, r.error));
 
   const classes = new Map((classesResult.data || []).map(i => [i.id, i]));
   const sets = new Map((equipmentSetsResult.data || []).map(i => [i.id, i]));
-
   const slotsPorId = new Map((slotsResult.data || []).map(i => [i.id, i]));
 
   const rarityLevels = new Map();
@@ -178,10 +221,10 @@ async function carregarConteudoSupabase() {
   /* --- heróis --- */
   const heroes = (heroesResult.data || []).map(hero => {
     const heroClass = classes.get(hero.class_id);
-    const offsetX = `${Number(hero.image_offset_x ?? 0)}%`;
-    const offsetY = `${Number(hero.image_offset_y ?? 0)}%`;
-    const cardX = `${Number(hero.card_image_offset_x ?? 0)}%`;
-    const cardY = `${Number(hero.card_image_offset_y ?? 0)}%`;
+    const offsetX = `${numSafe(hero.image_offset_x, 0)}%`;
+    const offsetY = `${numSafe(hero.image_offset_y, 0)}%`;
+    const cardX = `${numSafe(hero.card_image_offset_x, 0)}%`;
+    const cardY = `${numSafe(hero.card_image_offset_y, 0)}%`;
 
     const mainSource = getMediaUrl(
       hero.image_path || hero.card_image_path || hero.gif_path,
@@ -198,8 +241,14 @@ async function carregarConteudoSupabase() {
       nome: hero.name,
       classe: heroClass?.name || 'Sem classe',
       cor: heroClass?.color || '#A855F7',
-      media: { src: cardSource, fit:'cover', pos:'50% 50%', scale: Number(hero.card_image_scale ?? 1), x: cardX, y: cardY },
-      destaque: { src: mainSource, fit:'contain', pos:'50% 50%', scale: Number(hero.image_scale ?? 1), x: offsetX, y: offsetY }
+      media: {
+        src: cardSource, fit: 'cover', pos: '50% 50%',
+        scale: numSafe(hero.card_image_scale, 1), x: cardX, y: cardY
+      },
+      destaque: {
+        src: mainSource, fit: hero.image_fit || 'contain', pos: hero.image_position || '50% 50%',
+        scale: numSafe(hero.image_scale, 1), x: offsetX, y: offsetY
+      }
     };
   });
 
@@ -220,14 +269,23 @@ async function carregarConteudoSupabase() {
       recommendation: item.recommendation_text || '',
       setId: item.set_id || null,
       set: equipmentSet ? {
-        id: equipmentSet.id, nome: equipmentSet.name, slug: equipmentSet.slug,
-        descricao: equipmentSet.description || '', bonus: setBonuses.get(equipmentSet.id) || []
+        id: equipmentSet.id,
+        nome: equipmentSet.name,
+        slug: equipmentSet.slug,
+        descricao: equipmentSet.description || '',
+        bonus: setBonuses.get(equipmentSet.id) || []
       } : null,
       levels: levels.map(level => ({
-        slug: level.rarity_slug, nome: level.rarity_name, ordem: level.rarity_order,
-        cor: level.rarity_color || rc(level.rarity_slug), stats: level.stats || {}
+        slug: level.rarity_slug,
+        nome: level.rarity_name,
+        ordem: level.rarity_order,
+        cor: level.rarity_color || rc(level.rarity_slug),
+        stats: level.stats || {}
       })),
-      media: { src: getMediaUrl(item.image_path, item.image_url), fit:'contain', pos:'50% 50%', scale:1, x:0, y:0 }
+      media: {
+        src: getMediaUrl(item.image_path, item.image_url),
+        fit: 'contain', pos: '50% 50%', scale: 1, x: 0, y: 0
+      }
     };
   });
 
@@ -235,8 +293,11 @@ async function carregarConteudoSupabase() {
     CONFIG.herois = heroes;
     const first = heroes[0];
     CONFIG.heroi = {
-      id: first.id, databaseId: first.databaseId, nome: first.nome.toUpperCase(),
-      classe: first.classe, media: first.destaque
+      id: first.id,
+      databaseId: first.databaseId,
+      nome: String(first.nome).toUpperCase(),
+      classe: first.classe,
+      media: first.destaque
     };
   }
 
@@ -253,7 +314,8 @@ let buscaPop = '';
 
 /* ---------- topo ---------- */
 pintar($('user-av'), CONFIG.usuario.media);
-$('user-nm').innerHTML = esc(CONFIG.usuario.nome) + '<small>Nível ' + esc(CONFIG.usuario.nivel) + '</small>';
+$('user-nm').innerHTML = esc(CONFIG.usuario.nome) +
+  `<small>Nível ${esc(CONFIG.usuario.nivel)}</small>`;
 
 /* ---------- herói + slots ---------- */
 function renderHeroi() {
@@ -266,8 +328,10 @@ function renderHeroi() {
 function renderSlots() {
   const ring = $('ring');
   ring.querySelectorAll('.slot').forEach(s => s.remove());
+
   const mob = $('slots-mobile');
   mob.innerHTML = '';
+
   const mobile = window.matchMedia('(max-width:720px)').matches;
 
   CONFIG.slots.forEach(s => {
@@ -276,14 +340,16 @@ function renderSlots() {
     el.className = 'slot' + (it ? '' : ' empty') + (slotAtivo === s.key ? ' active' : '');
     el.dataset.slot = s.key;
     el.style.setProperty('--rc', corDoItem(it));
+
     el.innerHTML =
-      '<div class="lb">' + esc(s.label) + '</div>' +
+      `<div class="lb">${esc(s.label)}</div>` +
       (it ? '<button class="rm" type="button" aria-label="Remover">✕</button>' : '') +
       '<div class="hex">' + (it
-        ? '<div class="media ' + (it.media && it.media.src ? '' : 'ph') + '" style="' + mStyle(it.media) + '">' + mInner(it.media) + '</div>'
+        ? `<div class="media ${it.media && it.media.src ? '' : 'ph'}" style="${mStyle(it.media)}">${mInner(it.media)}</div>`
         : '<span class="plus">+</span>') + '</div>' +
-      (it ? '<div class="in"><b>' + esc(it.nome) + '</b><i>' + esc(nomeDoNivel(it)) + '</i></div>'
-          : '<div class="in"><b>Vazio</b></div>');
+      (it
+        ? `<div class="in"><b>${esc(it.nome)}</b><i>${esc(nomeDoNivel(it))}</i></div>`
+        : '<div class="in"><b>Vazio</b></div>');
 
     el.onclick = e => {
       if (e.target.closest('.rm')) { limparSlot(s.key); return; }
@@ -330,7 +396,8 @@ function abrirPop(key) {
   $('pop-search').value = '';
 
   const s = slotAtual();
-  $('pop-eyebrow').textContent = 'Slot ' + (CONFIG.slots.findIndex(x => x.key === key) + 1) + ' de ' + CONFIG.slots.length;
+  $('pop-eyebrow').textContent =
+    'Slot ' + (CONFIG.slots.findIndex(x => x.key === key) + 1) + ' de ' + CONFIG.slots.length;
   $('pop-title').textContent = s ? s.label : 'Equipamento';
   $('pop-foot').hidden = !CONFIG.equipados[key];
 
@@ -357,8 +424,10 @@ function posicionarPop() {
   if (pop.hidden) return;
 
   const arrow = $('pop-arrow');
+
   if (window.matchMedia('(max-width:720px)').matches) {
-    pop.style.left = ''; pop.style.top = '';
+    pop.style.left = '';
+    pop.style.top = '';
     return;
   }
 
@@ -391,7 +460,9 @@ function itensDoSlot() {
   const termo = normalizar(buscaPop).trim();
   return CONFIG.catalogo.filter(i => {
     const doSlot = !slotAtivo || i.slot === slotAtivo;
-    const bate = !termo || normalizar(i.nome).includes(termo) || normalizar(i.set?.nome).includes(termo);
+    const bate = !termo ||
+      normalizar(i.nome).includes(termo) ||
+      normalizar(i.set?.nome).includes(termo);
     return doSlot && bate;
   });
 }
@@ -405,9 +476,9 @@ function renderCatalogo() {
   const equipado = slotAtivo ? CONFIG.equipados[slotAtivo] : null;
 
   if (!lista.length) {
-    alvo.innerHTML = '<div class="message">' + (base.length
+    alvo.innerHTML = `<div class="message">${base.length
       ? 'Nenhum equipamento com esse nome.'
-      : 'Nenhum equipamento cadastrado para este slot.') + '</div>';
+      : 'Nenhum equipamento cadastrado para este slot.'}</div>`;
     return;
   }
 
@@ -435,9 +506,17 @@ function equipar(item) {
   if (!destino) return;
 
   CONFIG.equipados[destino] = {
-    databaseId:item.databaseId, nome:item.nome, raridade:item.raridade, media:item.media,
-    setId:item.setId, set:item.set, levels:item.levels, descricao:item.descricao,
-    recommendation:item.recommendation, slot:item.slot, slotLabel:item.slotLabel
+    databaseId: item.databaseId,
+    nome: item.nome,
+    raridade: item.raridade,
+    media: item.media,
+    setId: item.setId,
+    set: item.set,
+    levels: item.levels,
+    descricao: item.descricao,
+    recommendation: item.recommendation,
+    slot: item.slot,
+    slotLabel: item.slotLabel
   };
 
   slotAtivo = destino;
@@ -464,8 +543,8 @@ function formatStatLabel(key) {
 }
 
 function formatStatValue(key, value) {
-  if (key.endsWith('_pct')) return `${Number(value) >= 0 ? '+' : ''}${value}%`;
-  return `${Number(value) >= 0 ? '+' : ''}${value}`;
+  const sinal = Number(value) >= 0 ? '+' : '';
+  return key.endsWith('_pct') ? `${sinal}${value}%` : `${sinal}${value}`;
 }
 
 function quantidadeDoConjunto(setId) {
@@ -484,11 +563,12 @@ function renderDetalheEquipamento(item = equipamentoSelecionado) {
   }
 
   equipamentoSelecionado = item;
+
   const level = nivelAtual(item);
   const stats = level?.stats || {};
   const pieces = quantidadeDoConjunto(item.setId);
   const bonuses = item.set?.bonus || [];
-  const maxPieces = Math.max(CONFIG.slots.length, ...bonuses.map(b => b.required_pieces || 0));
+  const maxPieces = Math.max(CONFIG.slots.length, ...bonuses.map(b => b.required_pieces || 0)) || 1;
   const cor = corDoItem(item);
   const slotDoItem = CONFIG.slots.find(s => CONFIG.equipados[s.key]?.databaseId === item.databaseId);
 
@@ -516,13 +596,13 @@ function renderDetalheEquipamento(item = equipamentoSelecionado) {
     <div class="eq-section">
       <div class="eq-section-title"><span>Atributos neste nível</span><span>${Object.keys(stats).length}</span></div>
       <div class="eq-stats">
-        ${Object.entries(stats).map(([key,value]) => `<div class="eq-stat" style="--rc:${esc(cor)}"><span>${esc(formatStatLabel(key))}</span><strong>${esc(formatStatValue(key,value))}</strong></div>`).join('') || '<div class="message">Sem atributos cadastrados.</div>'}
+        ${Object.entries(stats).map(([key, value]) => `<div class="eq-stat" style="--rc:${esc(cor)}"><span>${esc(formatStatLabel(key))}</span><strong>${esc(formatStatValue(key, value))}</strong></div>`).join('') || '<div class="message">Sem atributos cadastrados.</div>'}
       </div>
     </div>
 
     ${item.set ? `<div class="eq-section">
       <div class="eq-section-title"><span>${esc(item.set.nome)}</span><span>${pieces}/${maxPieces} peças</span></div>
-      <div class="set-progress"><div class="track2"><i style="width:${Math.min(100,(pieces/maxPieces)*100)}%"></i></div><b>${pieces}/${maxPieces}</b></div>
+      <div class="set-progress"><div class="track2"><i style="width:${Math.min(100, (pieces / maxPieces) * 100)}%"></i></div><b>${pieces}/${maxPieces}</b></div>
       <div class="set-bonuses">
         ${bonuses.map(b => `<div class="set-bonus ${pieces >= b.required_pieces ? 'active' : ''}"><div class="pieces">${esc(b.required_pieces)}</div><div><b>${esc(b.title)}</b><p>${esc(b.description)}</p></div></div>`).join('')}
       </div>
@@ -534,10 +614,13 @@ function renderDetalheEquipamento(item = equipamentoSelecionado) {
   detail.querySelectorAll('[data-rarity]').forEach(button => {
     button.onclick = () => {
       item.raridade = button.dataset.rarity;
+
       const equipado = Object.values(CONFIG.equipados).find(eq => eq?.databaseId === item.databaseId);
       if (equipado) equipado.raridade = item.raridade;
+
       const noCatalogo = CONFIG.catalogo.find(c => c.databaseId === item.databaseId);
       if (noCatalogo) noCatalogo.raridade = item.raridade;
+
       renderDetalheEquipamento(item);
       renderSlots();
       renderSinergia();
@@ -549,6 +632,7 @@ function renderDetalheEquipamento(item = equipamentoSelecionado) {
 /* ---------- carrossel de heróis ---------- */
 function renderHerois() {
   const tk = $('track');
+
   tk.innerHTML = CONFIG.herois.map(h => `
     <div class="hcard ${h.id === heroiAtual ? 'on' : ''}" data-id="${esc(h.id)}">
       <div class="im">
@@ -561,33 +645,45 @@ function renderHerois() {
   tk.onclick = e => {
     const c = e.target.closest('.hcard');
     if (!c) return;
+
     heroiAtual = c.dataset.id;
     const h = CONFIG.herois.find(x => x.id === heroiAtual);
+
     if (h) {
       CONFIG.heroi.id = h.id;
       CONFIG.heroi.databaseId = h.databaseId;
-      CONFIG.heroi.nome = h.nome.toUpperCase();
+      CONFIG.heroi.nome = String(h.nome).toUpperCase();
       CONFIG.heroi.classe = h.classe;
-      if (h.destaque && h.destaque.src) CONFIG.heroi.media = Object.assign({}, h.destaque);
-      else if (h.media && h.media.src) CONFIG.heroi.media = Object.assign({}, h.media, { fit:'contain' });
+
+      if (h.destaque && h.destaque.src) {
+        CONFIG.heroi.media = Object.assign({}, h.destaque);
+      } else if (h.media && h.media.src) {
+        CONFIG.heroi.media = Object.assign({}, h.media, { fit: 'contain' });
+      }
+
       renderHeroi();
       CONFIG.resumo.tagA = h.classe;
       renderBonus();
     }
+
     tk.querySelectorAll('.hcard').forEach(x => x.classList.toggle('on', x === c));
     progresso(2);
   };
 
   const n = Math.max(1, Math.ceil(CONFIG.herois.length / 5));
-  $('dots').innerHTML = Array.from({length:n}, (_,i) => `<i class="${i?'':'on'}"></i>`).join('');
+  $('dots').innerHTML = Array.from({ length: n }, (_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('');
 }
 
 /* ---------- stats / sinergia / bônus ---------- */
 function renderStats() {
   $('stats').innerHTML = CONFIG.stats.map(s => `
     <div class="stat">
-      <div class="h"><span class="ic">${esc(s.icone)}</span><span class="nm">${esc(s.nome)}</span>
-        <span class="v">${s.valor.toLocaleString('pt-BR')}</span><span class="d">${esc(s.delta)}</span></div>
+      <div class="h">
+        <span class="ic">${esc(s.icone)}</span>
+        <span class="nm">${esc(s.nome)}</span>
+        <span class="v">${s.valor.toLocaleString('pt-BR')}</span>
+        <span class="d">${esc(s.delta)}</span>
+      </div>
       <div class="tr"><i style="width:${s.pct}%;background:${esc(s.cor)};box-shadow:0 0 8px ${esc(s.cor)}66"></i></div>
     </div>`).join('');
 }
@@ -610,6 +706,7 @@ function bonusAtivos() {
 
   const ativos = [];
   const vistos = new Set();
+
   Object.values(CONFIG.equipados).forEach(it => {
     if (!it?.set || vistos.has(it.setId)) return;
     vistos.add(it.setId);
@@ -618,12 +715,14 @@ function bonusAtivos() {
       .filter(b => pecas >= (b.required_pieces || 0))
       .forEach(b => ativos.push({ nome: b.title, desc: b.description, icone: '◈' }));
   });
+
   return ativos;
 }
 
 function renderBonus() {
   CONFIG.bonus = bonusAtivos();
   $('bn-count').textContent = CONFIG.bonus.length;
+
   $('bonus').innerHTML = CONFIG.bonus.length
     ? CONFIG.bonus.map(b => `
       <div class="b"><span class="ic">${esc(b.icone)}</span>
@@ -653,48 +752,72 @@ $('steps').onclick = e => {
   const s = e.target.closest('.step');
   if (s) progresso(+s.dataset.s);
 };
+
 $('next-equip').onclick = () => {
   progresso(4);
-  document.querySelector('.col4').scrollIntoView({ behavior:'smooth', block:'start' });
+  document.querySelector('.col4')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
+
 $('clear-all').onclick = () => {
   CONFIG.equipados = {};
   equipamentoSelecionado = null;
-  renderSlots(); renderSinergia(); renderBonus(); renderDetalheEquipamento(null);
+  renderSlots();
+  renderSinergia();
+  renderBonus();
+  renderDetalheEquipamento(null);
   if (!$('pop').hidden) { $('pop-foot').hidden = true; renderCatalogo(); }
 };
-$('tk-l').onclick = () => $('track').scrollBy({ left:-300, behavior:'smooth' });
-$('tk-r').onclick = () => $('track').scrollBy({ left: 300, behavior:'smooth' });
+
+$('tk-l').onclick = () => $('track').scrollBy({ left: -300, behavior: 'smooth' });
+$('tk-r').onclick = () => $('track').scrollBy({ left: 300, behavior: 'smooth' });
 
 $('pop-close').onclick = fecharPop;
 $('pop-back').onclick = fecharPop;
+
 $('pop-clear').onclick = () => {
   if (!slotAtivo) return;
   limparSlot(slotAtivo);
   $('pop-foot').hidden = true;
 };
+
 $('pop-search').oninput = e => { buscaPop = e.target.value; renderCatalogo(); };
+
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && !$('pop').hidden) fecharPop();
 });
-window.addEventListener('scroll', posicionarPop, { passive:true });
 
-$('b-name').oninput = e => { $('c-name').textContent = e.target.value.length; if (e.target.value) progresso(1); };
+window.addEventListener('scroll', posicionarPop, { passive: true });
+
+$('b-name').oninput = e => {
+  $('c-name').textContent = e.target.value.length;
+  if (e.target.value) progresso(1);
+};
+
 $('b-desc').oninput = e => { $('c-desc').textContent = e.target.value.length; };
+
 $('b-vis').onchange = e => {
   $('vis-hint').textContent = e.target.value === 'public'
-    ? 'Sua build poderá ser vista por todos.' : 'Somente você poderá ver esta build.';
+    ? 'Sua build poderá ser vista por todos.'
+    : 'Somente você poderá ver esta build.';
 };
+
 $('burger').onclick = () => $('side').classList.toggle('open');
+
 window.addEventListener('resize', () => {
   clearTimeout(window._r);
   window._r = setTimeout(() => { renderSlots(); posicionarPop(); }, 200);
 });
 
 /* ---------- init ---------- */
-await carregarConteudoSupabase();
+try {
+  await carregarConteudoSupabase();
+} catch (err) {
+  console.error('Falha ao carregar conteúdo do Supabase:', err);
+}
+
 heroiAtual = CONFIG.heroi.id;
 CONFIG.resumo.tagA = CONFIG.heroi.classe || '—';
+
 renderHeroi();
 renderHerois();
 renderDetalheEquipamento(null);
