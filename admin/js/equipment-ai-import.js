@@ -1003,6 +1003,82 @@ function renderUpdateAssistant(existing, bundle) {
   };
 }
 
+function formatReviewAttribute(attribute) {
+  const label = attribute?.label || 'Atributo';
+  const value = attribute?.value;
+  return `<div class="equipment-flow-diff"><span>✓</span><span><b>${escapeHtml(label)}</b><span class="equipment-flow-values"><b>${escapeHtml(value === '' || value === null || value === undefined ? '—' : value)}</b></span></span></div>`;
+}
+
+function renderCreateAssistant() {
+  ensureFlowUi();
+
+  const {rarityCount, attributeCount} = countDraft();
+  const slotName = slotSelect.options[slotSelect.selectedIndex]?.textContent?.trim() || 'Não selecionado';
+  const bonuses = incomingBonuses();
+  const raritySections = meta.rarities.map(rarity => {
+    const attributes = validatedDraft.variants[rarity.slug] || [];
+    if (!attributes.length) return '';
+    return `<section class="equipment-flow-group">
+      <h3>${escapeHtml(rarity.name || rarity.slug)} · ${attributes.length} atributo(s)</h3>
+      ${attributes.map(formatReviewAttribute).join('')}
+    </section>`;
+  }).join('');
+  const bonusSection = bonuses.length
+    ? `<section class="equipment-flow-group"><h3>BÔNUS DO CONJUNTO</h3>${bonuses.map(bonus => `
+        <div class="equipment-flow-diff"><span>✓</span><span><b>${escapeHtml(bonus.required_pieces)} equipamentos</b><span class="equipment-flow-values">${escapeHtml(bonus.description)}</span></span></div>
+      `).join('')}</section>`
+    : '';
+
+  const overlay = document.getElementById('equipment-flow-overlay');
+  overlay.innerHTML = `<div class="equipment-flow-card">
+    <div class="equipment-flow-head">
+      <div class="equipment-flow-kicker" style="color:#79edae">✓ NOVO EQUIPAMENTO</div>
+      <h2 class="equipment-flow-title">Revisar antes de cadastrar</h2>
+      <div class="equipment-flow-muted">Confira os dados importados. O equipamento só será criado após sua confirmação.</div>
+    </div>
+    <div class="equipment-flow-body">
+      <div class="equipment-flow-summary">
+        <div class="equipment-flow-stat"><strong>${rarityCount}</strong><small>raridades</small></div>
+        <div class="equipment-flow-stat"><strong>${attributeCount}</strong><small>atributos</small></div>
+        <div class="equipment-flow-stat"><strong>${bonuses.length}</strong><small>bônus</small></div>
+        <div class="equipment-flow-stat"><strong>0</strong><small>dados apagados</small></div>
+      </div>
+      <div class="equipment-flow-compare">
+        <div class="equipment-flow-side"><small>EQUIPAMENTO</small><strong>${escapeHtml(validatedDraft.name)}</strong><span class="equipment-flow-muted">Novo cadastro</span></div>
+        <div class="equipment-flow-side"><small>CLASSIFICAÇÃO</small><strong>${escapeHtml(slotName)}</strong><span class="equipment-flow-muted">${escapeHtml(validatedDraft.setName || 'Sem conjunto')}</span></div>
+      </div>
+      <section class="equipment-flow-group"><h3>INFORMAÇÕES GERAIS</h3>
+        <div class="equipment-flow-diff"><span>✓</span><span><b>Nome</b><span class="equipment-flow-values">${escapeHtml(validatedDraft.name)}</span></span></div>
+        <div class="equipment-flow-diff"><span>✓</span><span><b>Slug</b><span class="equipment-flow-values">${escapeHtml(validatedDraft.slug || slugify(validatedDraft.name))}</span></span></div>
+        <div class="equipment-flow-diff"><span>✓</span><span><b>Slot</b><span class="equipment-flow-values">${escapeHtml(slotName)}</span></span></div>
+        <div class="equipment-flow-diff"><span>✓</span><span><b>Conjunto</b><span class="equipment-flow-values">${escapeHtml(validatedDraft.setName || 'Sem conjunto')}</span></span></div>
+      </section>
+      <section class="equipment-flow-group"><h3>RARIDADES E ATRIBUTOS</h3>${raritySections || '<div class="equipment-flow-empty">Nenhum atributo informado.</div>'}</section>
+      ${bonusSection}
+    </div>
+    <div class="equipment-flow-foot">
+      <button class="equipment-flow-btn" data-create-flow="cancel">Cancelar · voltar ao editor</button>
+      <button class="equipment-flow-btn" data-create-flow="discard">Descartar importação</button>
+      <button class="equipment-flow-btn primary" data-create-flow="confirm">Confirmar e salvar equipamento</button>
+    </div>
+  </div>`;
+  overlay.classList.add('is-visible');
+  overlay.querySelector('[data-create-flow="cancel"]').onclick = closeFlow;
+  overlay.querySelector('[data-create-flow="discard"]').onclick = () => { closeFlow(); clearAll(); };
+  overlay.querySelector('[data-create-flow="confirm"]').onclick = async () => {
+    const buttons = [...overlay.querySelectorAll('button')];
+    buttons.forEach(button => { button.disabled = true; });
+    try {
+      await performSave();
+    } catch (error) {
+      console.error('Erro ao criar equipamento:', error);
+      buttons.forEach(button => { button.disabled = false; });
+      showStatus(error.message || 'Não foi possível criar o equipamento.', 'error');
+      window.alert(error.message || 'Não foi possível criar o equipamento.');
+    }
+  };
+}
+
 function showSuccess(saved, selectedCount = 0) {
   ensureFlowUi();
   const created = saved.operation === 'created';
@@ -1071,7 +1147,7 @@ async function saveEquipment() {
     saveButton.textContent;
 
   saveButton.textContent =
-    'Salvando...';
+    'Abrindo revisão...';
 
   successActions.classList.remove(
     'is-visible'
@@ -1095,12 +1171,64 @@ async function saveEquipment() {
         slug
       );
 
-    if (existing) {
-      const bundle = await getEquipmentBundle(existing.id);
-      renderUpdateAssistant(existing, bundle);
-    } else {
-      await performSave();
-    }
+    const selectedOption =
+      slotSelect.options[
+        slotSelect.selectedIndex
+      ];
+
+    const editorDraft = {
+      name:
+        validatedDraft.name,
+      slug,
+      setName:
+        validatedDraft.setName || '',
+      description:
+        validatedDraft.description || '',
+      recommendation:
+        validatedDraft.recommendation || '',
+      variants:
+        validatedDraft.variants,
+      bonuses:
+        validatedDraft.bonuses,
+      enabled:
+        validatedDraft.enabled !== false,
+      displayOrder:
+        validatedDraft.displayOrder ??
+        existing?.display_order ??
+        0,
+      slotId:
+        slotSelect.value,
+      slot_id:
+        slotSelect.value,
+      slotSlug:
+        selectedOption?.dataset?.slug || '',
+      slotName:
+        selectedOption?.textContent?.trim() || '',
+      importedAt:
+        new Date().toISOString(),
+      importSource:
+        'equipment-json'
+    };
+
+    sessionStorage.setItem(
+      'equipment-import-draft',
+      JSON.stringify(editorDraft)
+    );
+
+    sessionStorage.setItem(
+      'equipment-import-mode',
+      existing
+        ? 'update'
+        : 'create'
+    );
+
+    const editorUrl =
+      existing?.id
+        ? `./equipment-editor.html?id=${encodeURIComponent(existing.id)}&import=1&source=json`
+        : './equipment-editor.html?import=1&source=json';
+
+    window.location.href =
+      editorUrl;
   } catch (error) {
     console.error(
       'Erro ao salvar equipamento:',
