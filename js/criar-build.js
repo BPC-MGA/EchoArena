@@ -249,8 +249,8 @@ let heroiAtual = '';
 let slotAtivo = null;
 let etapa = 1;
 let equipamentoSelecionado = null;
-let buscaGaveta = '';
-let mostrarTodos = false;
+let buscaPop = '';
+let slotElAtivo = null;
 
 /* ---------- topo ---------- */
 pintar($('user-av'), CONFIG.usuario.media);
@@ -288,7 +288,7 @@ function renderSlots() {
 
     el.onclick = e => {
       if (e.target.closest('.rm')) { limparSlot(s.key); return; }
-      abrirGaveta(s.key);
+      abrirPop(s.key, el);
     };
 
     if (mobile) {
@@ -316,82 +316,115 @@ function limparSlot(key) {
   renderSlots();
   renderSinergia();
   renderDetalheEquipamento(CONFIG.equipados[slotAtivo] || null);
-  if (!$('dw').hidden) renderCatalogo();
+  renderBonus();
+  if (!$('pop').hidden) { $('pop-foot').hidden = true; renderCatalogo(); }
 }
 
-/* ---------- gaveta de equipamentos ---------- */
+/* ---------- box flutuante de equipamentos ---------- */
 function slotAtual() {
   return CONFIG.slots.find(s => s.key === slotAtivo) || null;
 }
 
-function abrirGaveta(key) {
+function abrirPop(key, elemento) {
   slotAtivo = key;
-  buscaGaveta = '';
-  mostrarTodos = false;
-  $('dw-search').value = '';
-  $('dw-scope').classList.remove('on');
-  $('dw-scope').dataset.all = '0';
-  $('dw-scope').textContent = 'Só deste slot';
+  slotElAtivo = elemento || null;
+  buscaPop = '';
+  $('pop-search').value = '';
 
   const s = slotAtual();
-  $('dw-eyebrow').textContent = 'Slot ' + (CONFIG.slots.findIndex(x => x.key === key) + 1) + ' de ' + CONFIG.slots.length;
-  $('dw-title').textContent = s ? s.label : 'Equipamento';
-  $('dw-clear').hidden = !CONFIG.equipados[key];
+  $('pop-eyebrow').textContent = 'Slot ' + (CONFIG.slots.findIndex(x => x.key === key) + 1) + ' de ' + CONFIG.slots.length;
+  $('pop-title').textContent = s ? s.label : 'Equipamento';
+  $('pop-foot').hidden = !CONFIG.equipados[key];
 
-  $('dw').hidden = false;
-  $('dw-back').hidden = false;
-  document.body.style.overflow = 'hidden';
+  $('pop').hidden = false;
+  $('pop-back').hidden = false;
 
   renderSlots();
   renderCatalogo();
   renderDetalheEquipamento(CONFIG.equipados[key] || null);
+  posicionarPop();
   progresso(3);
-  $('dw-search').focus({ preventScroll: true });
 }
 
-function fecharGaveta() {
-  $('dw').hidden = true;
-  $('dw-back').hidden = true;
-  document.body.style.overflow = '';
+function fecharPop() {
+  $('pop').hidden = true;
+  $('pop-back').hidden = true;
+  slotElAtivo = null;
+  renderSlots();
 }
 
-function itensDaGaveta() {
-  const termo = normalizar(buscaGaveta).trim();
+/* Ancora o box no slot clicado: abre para o lado com espaço e
+   nunca deixa a caixa sair da tela. No celular vira folha inferior. */
+function posicionarPop() {
+  const pop = $('pop');
+  if (pop.hidden) return;
+
+  const arrow = $('pop-arrow');
+  if (window.matchMedia('(max-width:720px)').matches) {
+    pop.style.left = ''; pop.style.top = '';
+    return;
+  }
+
+  const alvo = slotElAtivo || document.querySelector('.slot.active');
+  if (!alvo) return;
+
+  const r = alvo.getBoundingClientRect();
+  const p = pop.getBoundingClientRect();
+  const m = 12;
+
+  const cabeDireita = window.innerWidth - r.right >= p.width + m * 2;
+  const paraDireita = cabeDireita || r.left < p.width + m * 2;
+
+  let left = paraDireita ? r.right + m : r.left - p.width - m;
+  left = Math.max(m, Math.min(left, window.innerWidth - p.width - m));
+
+  let top = r.top + r.height / 2 - p.height / 2;
+  top = Math.max(m, Math.min(top, window.innerHeight - p.height - m));
+
+  pop.style.left = left + 'px';
+  pop.style.top = top + 'px';
+
+  arrow.className = 'pop-arrow ' + (paraDireita ? 'l' : 'r');
+  arrow.style.top = Math.max(16, Math.min(r.top + r.height / 2 - top - 6, p.height - 22)) + 'px';
+}
+
+function itensDoSlot() {
+  const termo = normalizar(buscaPop).trim();
   return CONFIG.catalogo.filter(i => {
-    const doSlot = mostrarTodos || !slotAtivo || i.slot === slotAtivo;
+    const doSlot = !slotAtivo || i.slot === slotAtivo;
     const bate = !termo || normalizar(i.nome).includes(termo) || normalizar(i.set?.nome).includes(termo);
     return doSlot && bate;
   });
 }
 
 function renderCatalogo() {
-  const lista = itensDaGaveta();
+  const base = CONFIG.catalogo.filter(i => !slotAtivo || i.slot === slotAtivo);
+  $('pop-search-wrap').hidden = base.length <= 8;
+
+  const lista = itensDoSlot();
   const alvo = $('ilist');
+  const equipado = slotAtivo ? CONFIG.equipados[slotAtivo] : null;
 
   if (!lista.length) {
-    alvo.innerHTML = '<div class="message">Nenhum equipamento cadastrado para este slot.'
-      + (mostrarTodos ? '' : ' Toque em “Mostrar todos” para ver o catálogo inteiro.') + '</div>';
+    alvo.innerHTML = '<div class="message">' + (base.length
+      ? 'Nenhum equipamento com esse nome.'
+      : 'Nenhum equipamento cadastrado para este slot.') + '</div>';
     return;
   }
-
-  const equipado = slotAtivo ? CONFIG.equipados[slotAtivo] : null;
 
   alvo.innerHTML = lista.map((i, idx) => {
     const sel = equipado && equipado.databaseId === i.databaseId;
     return `
-      <div class="item ${sel ? 'sel' : ''}" data-i="${idx}" style="--rc:${esc(corDoItem(i))}">
-        <div class="ic media ${i.media && i.media.src ? '' : 'ph'}" style="${mStyle(i.media)}">${mInner(i.media)}</div>
-        <div class="tx">
-          <b>${esc(i.nome)}</b>
-          <i>${esc(nomeDoNivel(i))}</i>
-          <u>${esc(i.set?.nome || i.slotLabel || 'Equipamento individual')}</u>
-        </div>
-        ${sel ? '<span class="ok">✓</span>' : ''}
-      </div>`;
+      <button class="tile ${sel ? 'sel' : ''}" type="button" data-i="${idx}" style="--rc:${esc(corDoItem(i))}" title="${esc(i.nome)}">
+        <span class="ic media ${i.media && i.media.src ? '' : 'ph'}" style="${mStyle(i.media)}">${mInner(i.media)}</span>
+        <b>${esc(i.nome)}</b>
+        <i>${esc(nomeDoNivel(i))}</i>
+        ${sel ? '<span class="ok">\u2713</span>' : ''}
+      </button>`;
   }).join('');
 
   alvo.onclick = e => {
-    const el = e.target.closest('.item');
+    const el = e.target.closest('.tile');
     if (!el) return;
     equipar(lista[+el.dataset.i]);
   };
@@ -409,11 +442,12 @@ function equipar(item) {
   };
 
   slotAtivo = destino;
-  $('dw-clear').hidden = false;
+  $('pop-foot').hidden = false;
   renderSlots();
   renderCatalogo();
   renderDetalheEquipamento(CONFIG.equipados[destino]);
   renderSinergia();
+  renderBonus();
   progresso(3);
 }
 
@@ -508,7 +542,7 @@ function renderDetalheEquipamento(item = equipamentoSelecionado) {
       renderDetalheEquipamento(item);
       renderSlots();
       renderSinergia();
-      if (!$('dw').hidden) renderCatalogo();
+      if (!$('pop').hidden) renderCatalogo();
     };
   });
 }
@@ -628,29 +662,23 @@ $('clear-all').onclick = () => {
   CONFIG.equipados = {};
   equipamentoSelecionado = null;
   renderSlots(); renderSinergia(); renderBonus(); renderDetalheEquipamento(null);
-  if (!$('dw').hidden) { $('dw-clear').hidden = true; renderCatalogo(); }
+  if (!$('pop').hidden) { $('pop-foot').hidden = true; renderCatalogo(); }
 };
 $('tk-l').onclick = () => $('track').scrollBy({ left:-300, behavior:'smooth' });
 $('tk-r').onclick = () => $('track').scrollBy({ left: 300, behavior:'smooth' });
 
-$('dw-close').onclick = fecharGaveta;
-$('dw-back').onclick = fecharGaveta;
-$('dw-clear').onclick = () => {
+$('pop-close').onclick = fecharPop;
+$('pop-back').onclick = fecharPop;
+$('pop-clear').onclick = () => {
   if (!slotAtivo) return;
   limparSlot(slotAtivo);
-  $('dw-clear').hidden = true;
+  $('pop-foot').hidden = true;
 };
-$('dw-search').oninput = e => { buscaGaveta = e.target.value; renderCatalogo(); };
-$('dw-scope').onclick = e => {
-  mostrarTodos = e.currentTarget.dataset.all !== '1';
-  e.currentTarget.dataset.all = mostrarTodos ? '1' : '0';
-  e.currentTarget.classList.toggle('on', mostrarTodos);
-  e.currentTarget.textContent = mostrarTodos ? 'Mostrar todos' : 'Só deste slot';
-  renderCatalogo();
-};
+$('pop-search').oninput = e => { buscaPop = e.target.value; renderCatalogo(); };
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && !$('dw').hidden) fecharGaveta();
+  if (e.key === 'Escape' && !$('pop').hidden) fecharPop();
 });
+window.addEventListener('scroll', posicionarPop, { passive:true });
 
 $('b-name').oninput = e => { $('c-name').textContent = e.target.value.length; if (e.target.value) progresso(1); };
 $('b-desc').oninput = e => { $('c-desc').textContent = e.target.value.length; };
@@ -659,7 +687,10 @@ $('b-vis').onchange = e => {
     ? 'Sua build poderá ser vista por todos.' : 'Somente você poderá ver esta build.';
 };
 $('burger').onclick = () => $('side').classList.toggle('open');
-window.addEventListener('resize', () => { clearTimeout(window._r); window._r = setTimeout(renderSlots, 200); });
+window.addEventListener('resize', () => {
+  clearTimeout(window._r);
+  window._r = setTimeout(() => { renderSlots(); posicionarPop(); }, 200);
+});
 
 /* ---------- init ---------- */
 await carregarConteudoSupabase();
