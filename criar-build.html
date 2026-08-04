@@ -154,28 +154,28 @@
   </aside>
 </div>
 
-<!-- ============ GAVETA DE EQUIPAMENTOS ============ -->
-<div class="drawer-back" id="dw-back" hidden></div>
-<aside class="drawer" id="dw" hidden aria-label="Escolher equipamento">
-  <div class="dw-top">
+<!-- ============ BOX DE EQUIPAMENTOS ============ -->
+<div class="pop-back" id="pop-back" hidden></div>
+<div class="pop" id="pop" hidden role="dialog" aria-label="Escolher equipamento">
+  <span class="pop-arrow" id="pop-arrow"></span>
+  <div class="pop-top">
     <div>
-      <span class="dw-eyebrow" id="dw-eyebrow">Slot</span>
-      <h3 class="t" id="dw-title">Escolher equipamento</h3>
+      <span class="pop-eyebrow" id="pop-eyebrow">Slot</span>
+      <h3 class="t" id="pop-title">Escolher equipamento</h3>
     </div>
-    <button class="dw-x" id="dw-close" type="button" aria-label="Fechar">✕</button>
+    <button class="pop-x" id="pop-close" type="button" aria-label="Fechar">&#10005;</button>
   </div>
 
-  <div class="dw-tools">
-    <input id="dw-search" placeholder="Buscar equipamento..." autocomplete="off">
-    <button class="mini" id="dw-scope" type="button" data-all="0">Só deste slot</button>
+  <div class="pop-search" id="pop-search-wrap" hidden>
+    <input id="pop-search" placeholder="Buscar equipamento..." autocomplete="off">
   </div>
 
-  <div class="ilist" id="ilist"></div>
+  <div class="pop-grid" id="ilist"></div>
 
-  <div class="dw-foot">
-    <button class="mini wide" id="dw-clear" type="button">Remover do slot</button>
+  <div class="pop-foot" id="pop-foot" hidden>
+    <button class="mini wide" id="pop-clear" type="button">Remover do slot</button>
   </div>
-</aside>
+</div>
 
 <script type="module" src="./js/criar-build.js"></script>
 </body>
