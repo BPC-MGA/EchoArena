@@ -20,68 +20,6 @@ if (logoutButton) {
     logoutAdmin;
 }
 
-
-const backButton =
-  document.getElementById(
-    'equipment-ai-back'
-  );
-
-function getSafeReturnDestination() {
-  const params =
-    new URLSearchParams(
-      location.search
-    );
-
-  const requestedReturn =
-    params.get('returnTo');
-
-  if (!requestedReturn) {
-    return './equipments.html';
-  }
-
-  try {
-    const destination =
-      new URL(
-        requestedReturn,
-        location.href
-      );
-
-    const adminDirectory =
-      new URL(
-        './',
-        location.href
-      ).pathname;
-
-    if (
-      destination.origin !==
-        location.origin ||
-      !destination.pathname.startsWith(
-        adminDirectory
-      )
-    ) {
-      return './equipments.html';
-    }
-
-    return (
-      destination.pathname +
-      destination.search +
-      destination.hash
-    );
-  } catch (error) {
-    console.warn(
-      'Destino de retorno inválido:',
-      error
-    );
-
-    return './equipments.html';
-  }
-}
-
-if (backButton) {
-  backButton.href =
-    getSafeReturnDestination();
-}
-
 const REQUIRED_SLOT_OPTIONS = [
   {
     label: 'Cabeça',
@@ -302,6 +240,67 @@ function normalizeAttribute(attribute) {
   };
 }
 
+function humanizeKey(value = '') {
+  const labels = {
+    dispersao_de_tiro_da_arma_sem_mirar:
+      'Dispersão de tiro da arma sem mirar',
+    velocidade_para_pegar_melhorias:
+      'Velocidade para pegar melhorias',
+    barulho_da_movimentacao_do_heroi_apos_usar_habilidade_bandagem:
+      'Barulho da movimentação do herói após usar a habilidade Bandagem',
+    tempo_de_recarregamento_da_arma_do_heroi:
+      'Tempo de recarregamento da arma do herói',
+    tempo_de_abertura_de_caixa:
+      'Tempo de abertura de caixa',
+    duracao_da_habilidade_visao_termica:
+      'Duração da habilidade Visão Térmica',
+    restauracao_de_vida_com_habilidade_bandagem_ativada:
+      'Restauração de vida com a habilidade Bandagem ativada',
+    tempo_de_mira_da_arma:
+      'Tempo de mira da arma',
+    poder_de_perfuracao_da_arma_com_habilidade_visao_termica_ativada:
+      'Poder de perfuração da arma com Visão Térmica ativada'
+  };
+
+  if (labels[value]) {
+    return labels[value];
+  }
+
+  const text = String(value)
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return text
+    ? text.charAt(0).toUpperCase() + text.slice(1)
+    : '';
+}
+
+function normalizeRarityAttributes(source) {
+  if (Array.isArray(source)) {
+    return source
+      .map(normalizeAttribute)
+      .filter(Boolean);
+  }
+
+  if (
+    !source ||
+    typeof source !== 'object'
+  ) {
+    return [];
+  }
+
+  return Object.entries(source)
+    .map(([key, value]) =>
+      normalizeAttribute({
+        label: humanizeKey(key),
+        value,
+        raw: `${value} ${humanizeKey(key)}`
+      })
+    )
+    .filter(Boolean);
+}
+
 function normalizeBonus(bonus) {
   if (
     !bonus ||
@@ -340,6 +339,100 @@ function normalizeBonus(bonus) {
   };
 }
 
+function formatBonusEffect(effect) {
+  if (
+    !effect ||
+    typeof effect !== 'object'
+  ) {
+    return '';
+  }
+
+  const label = humanizeKey(
+    effect.atributo ??
+    effect.attribute ??
+    effect.label ??
+    effect.name ??
+    ''
+  );
+
+  const value =
+    effect.valor ??
+    effect.value ??
+    null;
+
+  const unit = String(
+    effect.unidade ??
+    effect.unit ??
+    ''
+  ).trim();
+
+  if (!label) return '';
+
+  if (
+    value === null ||
+    value === undefined ||
+    value === ''
+  ) {
+    return label;
+  }
+
+  const suffix =
+    unit === '%'
+      ? '%'
+      : unit
+        ? ` ${unit}`
+        : '';
+
+  return `${value}${suffix} — ${label}`;
+}
+
+function normalizeGroupedBonuses(source) {
+  if (
+    !source ||
+    typeof source !== 'object' ||
+    Array.isArray(source)
+  ) {
+    return [];
+  }
+
+  return Object.entries(source)
+    .map(([key, effects]) => {
+      const requiredPieces =
+        nullableNumber(
+          String(key).match(/\d+/)?.[0]
+        );
+
+      const descriptions =
+        Array.isArray(effects)
+          ? effects
+              .map(formatBonusEffect)
+              .filter(Boolean)
+          : [];
+
+      if (
+        !requiredPieces ||
+        !descriptions.length
+      ) {
+        return null;
+      }
+
+      return normalizeBonus({
+        required_pieces:
+          requiredPieces,
+        title:
+          `${requiredPieces} Equipamentos`,
+        description:
+          descriptions.join('\n')
+      });
+    })
+    .filter(Boolean)
+    .sort(
+      (a, b) =>
+        a.required_pieces -
+        b.required_pieces
+    );
+}
+
 function normalizeData(source = {}) {
   if (
     !source ||
@@ -355,34 +448,46 @@ function normalizeData(source = {}) {
     source.equipment &&
     typeof source.equipment === 'object'
       ? source.equipment
+      : source.equipamento &&
+        typeof source.equipamento === 'object'
+        ? source.equipamento
       : source;
 
   const sourceVariants =
     source.variants &&
     typeof source.variants === 'object'
       ? source.variants
+      : equipment.efeitosPorCategoria &&
+        typeof equipment.efeitosPorCategoria === 'object'
+        ? equipment.efeitosPorCategoria
+      : source.efeitosPorCategoria &&
+        typeof source.efeitosPorCategoria === 'object'
+        ? source.efeitosPorCategoria
       : {};
 
   const variants = {};
 
   for (const [slug] of RARITIES) {
     variants[slug] =
-      Array.isArray(
+      normalizeRarityAttributes(
         sourceVariants[slug]
-      )
-        ? sourceVariants[slug]
-            .map(
-              normalizeAttribute
-            )
-            .filter(Boolean)
-        : [];
+      );
   }
+
+  const groupedBonuses =
+    source.bonusDoConjunto ??
+    source.bonus_do_conjunto ??
+    equipment.bonusDoConjunto ??
+    equipment.bonus_do_conjunto ??
+    null;
 
   return {
     name:
       String(
         equipment.name ??
+        equipment.nome ??
         source.name ??
+        source.nome ??
         ''
       ).trim(),
 
@@ -397,22 +502,28 @@ function normalizeData(source = {}) {
       String(
         equipment.setName ??
         equipment.set_name ??
+        equipment.conjunto ??
         source.setName ??
         source.set_name ??
+        source.conjunto ??
         ''
       ).trim(),
 
     description:
       String(
         equipment.description ??
+        equipment.descricao ??
         source.description ??
+        source.descricao ??
         ''
       ).trim(),
 
     recommendation:
       String(
         equipment.recommendation ??
+        equipment.recomendacao ??
         source.recommendation ??
+        source.recomendacao ??
         ''
       ).trim(),
 
@@ -440,7 +551,9 @@ function normalizeData(source = {}) {
               normalizeBonus
             )
             .filter(Boolean)
-        : []
+        : normalizeGroupedBonuses(
+            groupedBonuses
+          )
   };
 }
 
