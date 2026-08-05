@@ -1,5 +1,10 @@
 import { supabase } from './supabase.js';
-import { carregarDadosAnalise, renderAnalise } from './build-analise.js';
+import {
+  RARIDADES, esc, cssSafe, numSafe, srcSafe, isVid,
+  mStyle, mInner, normalizar, rc, rn,
+  nivelAtual, nomeDoNivel, corDoItem, pintar
+} from './ui-core.js';
+import { carregarDadosAnalise, analisarBuild, renderAnalise } from './build-analise.js';
 
 /* ============================================================
    CRIAR BUILD — lógica da página
@@ -8,20 +13,6 @@ import { carregarDadosAnalise, renderAnalise } from './build-analise.js';
    ============================================================ */
 
 const MEDIA_BUCKET = 'game-media';
-
-const RARIDADES = {
-  comum:      { nome: 'Comum',      cor: '#8A93AD' },
-  raro:       { nome: 'Raro',       cor: '#4CC7E8' },
-  epico:      { nome: 'Épico',      cor: '#A855F7' },
-  divino:     { nome: 'Divino',     cor: '#FBBF24' },
-  lendario:   { nome: 'Lendário',   cor: '#FBBF24' },
-  mitico:     { nome: 'Mítico',     cor: '#FB923C' },
-  supremo:    { nome: 'Supremo',    cor: '#F87171' },
-  grandioso:  { nome: 'Grandioso',  cor: '#C084FC' },
-  celestial:  { nome: 'Celestial',  cor: '#38BDF8' },
-  estelar:    { nome: 'Estelar',    cor: '#A78BFA' },
-  imortal:    { nome: 'Imortal',    cor: '#FB7185' }
-};
 
 /* Slots de reserva — só aparecem se equipment_slots vier vazio.
    Segue a ordem oficial do anel: ímpares à esquerda, pares à direita. */
@@ -39,6 +30,7 @@ let CONFIG = {
   heroi:   { id: '', nome: '—', classe: '', media: { src: '', fit: 'contain' } },
   slots:   SLOTS_PADRAO.map((s, i, a) => ({ ...s, ...posicaoAnel(i, a.length) })),
   equipados: {},
+  analise: null,
   herois: [],
   catalogo: [],
 
@@ -52,65 +44,6 @@ let CONFIG = {
 
 /* ---------- helpers ---------- */
 const $ = id => document.getElementById(id);
-
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({
-  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-}[c]));
-
-/* Sanitização de valores que entram em atributo style ou src.
-   Impede que um cadastro no banco injete CSS/URL arbitrária. */
-const cssSafe = v => String(v ?? '').replace(/[^\w\s%.,+-]/g, '');
-const numSafe = (v, padrao) => (Number.isFinite(Number(v)) ? Number(v) : padrao);
-const srcSafe = s => {
-  const v = String(s ?? '').trim();
-  return /^(https?:\/\/|data:image\/|\.{0,2}\/)/i.test(v) ? v : '';
-};
-
-const isVid = s => /\.(mp4|webm)(\?.*)?$/i.test(s || '');
-
-const mStyle = m => m
-  ? `--fit:${cssSafe(m.fit || 'contain')};--pos:${cssSafe(m.pos || '50% 50%')};` +
-    `--scale:${numSafe(m.scale, 1)};--x:${cssSafe(m.x || 0)};--y:${cssSafe(m.y || 0)}`
-  : '';
-
-const mInner = m => {
-  const src = srcSafe(m?.src);
-  if (!src) return '';
-  return isVid(src)
-    ? `<video src="${esc(src)}" autoplay muted loop playsinline></video>`
-    : `<img src="${esc(src)}" alt="" loading="lazy">`;
-};
-
-const rc = r => (RARIDADES[r] || RARIDADES.comum).cor;
-const rn = r => (RARIDADES[r] || RARIDADES.comum).nome;
-
-const normalizar = s => String(s ?? '')
-  .toLowerCase()
-  .normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '');
-
-function pintar(el, m) {
-  if (!el) return;
-  el.setAttribute('style', mStyle(m));
-  el.innerHTML = mInner(m);
-  el.classList.toggle('ph', !(m && m.src));
-}
-
-/* Cor do nível cadastrado no banco; cai no mapa local se o item não tiver níveis. */
-function corDoItem(item) {
-  if (!item) return '#332B63';
-  const level = nivelAtual(item);
-  return level?.cor || rc(item.raridade);
-}
-
-function nomeDoNivel(item) {
-  const level = nivelAtual(item);
-  return level?.nome || rn(item?.raridade);
-}
-
-function nivelAtual(item) {
-  return item?.levels?.find(level => level.slug === item.raridade) || item?.levels?.[0] || null;
-}
 
 /* Posição do slot no anel: duas colunas espelhadas, barriga pra fora no meio.
    Funciona com qualquer quantidade de slots vinda do banco. */
@@ -694,10 +627,33 @@ function renderStats() {
 
 /* Recalcula tudo que depende do loadout. Ponto único de atualização. */
 function atualizarAnalise() {
-  CONFIG.macros = renderAnalise(
-    { heroi: CONFIG.heroi, slots: CONFIG.slots, equipados: CONFIG.equipados, dados: CONFIG.dados },
-    esc, mStyle, mInner, corDoItem
-  ) || [];
+  try {
+    const resultado = analisarBuild({
+      heroi: CONFIG.heroi,
+      slots: CONFIG.slots,
+      equipados: CONFIG.equipados,
+      dados: CONFIG.dados
+    });
+
+    CONFIG.analise = resultado;
+    CONFIG.macros = resultado.linhas || [];
+
+    renderAnalise(resultado);
+  } catch (error) {
+    console.error('[criar-build] Erro ao atualizar análise:', error);
+
+    CONFIG.analise = {
+      status: 'error',
+      mensagem: 'Não foi possível calcular a análise.',
+      linhas: [],
+      bonusAtivos: [],
+      estatisticasDesconhecidas: []
+    };
+
+    CONFIG.macros = [];
+    renderAnalise(CONFIG.analise);
+  }
+
   renderStats();
 }
 
@@ -763,17 +719,28 @@ function progresso(n) {
 }
 
 /* ---------- eventos ---------- */
-$('steps').onclick = e => {
+function adicionarEvento(id, evento, callback) {
+  const elemento = document.getElementById(id);
+
+  if (!elemento) {
+    console.warn(`[criar-build] Elemento #${id} não encontrado.`);
+    return;
+  }
+
+  elemento.addEventListener(evento, callback);
+}
+
+adicionarEvento('steps', 'click', e => {
   const s = e.target.closest('.step');
   if (s) progresso(+s.dataset.s);
-};
+});
 
-$('next-equip').onclick = () => {
+adicionarEvento('next-equip', 'click', () => {
   progresso(4);
   document.querySelector('.col4')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-};
+});
 
-$('clear-all').onclick = () => {
+adicionarEvento('clear-all', 'click', () => {
   CONFIG.equipados = {};
   equipamentoSelecionado = null;
   renderSlots();
@@ -782,12 +749,12 @@ $('clear-all').onclick = () => {
   renderDetalheEquipamento(null);
   atualizarAnalise();
   if (!$('pop').hidden) { $('pop-foot').hidden = true; renderCatalogo(); }
-};
+});
 
-$('tk-l').onclick = () => $('track').scrollBy({ left: -300, behavior: 'smooth' });
-$('tk-r').onclick = () => $('track').scrollBy({ left: 300, behavior: 'smooth' });
+adicionarEvento('tk-l', 'click', () => $('track')?.scrollBy({ left: -300, behavior: 'smooth' }));
+adicionarEvento('tk-r', 'click', () => $('track')?.scrollBy({ left: 300, behavior: 'smooth' }));
 
-$('pop-close').onclick = fecharPop;
+adicionarEvento('pop-close', 'click', fecharPop);
 $('pop-back').onclick = fecharPop;
 
 $('pop-clear').onclick = () => {
@@ -819,9 +786,18 @@ $('b-vis').onchange = e => {
 
 $('burger').onclick = () => $('side').classList.toggle('open');
 
+let resizeTimer = null;
+
 window.addEventListener('resize', () => {
-  clearTimeout(window._r);
-  window._r = setTimeout(() => { renderSlots(); posicionarPop(); }, 200);
+  clearTimeout(resizeTimer);
+
+  resizeTimer = setTimeout(() => {
+    renderSlots();
+
+    if (typeof posicionarPop === 'function') {
+      posicionarPop();
+    }
+  }, 200);
 });
 
 /* ---------- init ---------- */
