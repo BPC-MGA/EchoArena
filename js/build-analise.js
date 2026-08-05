@@ -385,6 +385,22 @@ export function renderAnalise(resultado) {
   const container = document.getElementById('analise');
   if (!container) return;
 
+  /* Contrato: só entra aqui a saída de analisarBuild(). Um objeto
+     sem status é o contexto cru sendo passado direto — falha em
+     voz alta em vez de desenhar um painel vazio que parece pronto. */
+  if (resultado && !resultado.status) {
+    console.error(
+      '[build-analise] renderAnalise recebeu um objeto sem status. ' +
+      'Chame analisarBuild(contexto) e passe o resultado, não o contexto.',
+      resultado
+    );
+    container.innerHTML = cabecalho('Erro', 'error') + aviso(
+      'error', 'Análise recebeu dados inválidos',
+      'O painel foi chamado com o contexto em vez do resultado do cálculo. Veja o console.'
+    );
+    return;
+  }
+
   if (!resultado || resultado.status === 'waiting-hero' || resultado.status === 'idle') {
     container.innerHTML = cabecalho('Aguardando') + aviso(
       '', 'Selecione um herói',
