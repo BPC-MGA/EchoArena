@@ -287,9 +287,11 @@ export function analisarBuild(contexto = {}) {
     });
 
     const resultado = {
+      ...resultadoMacros,
+      /* status vem DEPOIS do spread: calcularMacros devolve
+         'ok' e sobrescreveria o 'ready' se viesse antes. */
       status: 'ready',
       mensagem: '',
-      ...resultadoMacros,
       bonusAtivos: calcularBonusAtivos(contexto),
       fortes,
       fracos,
