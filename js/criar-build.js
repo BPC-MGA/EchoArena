@@ -1,4 +1,5 @@
 import { supabase } from './supabase.js';
+import { carregarDadosAnalise, renderAnalise } from './build-analise.js';
 
 /* ============================================================
    CRIAR BUILD — lógica da página
@@ -41,15 +42,10 @@ let CONFIG = {
   herois: [],
   catalogo: [],
 
-  /* ETAPA 6 (pendente): números fixos até existir a base de stats do herói
-     por nível e o mapeamento equipamento → macro-atributo. */
-  stats: [
-    { nome: 'Poder de fogo', valor: 8450, delta: '+32%', pct: 84, cor: '#FF5470', icone: '🚀' },
-    { nome: 'Sobrevivência',  valor: 9120, delta: '+28%', pct: 91, cor: '#4ADE80', icone: '🛡' },
-    { nome: 'Mobilidade',     valor: 7210, delta: '+18%', pct: 72, cor: '#FBBF24', icone: '⚡' },
-    { nome: 'Suporte',        valor: 6340, delta: '+12%', pct: 63, cor: '#5B8DEF', icone: '✚' },
-    { nome: 'Controle',       valor: 7890, delta: '+22%', pct: 79, cor: '#A855F7', icone: '✧' }
-  ],
+  /* Fonte única dos números: build-analise.js calcula a partir de
+     hero_base_stats + stats do nível de cada equipamento. */
+  dados: { baseHerois: new Map(), textos: new Map(), statsBonus: new Map() },
+  macros: [],
   bonus: [],
   resumo: { tagA: '—', tagB: '—', texto: 'Escolha um herói e monte o loadout para ver o resumo.' }
 };
@@ -382,6 +378,7 @@ function limparSlot(key) {
   renderSinergia();
   renderDetalheEquipamento(CONFIG.equipados[slotAtivo] || null);
   renderBonus();
+  atualizarAnalise();
   if (!$('pop').hidden) { $('pop-foot').hidden = true; renderCatalogo(); }
 }
 
@@ -526,6 +523,7 @@ function equipar(item) {
   renderDetalheEquipamento(CONFIG.equipados[destino]);
   renderSinergia();
   renderBonus();
+  atualizarAnalise();
   progresso(3);
 }
 
@@ -624,6 +622,8 @@ function renderDetalheEquipamento(item = equipamentoSelecionado) {
       renderDetalheEquipamento(item);
       renderSlots();
       renderSinergia();
+      renderBonus();
+      atualizarAnalise();
       if (!$('pop').hidden) renderCatalogo();
     };
   });
@@ -664,6 +664,7 @@ function renderHerois() {
       renderHeroi();
       CONFIG.resumo.tagA = h.classe;
       renderBonus();
+      atualizarAnalise();
     }
 
     tk.querySelectorAll('.hcard').forEach(x => x.classList.toggle('on', x === c));
@@ -676,19 +677,32 @@ function renderHerois() {
 
 /* ---------- stats / sinergia / bônus ---------- */
 function renderStats() {
-  $('stats').innerHTML = CONFIG.stats.map(s => `
+  const alvo = $('stats');
+  if (!alvo) return;
+
+  alvo.innerHTML = CONFIG.macros.map(s => `
     <div class="stat">
       <div class="h">
         <span class="ic">${esc(s.icone)}</span>
         <span class="nm">${esc(s.nome)}</span>
         <span class="v">${s.valor.toLocaleString('pt-BR')}</span>
-        <span class="d">${esc(s.delta)}</span>
+        <span class="d">${s.delta >= 0 ? '+' : ''}${s.delta}%</span>
       </div>
-      <div class="tr"><i style="width:${s.pct}%;background:${esc(s.cor)};box-shadow:0 0 8px ${esc(s.cor)}66"></i></div>
+      <div class="tr"><i style="width:${s.pct.toFixed(1)}%;background:${esc(s.cor)};box-shadow:0 0 8px ${esc(s.cor)}66"></i></div>
     </div>`).join('');
 }
 
+/* Recalcula tudo que depende do loadout. Ponto único de atualização. */
+function atualizarAnalise() {
+  CONFIG.macros = renderAnalise(
+    { heroi: CONFIG.heroi, slots: CONFIG.slots, equipados: CONFIG.equipados, dados: CONFIG.dados },
+    esc, mStyle, mInner, corDoItem
+  ) || [];
+  renderStats();
+}
+
 function renderSinergia() {
+  if (!$('syn')) return;
   $('syn').innerHTML = CONFIG.slots.map(s => {
     const it = CONFIG.equipados[s.key];
     return `<div class="s media ${it && it.media && it.media.src ? '' : 'ph'}"
@@ -721,7 +735,8 @@ function bonusAtivos() {
 
 function renderBonus() {
   CONFIG.bonus = bonusAtivos();
-  $('bn-count').textContent = CONFIG.bonus.length;
+  if (!$('bonus')) return;
+  if ($('bn-count')) $('bn-count').textContent = CONFIG.bonus.length;
 
   $('bonus').innerHTML = CONFIG.bonus.length
     ? CONFIG.bonus.map(b => `
@@ -729,9 +744,9 @@ function renderBonus() {
         <div><b>${esc(b.nome)}</b><small>${esc(b.desc)}</small></div></div>`).join('')
     : '<div style="font-size:11.5px;color:var(--faint)">Complete peças de um mesmo conjunto para ativar bônus.</div>';
 
-  $('sum-a').textContent = CONFIG.resumo.tagA;
-  $('sum-b').textContent = CONFIG.resumo.tagB;
-  $('sum-txt').textContent = CONFIG.resumo.texto;
+  if ($('sum-a')) $('sum-a').textContent = CONFIG.resumo.tagA;
+  if ($('sum-b')) $('sum-b').textContent = CONFIG.resumo.tagB;
+  if ($('sum-txt')) $('sum-txt').textContent = CONFIG.resumo.texto;
 }
 
 /* ---------- etapas / progresso ---------- */
@@ -765,6 +780,7 @@ $('clear-all').onclick = () => {
   renderSinergia();
   renderBonus();
   renderDetalheEquipamento(null);
+  atualizarAnalise();
   if (!$('pop').hidden) { $('pop-foot').hidden = true; renderCatalogo(); }
 };
 
@@ -811,6 +827,7 @@ window.addEventListener('resize', () => {
 /* ---------- init ---------- */
 try {
   await carregarConteudoSupabase();
+  CONFIG.dados = await carregarDadosAnalise();
 } catch (err) {
   console.error('Falha ao carregar conteúdo do Supabase:', err);
 }
@@ -821,7 +838,7 @@ CONFIG.resumo.tagA = CONFIG.heroi.classe || '—';
 renderHeroi();
 renderHerois();
 renderDetalheEquipamento(null);
-renderStats();
 renderSinergia();
 renderBonus();
+atualizarAnalise();
 progresso(1);
