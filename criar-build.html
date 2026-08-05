@@ -1,14 +1,15 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <script src="./js/guard.js"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Criar Build — Echo Arena</title>
+<script src="./js/guard.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="./css/criar-build.css">
+<link rel="stylesheet" href="./css/analise.css">
 </head>
 <body>
 
@@ -51,7 +52,7 @@
       <div class="bar"><i id="prog-bar" style="width:25%"></i></div>
     </div>
 
-    <button class="back" type="button">← Voltar ao início</button>
+    <button class="back" id="go-home" type="button">← Voltar ao início</button>
   </aside>
 
   <!-- ============ CENTRO ============ -->
@@ -124,32 +125,14 @@
     </section>
   </aside>
 
-  <!-- ============ COLUNA 4 — stats ============ -->
+  <!-- ============ COLUNA 4 — análise da build ============
+       Substitui os antigos blocos de stats, resumo, sinergia e
+       bônus: tudo isso agora vive dentro de #analise, montado
+       por js/build-analise.js. -->
   <aside class="col4">
-    <section class="box">
-      <div class="h4">Estatísticas previstas <span class="i">i</span></div>
-      <div id="stats"></div>
-      <button class="cta ghost full" type="button" style="margin-top:4px">Ver detalhes completos</button>
-    </section>
+    <aside id="analise"></aside>
 
-    <section class="box">
-      <div class="h4">Resumo da build</div>
-      <div class="tags"><span class="a" id="sum-a">Assassino</span><span class="b" id="sum-b">Dano explosivo</span></div>
-      <p style="font-size:12px;color:var(--dim);line-height:1.6" id="sum-txt">
-        Foco em eliminar alvos rapidamente com alto dano e mobilidade.</p>
-    </section>
-
-    <section class="box">
-      <div class="h4">Sinergia dos itens</div>
-      <div class="syn" id="syn"></div>
-    </section>
-
-    <section class="box">
-      <div class="h4">Bônus ativos (<span id="bn-count">0</span>)</div>
-      <div class="bonus" id="bonus"></div>
-    </section>
-
-    <button class="cta full" type="button" style="margin-bottom:9px">Próximo: revisão →</button>
+    <button class="cta full" type="button" style="margin:9px 0">Próximo: revisão →</button>
     <button class="cta ghost full" type="button">Salvar rascunho</button>
   </aside>
 </div>
