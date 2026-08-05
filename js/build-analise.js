@@ -1,3 +1,4 @@
+
 import { supabase } from './supabase.js';
 import { esc, mStyle, mInner, corDoItem } from './ui-core.js';
 
@@ -13,7 +14,7 @@ export const MACROS = [
   { key: 'fogo',          nome: 'Poder de fogo',  curto: 'FOGO',     icone: '🚀', cor: '#FF5470', teto: 10000 },
   { key: 'sobrevivencia', nome: 'Sobrevivência',  curto: 'SOBREV.',  icone: '🛡', cor: '#4ADE80', teto: 10000 },
   { key: 'mobilidade',    nome: 'Mobilidade',     curto: 'MOBIL.',   icone: '⚡', cor: '#FBBF24', teto: 10000 },
-  { key: 'suporte',       nome: 'Suporte',        curto: 'SUPORTE',  icone: '✚', cor: '#5B8DEF', teto: 10000 },
+  { key: 'precisao',      nome: 'Precisão',       curto: 'PRECIS.',  icone: '◎', cor: '#5B8DEF', teto: 10000 },
   { key: 'controle',      nome: 'Controle',       curto: 'CONTROLE', icone: '✧', cor: '#A855F7', teto: 10000 }
 ];
 
@@ -22,19 +23,38 @@ export const MACROS = [
    mais de um macro. Chave fora daqui é ignorada e devolvida em
    estatisticasDesconhecidas. */
 export const STAT_MAP = {
-  /* stats de equipamento */
+  /* --- arma (hero_weapon_stats) --- */
+  weapon_damage:            [['fogo', 1]],
+  fire_rate:                [['fogo', 1500]],
+  fire_interval:            [['fogo', 300, 'inv']],
+  magazine_size:            [['fogo', 120]],
+  reload_time:              [['fogo', 400, 'inv']],
+  weapon_armor_penetration: [['fogo', 12]],
+  armor_penetration_power:  [['fogo', 25]],
+  weapon_range:             [['controle', 1.5]],
+  weapon_spread:            [['precisao', 400, 'inv']],
+  spread_factor:            [['precisao', 400, 'inv']],
+  moving_spread_modifier:   [['precisao', 300, 'inv']],
+  aim_time:                 [['precisao', 300, 'inv']],
+
+  /* --- status do herói (hero_base_stats) --- */
+  health:         [['sobrevivencia', 1]],
+  armor:          [['sobrevivencia', 90]],
+  movement_speed: [['mobilidade', 20]],
+  vision_range:   [['controle', 1]],
+
+  /* --- equipamento (equipment_rarity_levels.stats) --- */
   weapon_damage_to_armor_pct:   [['fogo', 180]],
   weapon_damage_to_health_pct:  [['fogo', 180]],
   weapon_range_franco:          [['fogo', 60], ['controle', 90]],
-  vision_range:                 [['controle', 120]],
-  special_ability_cooldown_pct: [['suporte', 160]],
-  crate_opening_cooldown_pct:   [['suporte', 90]],
-  /* stats de herói (hero_base_stats) */
-  power:          [['fogo', 60]],
-  armor:          [['sobrevivencia', 40]],
-  health:         [['sobrevivencia', 4]],
-  movement_speed: [['mobilidade', 55]],
+  special_ability_cooldown_pct: [['precisao', 60]],
+  crate_opening_cooldown_pct:   [['mobilidade', 40]],
 };
+
+/* Chaves reconhecidas mas deliberadamente fora do cálculo.
+   'power' é o número agregado que o jogo já exibe: somá-lo
+   contaria a arma duas vezes. */
+export const STAT_IGNORADAS = new Set(['power']);
 
 /* ---------- TABELA DE AJUSTE 3: multiplicador por nível do herói ---------- */
 export const NIVEL_MULT = {
@@ -77,23 +97,66 @@ const criarResultadoVazio = (status = 'idle', mensagem = '') => ({
    Cada query vai sozinha e num try/catch para que a ausência
    de uma coluna não derrube o carregamento da página inteira.
    ============================================================ */
-export async function carregarDadosAnalise() {
-  const dados = { baseHerois: new Map(), textos: new Map(), statsBonus: new Map() };
+/* Teto por macro calculado a partir do maior valor observado entre
+   todos os heróis, mais folga para o que os equipamentos somam.
+   Evita teto chutado à mão saturando ou achatando o radar. */
+export const FOLGA_TETO = 1.6;
 
+function calcularTetos(baseHerois) {
+  const tetos = {};
+  const ignorar = new Set();
+
+  for (const stats of baseHerois.values()) {
+    const pontos = Object.fromEntries(MACROS.map(m => [m.key, 0]));
+    acumular(pontos, stats, ignorar);
+    for (const m of MACROS) {
+      tetos[m.key] = Math.max(tetos[m.key] || 0, pontos[m.key] || 0);
+    }
+  }
+
+  for (const m of MACROS) {
+    tetos[m.key] = Math.round((tetos[m.key] || 0) * FOLGA_TETO) || m.teto;
+  }
+  return tetos;
+}
+
+export async function carregarDadosAnalise() {
+  const dados = { baseHerois: new Map(), textos: new Map(), statsBonus: new Map(), tetos: {} };
+
+  /* A view hero_complete_base_stats já entrega status e arma
+     juntos, um registro por herói. Se ela não existir, cai na
+     leitura linha a linha das duas tabelas. */
   try {
-    const { data, error } = await supabase.from('hero_base_stats').select('*');
+    const { data, error } = await supabase.from('hero_complete_base_stats')
+      .select('hero_id,hero_stats,weapon_stats');
     if (error) throw error;
+
     for (const linha of (data || [])) {
-      const heroId = linha.hero_id ?? linha.heroi_id ?? linha.hero ?? null;
-      const chave = linha.stat_key ?? linha.key ?? null;
-      const valor = Number(linha.value ?? linha.base_value ?? linha.valor ?? 0);
-      if (!heroId || !chave) continue;
-      if (!dados.baseHerois.has(heroId)) dados.baseHerois.set(heroId, {});
-      dados.baseHerois.get(heroId)[chave] = valor;
+      if (!linha.hero_id) continue;
+      dados.baseHerois.set(linha.hero_id, {
+        ...(linha.hero_stats || {}),
+        ...(linha.weapon_stats || {})
+      });
     }
   } catch (err) {
-    console.warn('[build-analise] hero_base_stats indisponível:', err?.message || err);
+    console.warn('[build-analise] view hero_complete_base_stats indisponível, lendo tabelas:', err?.message || err);
+
+    for (const tabela of ['hero_base_stats', 'hero_weapon_stats']) {
+      try {
+        const { data, error } = await supabase.from(tabela).select('hero_id,stat_key,value');
+        if (error) throw error;
+        for (const linha of (data || [])) {
+          if (!linha.hero_id || !linha.stat_key) continue;
+          if (!dados.baseHerois.has(linha.hero_id)) dados.baseHerois.set(linha.hero_id, {});
+          dados.baseHerois.get(linha.hero_id)[linha.stat_key] = Number(linha.value ?? 0);
+        }
+      } catch (e) {
+        console.warn(`[build-analise] ${tabela} indisponível:`, e?.message || e);
+      }
+    }
   }
+
+  dados.tetos = calcularTetos(dados.baseHerois);
 
   try {
     const { data, error } = await supabase.from('heroes')
@@ -120,11 +183,23 @@ export async function carregarDadosAnalise() {
    ============================================================ */
 function acumular(alvo, stats, desconhecidas, mult = 1) {
   for (const [chave, valor] of Object.entries(stats || {})) {
+    if (STAT_IGNORADAS.has(chave)) continue;
+
     const regras = STAT_MAP[chave];
     if (!regras) { desconhecidas.add(chave); continue; }
+
     const n = Number(valor);
     if (!Number.isFinite(n)) continue;
-    for (const [macro, peso] of regras) alvo[macro] = (alvo[macro] || 0) + n * peso * mult;
+
+    for (const [macro, peso, modo] of regras) {
+      /* 'inv': quanto menor o valor, melhor (recarga, dispersão,
+         tempo de mira). Sem isso a arma pior pontuaria mais. */
+      const contribuicao = modo === 'inv'
+        ? (n > 0 ? peso / n : 0)
+        : n * peso;
+
+      alvo[macro] = (alvo[macro] || 0) + contribuicao * mult;
+    }
   }
 }
 
@@ -198,12 +273,13 @@ export function calcularMacros(contexto = {}) {
   }
 
   const linhas = MACROS.map(m => {
+    const teto = dados.tetos?.[m.key] || m.teto;
     const valorBase = Math.round(pontosBase[m.key] || 0);
     const valor = Math.round(pontosTotal[m.key] || 0);
-    const pct = Math.max(0, Math.min(100, (valor / m.teto) * 100));
-    const pctBase = Math.max(0, Math.min(100, (valorBase / m.teto) * 100));
+    const pct = Math.max(0, Math.min(100, (valor / teto) * 100));
+    const pctBase = Math.max(0, Math.min(100, (valorBase / teto) * 100));
     const delta = valorBase > 0 ? Math.round(((valor - valorBase) / valorBase) * 100) : 0;
-    return { ...m, base: valorBase, valor, pct, pctBase, delta };
+    return { ...m, teto, base: valorBase, valor, pct, pctBase, delta };
   });
 
   return {
