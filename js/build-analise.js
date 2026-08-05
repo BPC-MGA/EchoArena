@@ -1,6 +1,5 @@
-
 import { supabase } from './supabase.js';
-import { esc, mStyle, mInner, corDoItem } from './ui-core.js';
+import { esc, mStyle, mInner, corDoItem, normalizar } from './ui-core.js';
 
 /* ============================================================
    ANÁLISE DA BUILD
@@ -43,12 +42,25 @@ export const STAT_MAP = {
   movement_speed: [['mobilidade', 20]],
   vision_range:   [['controle', 1]],
 
-  /* --- equipamento (equipment_rarity_levels.stats) --- */
-  weapon_damage_to_armor_pct:   [['fogo', 180]],
-  weapon_damage_to_health_pct:  [['fogo', 180]],
+  /* --- equipamento, chaves em português ---
+     A busca é feita com o texto normalizado (minúsculo, sem
+     acento), então "Dispersão de tiro" e "dispersao de tiro"
+     caem na mesma regra. Valor negativo = redução; para stats
+     onde reduzir é bom, o peso também é negativo, e o produto
+     vira contribuição positiva. */
+  'dispersao de tiro da arma sem mirar': [['precisao', -30]],
+  'dispersao de tiro da arma':           [['precisao', -30]],
+  'velocidade para pegar melhorias':     [['mobilidade', -18]],
+
+  /* --- equipamento, chaves em inglês já existentes --- */
+  /* '_pct' são percentuais sobre o próprio herói: modo 'pct'
+     aplica o valor como % da base daquele macro, em vez de somar
+     um número fixo. +7% de dano vale mais numa arma forte. */
+  weapon_damage_to_armor_pct:   [['fogo', 1, 'pct']],
+  weapon_damage_to_health_pct:  [['fogo', 1, 'pct']],
+  special_ability_cooldown_pct: [['precisao', -1, 'pct']],
+  crate_opening_cooldown_pct:   [['mobilidade', -1, 'pct']],
   weapon_range_franco:          [['fogo', 60], ['controle', 90]],
-  special_ability_cooldown_pct: [['precisao', 60]],
-  crate_opening_cooldown_pct:   [['mobilidade', 40]],
 };
 
 /* Chaves reconhecidas mas deliberadamente fora do cálculo.
@@ -63,9 +75,12 @@ export const NIVEL_MULT = {
   imortal: 2.05, divino: 2.20
 };
 
-/* ---------- TABELA DE AJUSTE 4: limiares dos chips ---------- */
-export const LIMIAR_FORTE = 72;
-export const LIMIAR_FRACO = 38;
+/* ---------- TABELA DE AJUSTE 4: limiares dos chips ----------
+   Relativos à média dos eixos da própria build, não ao teto:
+   o teto carrega folga para equipamento, então comparar com ele
+   tornava "forte" inalcançável e marcava quase tudo como fraco. */
+export const LIMIAR_FORTE = 1.20;
+export const LIMIAR_FRACO = 0.70;
 
 /* Mantida para calibragem futura. NÃO entra em cálculo nenhum:
    sem hero_base_stats o painel avisa em vez de inventar número. */
@@ -181,11 +196,11 @@ export async function carregarDadosAnalise() {
 /* ============================================================
    CÁLCULO
    ============================================================ */
-function acumular(alvo, stats, desconhecidas, mult = 1) {
+function acumular(alvo, stats, desconhecidas, mult = 1, base = null) {
   for (const [chave, valor] of Object.entries(stats || {})) {
     if (STAT_IGNORADAS.has(chave)) continue;
 
-    const regras = STAT_MAP[chave];
+    const regras = STAT_MAP[chave] || STAT_MAP[normalizar(chave)];
     if (!regras) { desconhecidas.add(chave); continue; }
 
     const n = Number(valor);
@@ -194,9 +209,16 @@ function acumular(alvo, stats, desconhecidas, mult = 1) {
     for (const [macro, peso, modo] of regras) {
       /* 'inv': quanto menor o valor, melhor (recarga, dispersão,
          tempo de mira). Sem isso a arma pior pontuaria mais. */
-      const contribuicao = modo === 'inv'
-        ? (n > 0 ? peso / n : 0)
-        : n * peso;
+      let contribuicao;
+      if (modo === 'inv') {
+        /* quanto menor o valor, melhor (recarga, dispersão, mira) */
+        contribuicao = n > 0 ? peso / n : 0;
+      } else if (modo === 'pct') {
+        /* percentual sobre a base do herói naquele macro */
+        contribuicao = base ? (base[macro] || 0) * (n / 100) * peso : 0;
+      } else {
+        contribuicao = n * peso;
+      }
 
       alvo[macro] = (alvo[macro] || 0) + contribuicao * mult;
     }
@@ -264,12 +286,12 @@ export function calcularMacros(contexto = {}) {
   /* equipamentos: stats do nível escolhido */
   for (const item of Object.values(equipados).filter(Boolean)) {
     const level = item.levels?.find(l => l.slug === item.raridade) || item.levels?.[0];
-    acumular(pontosTotal, level?.stats, desconhecidas);
+    acumular(pontosTotal, level?.stats, desconhecidas, 1, pontosBase);
   }
 
   /* bônus de conjunto atingidos */
   for (const b of calcularBonusAtivos(contexto)) {
-    acumular(pontosTotal, dados.statsBonus?.get(b.id), desconhecidas);
+    acumular(pontosTotal, dados.statsBonus?.get(b.id), desconhecidas, 1, pontosBase);
   }
 
   const linhas = MACROS.map(m => {
@@ -344,10 +366,13 @@ export function analisarBuild(contexto = {}) {
 
     const texto = dados.textos?.get(heroi.databaseId) || {};
 
-    const fortes = linhas.filter(l => l.pct >= LIMIAR_FORTE)
-      .map(l => `${l.nome} em ${Math.round(l.pct)}% do teto`);
-    const fracos = linhas.filter(l => l.pct <= LIMIAR_FRACO)
-      .map(l => `${l.nome} em ${Math.round(l.pct)}% do teto`);
+    const media = linhas.reduce((soma, l) => soma + l.pct, 0) / (linhas.length || 1);
+
+    const rotulo = l => `${l.nome}: ${Math.round(l.pct)}% do teto`;
+    const fortes = media > 0
+      ? linhas.filter(l => l.pct >= media * LIMIAR_FORTE).map(rotulo) : [];
+    const fracos = media > 0
+      ? linhas.filter(l => l.pct <= media * LIMIAR_FRACO).map(rotulo) : [];
     if (texto.strength_note) fortes.push(texto.strength_note);
     if (texto.weakness_note) fracos.push(texto.weakness_note);
 
