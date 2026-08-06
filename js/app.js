@@ -10,7 +10,10 @@ const state = {
   maintenance: false,
   heroes: [],
   builds: [],
-  authMode: 'login'
+  activeHero: null,
+  carouselIndex: 0,
+  authMode: 'login',
+  buildFilter: ''
 };
 
 const escapeHtml = (value = '') => String(value).replace(/[&<>"']/g, (char) => ({
@@ -19,15 +22,6 @@ const escapeHtml = (value = '') => String(value).replace(/[&<>"']/g, (char) => (
 
 const isVideo = (source = '', mime = '') =>
   mime.startsWith('video/') || /\.(mp4|webm)$/i.test(source);
-
-/* =========================================================
-   MÍDIA
-   Cada destino tem sua própria imagem e seu próprio
-   enquadramento. "slot" define qual usar:
-     main → spotlight
-     card → cards de herói
-     gif  → animação
-========================================================= */
 
 function mediaOf(hero = {}, slot = 'main') {
   const chain = slot === 'card'
@@ -38,19 +32,18 @@ function mediaOf(hero = {}, slot = 'main') {
 
   for (const key of chain) {
     const source = hero[`${key}_source`];
+    if (!source) continue;
 
-    if (source) {
-      return {
-        source,
-        mime_type: hero[`${key}_mime_type`] || '',
-        scale:     hero[`${key}_scale`] ?? 1,
-        offset_x:  hero[`${key}_offset_x`] ?? 0,
-        offset_y:  hero[`${key}_offset_y`] ?? 0,
-        fit:       hero.fit || 'cover',
-        anchor_x:  hero.anchor_x || '50%',
-        anchor_y:  hero.anchor_y || '50%'
-      };
-    }
+    return {
+      source,
+      mime_type: hero[`${key}_mime_type`] || '',
+      scale: hero[`${key}_scale`] ?? 1,
+      offset_x: hero[`${key}_offset_x`] ?? 0,
+      offset_y: hero[`${key}_offset_y`] ?? 0,
+      fit: hero.fit || 'cover',
+      anchor_x: hero.anchor_x || '50%',
+      anchor_y: hero.anchor_y || '50%'
+    };
   }
 
   return null;
@@ -58,32 +51,22 @@ function mediaOf(hero = {}, slot = 'main') {
 
 function mediaStyle(media, fit) {
   if (!media) return '';
-
-  const pos = `${media.anchor_x || '50%'} ${media.anchor_y || '50%'}`;
-
   return [
     `--fit:${fit || media.fit || 'cover'}`,
-    `--pos:${pos}`,
+    `--pos:${media.anchor_x || '50%'} ${media.anchor_y || '50%'}`,
     `--scale:${Number(media.scale ?? 1)}`,
     `--x:${Number(media.offset_x ?? 0)}%`,
     `--y:${Number(media.offset_y ?? 0)}%`
   ].join(';');
 }
 
-function mediaInner(media, alt = '') {
+function mediaInner(media, alt = '', eager = false) {
   if (!media?.source) return '';
-
-  return isVideo(media.source, media.mime_type || '')
-    ? `<video src="${escapeHtml(media.source)}" autoplay muted loop playsinline></video>`
-    : `<img src="${escapeHtml(media.source)}" alt="${escapeHtml(alt)}" loading="lazy">`;
+  if (isVideo(media.source, media.mime_type || '')) {
+    return `<video src="${escapeHtml(media.source)}" autoplay muted loop playsinline></video>`;
+  }
+  return `<img src="${escapeHtml(media.source)}" alt="${escapeHtml(alt)}" loading="${eager ? 'eager' : 'lazy'}" decoding="async">`;
 }
-
-/* =========================================================
-   COR DA CLASSE
-   Vem de hero_classes.color, editável no painel.
-   Sem cor definida, usa uma paleta estável derivada do slug —
-   o mesmo slug sempre recebe a mesma cor.
-========================================================= */
 
 const CLASS_PALETTE = [
   '#F4D77A', '#8FE9FF', '#B794FF', '#4ADE80',
@@ -92,34 +75,26 @@ const CLASS_PALETTE = [
 
 function classColor(hero = {}) {
   const stored = String(hero.class_color || '').trim();
-
   if (/^#[0-9a-f]{3,8}$/i.test(stored)) return stored;
 
-  const key = String(hero.class_slug || hero.class_name || hero.slug || '');
+  const key = String(hero.class_slug || hero.class_name || hero.slug || 'echo');
   let sum = 0;
-
-  for (let i = 0; i < key.length; i += 1) {
-    sum = (sum + key.charCodeAt(i)) % 997;
+  for (let index = 0; index < key.length; index += 1) {
+    sum = (sum + key.charCodeAt(index)) % 997;
   }
-
   return CLASS_PALETTE[sum % CLASS_PALETTE.length];
 }
 
-/* =========================================================
-   AUTENTICAÇÃO
-========================================================= */
-
 function showMessage(message, type = '') {
-  const el = $('#auth-message');
-  if (!el) return;
-  el.textContent = message;
-  el.className = `auth-message ${type}`.trim();
+  const element = $('#auth-message');
+  if (!element) return;
+  element.textContent = message;
+  element.className = `auth-message ${type}`.trim();
 }
 
 function setAuthMode(mode) {
   state.authMode = mode;
   const register = mode === 'register';
-
   $('#auth-title').textContent = register ? 'Criar conta' : 'Entrar';
   $('#auth-submit').textContent = register ? 'Registrar' : 'Entrar';
   $('#auth-switch-text').textContent = register ? 'Já tem uma conta?' : 'Ainda não tem conta?';
@@ -133,7 +108,7 @@ function openAuth(mode = 'login') {
   setAuthMode(mode);
   $('#auth-modal').classList.add('open');
   $('#auth-modal').setAttribute('aria-hidden', 'false');
-  setTimeout(() => $('#auth-email').focus(), 0);
+  setTimeout(() => $('#auth-email')?.focus(), 0);
 }
 
 function closeAuth() {
@@ -143,125 +118,185 @@ function closeAuth() {
   showMessage('');
 }
 
-/* =========================================================
-   HERÓIS
-========================================================= */
+function heroRole(hero = {}) {
+  return hero.subtitle || hero.class_name || 'Herói';
+}
 
-async function loadHeroes(classSlug = '') {
+function renderHeroCards(heroes = state.heroes) {
   const container = $('#heroes');
-  container.innerHTML = '<div class="loading-card">Carregando heróis...</div>';
+  if (!heroes.length) {
+    container.innerHTML = '<div class="loading-card">Nenhum herói encontrado.</div>';
+    return;
+  }
 
-  let query = supabase
+  container.innerHTML = heroes.map((hero) => {
+    const media = mediaOf(hero, 'card');
+    const color = classColor(hero);
+    const active = state.activeHero?.id === hero.id ? ' active' : '';
+
+    return `
+      <article class="hero-card${active}" data-hero="${escapeHtml(hero.slug || hero.id)}" style="--class-color:${escapeHtml(color)}" tabindex="0" role="button" aria-label="Destacar ${escapeHtml(hero.name)}">
+        <div class="media ${media ? '' : 'empty'} card-media" style="${mediaStyle(media, 'cover')}">${mediaInner(media, hero.name)}</div>
+        <div class="card-fade"></div><div class="role-mark">◇</div>
+        <div class="card-copy"><div class="card-name">${escapeHtml(hero.name)}</div><div class="card-role">${escapeHtml(heroRole(hero))}</div></div>
+      </article>`;
+  }).join('');
+
+  container.querySelectorAll('.hero-card').forEach((card) => {
+    const select = () => {
+      const hero = state.heroes.find((item) => String(item.slug || item.id) === card.dataset.hero);
+      if (hero) renderSpotlight(hero, true);
+    };
+    card.addEventListener('click', select);
+    card.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        select();
+      }
+    });
+  });
+}
+
+async function loadHeroes() {
+  $('#heroes').innerHTML = '<div class="loading-card">Carregando heróis...</div>';
+
+  const { data, error } = await supabase
     .from('v_heroes_complete')
     .select('*')
     .eq('enabled', true)
+    .order('display_order', { ascending: true, nullsFirst: false })
     .order('name')
     .limit(60);
 
-  if (classSlug) query = query.eq('class_slug', classSlug);
-
-  const { data, error } = await query;
-
   if (error) {
-    console.error(error);
-    container.innerHTML = '<div class="loading-card">Não foi possível carregar os heróis.</div>';
+    console.error('[heróis]', error);
+    $('#heroes').innerHTML = '<div class="loading-card">Não foi possível carregar os heróis.</div>';
     return;
   }
 
   state.heroes = data || [];
-
-  container.innerHTML = state.heroes.slice(0, 12).map((hero) => {
-    const media = mediaOf(hero, 'card');
-    const color = classColor(hero);
-
-    return `
-      <article class="hc" data-hero="${escapeHtml(hero.slug)}"
-               style="--class-color:${escapeHtml(color)}">
-        <div class="thumb">
-          <div class="media ${media ? '' : 'empty'}"
-               style="${mediaStyle(media, 'cover')}">
-            ${mediaInner(media, hero.name)}
-          </div>
-          <div class="fade"></div>
-          <div class="cap">
-            <div class="n" style="color:${escapeHtml(color)}">
-              ${escapeHtml(hero.name)}
-            </div>
-            <div class="r">${escapeHtml(hero.class_name || '')}</div>
-          </div>
-        </div>
-      </article>
-    `;
-  }).join('');
-
-  renderSpotlight(state.heroes[0]);
+  const first = state.heroes[0] || null;
+  if (first) renderSpotlight(first, false);
+  renderHeroCards();
 }
 
-function renderSpotlight(hero) {
+function renderSpotlight(hero, animate = true) {
   if (!hero) return;
+  state.activeHero = hero;
 
-  loadHeroHighlights(hero);
+  const stage = $('#hero-stage');
+  const color = classColor(hero);
+  stage.style.setProperty('--hero-accent', color);
+
+  if (animate) {
+    stage.classList.remove('is-changing');
+    void stage.offsetWidth;
+    stage.classList.add('is-changing');
+  }
 
   $('#sp-name').textContent = hero.name || '';
-  $('#sp-sub').textContent = hero.subtitle || hero.class_name || '';
-  $('.spot .desc').textContent = hero.description || 'Informações em atualização.';
+  $('#sp-sub').textContent = heroRole(hero);
+  $('.hero-description').textContent = hero.description || 'Informações em atualização.';
+  $('#sp-tag-role').textContent = hero.class_name || 'Herói';
+  $('#hero-code').textContent = String(hero.slug || hero.id || '—').toUpperCase();
 
-  /* O spotlight muda muito de proporção entre desktop e celular.
-     "contain" garante o herói inteiro visível em qualquer largura. */
   const media = mediaOf(hero, 'main');
   const element = $('#spot-media');
-
   element.setAttribute('style', mediaStyle(media, 'contain'));
-  element.innerHTML = mediaInner(media, hero.name);
+  element.innerHTML = mediaInner(media, hero.name, true);
   element.classList.toggle('empty', !media);
+
+  $('#hero-details-btn').dataset.slug = hero.slug || '';
+  $('#create-build-btn').dataset.hero = hero.id || '';
+  loadHeroHighlights(hero);
+  renderHeroCards();
+
+  const build = state.builds.find((item) =>
+    String(item.hero_id || '') === String(hero.id || '') ||
+    String(item.hero_slug || '') === String(hero.slug || '')
+  ) || state.builds[0];
+  renderFeaturedBuild(build);
 }
 
-/* =========================================================
-   BUILDS
-========================================================= */
+function buildTitle(build) {
+  return build?.title || build?.name || 'Build da comunidade';
+}
+
+function renderFeaturedBuild(build) {
+  if (!build) {
+    $('#featured-build-title').textContent = 'Nenhuma build publicada';
+    $('#featured-build-author').textContent = 'Aguardando dados da comunidade';
+    $('#featured-build-likes').textContent = '—';
+    $('#featured-build-popularity').textContent = '—';
+    $('#featured-build-favorites').textContent = '—';
+    $('#featured-build-btn').disabled = true;
+    delete $('#featured-build-btn').dataset.build;
+    return;
+  }
+
+  const likes = Number(build.likes || build.favorites || 0);
+  $('#featured-build-title').textContent = buildTitle(build);
+  $('#featured-build-author').textContent = `Por ${build.display_name || build.username || 'Jogador'}`;
+  $('#featured-build-likes').textContent = likes ? `♥ ${likes.toLocaleString('pt-BR')}` : '♡';
+  $('#featured-build-popularity').textContent = build.usage_percent != null ? `${Number(build.usage_percent).toFixed(1)}%` : '—';
+  $('#featured-build-favorites').textContent = likes.toLocaleString('pt-BR');
+  $('#featured-build-btn').disabled = false;
+  $('#featured-build-btn').dataset.build = build.id;
+}
+
+function filteredBuilds() {
+  if (!state.buildFilter) return state.builds;
+  return state.builds.filter((build) => {
+    const value = String(build.class_slug || build.hero_class_slug || '').toLowerCase();
+    return value === state.buildFilter;
+  });
+}
+
+function renderBuildList() {
+  const builds = filteredBuilds();
+  const container = $('#builds');
+
+  if (!builds.length) {
+    container.innerHTML = '<div class="loading-card">Nenhuma build publicada nesta categoria.</div>';
+    return;
+  }
+
+  container.innerHTML = builds.slice(0, 6).map((build) => `
+    <div class="build-row">
+      <div><div class="name">${escapeHtml(buildTitle(build))}</div><div class="by">Por ${escapeHtml(build.display_name || build.username || 'Jogador')}</div></div>
+      <div class="likes">${Number(build.likes || build.favorites || 0).toLocaleString('pt-BR')} ♡</div>
+      <button class="open-build" data-build="${escapeHtml(build.id)}">Ver build</button>
+    </div>`).join('');
+
+  container.querySelectorAll('[data-build]').forEach((button) => {
+    button.addEventListener('click', () => {
+      window.location.href = `./criar-build.html?build=${encodeURIComponent(button.dataset.build)}`;
+    });
+  });
+}
 
 async function loadBuilds() {
-  const container = $('#builds');
-  container.innerHTML = '<div class="loading-card">Carregando builds...</div>';
-
   const { data, error } = await supabase
     .from('v_popular_builds')
     .select('*')
-    .limit(10);
+    .limit(20);
 
   if (error) {
-    console.error(error);
-    container.innerHTML = '<div class="loading-card">Ainda não há builds públicas.</div>';
+    console.error('[builds]', error);
+    $('#builds').innerHTML = '<div class="loading-card">Ainda não há builds públicas.</div>';
+    renderFeaturedBuild(null);
     return;
   }
 
   state.builds = data || [];
-
-  container.innerHTML = state.builds.length
-    ? state.builds.map((build) => `
-      <div class="brow">
-        <div class="who">
-          <div class="av media empty"></div>
-          <div>
-            <div class="nm">${escapeHtml(build.title)}</div>
-            <div class="by">Por <b>${escapeHtml(build.display_name || build.username || 'Jogador')}</b></div>
-          </div>
-        </div>
-        <div></div>
-        <div class="m">
-          <div class="v g">${Number(build.likes || 0).toLocaleString('pt-BR')}</div>
-          <div class="l">Favoritos</div>
-        </div>
-        <div class="items">${'<i></i>'.repeat(6)}</div>
-        <button class="go" data-build="${build.id}">Ver build</button>
-      </div>
-    `).join('')
-    : '<div class="loading-card">Nenhuma build publicada ainda.</div>';
+  renderBuildList();
+  renderFeaturedBuild(
+    state.builds.find((build) => String(build.hero_id || '') === String(state.activeHero?.id || '')) || state.builds[0]
+  );
 }
 
 async function loadSavedBuilds() {
   const container = $('#saved');
-
   if (!state.session?.user) {
     container.innerHTML = '<div class="loading-card">Entre para ver suas builds.</div>';
     return;
@@ -276,41 +311,19 @@ async function loadSavedBuilds() {
     .limit(5);
 
   if (error) {
-    console.error(error);
+    console.error('[builds salvas]', error);
     container.innerHTML = '<div class="loading-card">Não foi possível carregar suas builds.</div>';
     return;
   }
 
   container.innerHTML = data?.length
-    ? data.map((build) => `
-      <div class="r">
-        <div class="av media empty"></div>
-        <div class="tx">
-          <div class="n">${escapeHtml(build.title)}</div>
-          <div class="d">Atualizada em ${new Date(build.updated_at).toLocaleDateString('pt-BR')}</div>
-        </div>
-        <div class="ii">${'<i></i>'.repeat(5)}</div>
-        <span class="hz">♥</span>
-      </div>
-    `).join('')
+    ? data.map((build) => `<div class="saved-row"><div><strong>${escapeHtml(build.title)}</strong><div class="date">Atualizada em ${new Date(build.updated_at).toLocaleDateString('pt-BR')}</div></div><span class="heart">♥</span></div>`).join('')
     : '<div class="loading-card">Você ainda não salvou builds.</div>';
 }
-
-/* =========================================================
-   SESSÃO
-========================================================= */
-
-/* =========================================================
-   SAÍDA DA CONTA
-   Sair do login remove privilégios na hora. Para admin isso
-   pode significar perder o acesso ao próprio site — então a
-   ação pede confirmação explícita.
-========================================================= */
 
 async function loadAccountContext() {
   state.role = null;
   state.maintenance = false;
-
   const userId = state.session?.user?.id;
   if (!userId) return;
 
@@ -319,13 +332,8 @@ async function loadAccountContext() {
       supabase.from('profiles').select('role').eq('id', userId).maybeSingle(),
       supabase.rpc('site_status')
     ]);
-
     state.role = profileResult.data?.role ?? null;
-
-    const status = Array.isArray(statusResult.data)
-      ? statusResult.data[0]
-      : statusResult.data;
-
+    const status = Array.isArray(statusResult.data) ? statusResult.data[0] : statusResult.data;
     state.maintenance = status?.maintenance_mode === true;
   } catch (error) {
     console.warn('[conta] contexto indisponível:', error.message);
@@ -333,108 +341,30 @@ async function loadAccountContext() {
 }
 
 function confirmLogout() {
-  const isAdmin = state.role === 'admin';
-
-  /* Usuário comum sai sem cerimônia. */
-  if (!isAdmin) return Promise.resolve(true);
-
-  return new Promise((resolve) => {
-    const overlay = document.createElement('div');
-    overlay.id = 'logout-modal';
-
-    const extra = state.maintenance
-      ? `<div class="lg-alert">
-           O site está <strong>em manutenção</strong>. Ao sair, esta página
-           deixa de abrir para você até que faça login novamente.
-         </div>`
-      : '';
-
-    overlay.innerHTML = `
-      <div class="lg-backdrop"></div>
-
-      <div class="lg-card" role="dialog" aria-modal="true">
-        <div class="lg-icon">&#9888;</div>
-
-        <h2>Sair da conta de administrador?</h2>
-
-        <p>
-          Você perde o acesso administrativo nesta aba. Recursos que exigem
-          login voltam a pedir autenticação, e será necessário entrar de novo
-          pelo painel para retomar a administração.
-        </p>
-
-        ${extra}
-
-        <div class="lg-actions">
-          <button type="button" id="lg-cancel">Continuar conectado</button>
-          <button type="button" id="lg-confirm" class="danger">Sair mesmo assim</button>
-        </div>
-      </div>
-    `;
-
-    const style = document.createElement('style');
-
-    style.textContent = `
-      #logout-modal{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:20px;
-        font-family:Inter,system-ui,sans-serif}
-      #logout-modal .lg-backdrop{position:absolute;inset:0;background:rgba(3,7,15,.82);
-        backdrop-filter:blur(5px)}
-      #logout-modal .lg-card{position:relative;width:min(440px,100%);padding:26px;
-        border:1px solid #71303b;border-radius:18px;background:#130E24;
-        box-shadow:0 30px 80px rgba(0,0,0,.6);text-align:center}
-      #logout-modal .lg-icon{font-size:32px;line-height:1;margin-bottom:12px;color:#ffb4bd}
-      #logout-modal h2{margin:0 0 10px;font-size:19px;color:#EDE9F7}
-      #logout-modal p{margin:0;color:#A79CC8;font-size:12.5px;line-height:1.65}
-      #logout-modal .lg-alert{margin-top:14px;padding:12px 14px;border:1px solid #71303b;
-        border-radius:11px;background:#2a1016;color:#ffb4bd;font-size:12px;line-height:1.6}
-      #logout-modal .lg-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:20px}
-      #logout-modal .lg-actions button{padding:12px;border:1px solid #31245C;border-radius:10px;
-        background:#181130;color:#EDE9F7;font:inherit;font-weight:700;font-size:12.5px;cursor:pointer}
-      #logout-modal .lg-actions button.danger{border-color:#71303b;background:#2a1016;color:#ff9aaa}
-      @media(max-width:420px){#logout-modal .lg-actions{grid-template-columns:1fr}}
-    `;
-
-    overlay.appendChild(style);
-    document.body.appendChild(overlay);
-
-    function close(result) {
-      document.removeEventListener('keydown', onKey);
-      overlay.remove();
-      resolve(result);
-    }
-
-    function onKey(event) {
-      if (event.key === 'Escape') close(false);
-    }
-
-    overlay.querySelector('#lg-confirm').addEventListener('click', () => close(true));
-    overlay.querySelector('#lg-cancel').addEventListener('click', () => close(false));
-    overlay.querySelector('.lg-backdrop').addEventListener('click', () => close(false));
-    document.addEventListener('keydown', onKey);
-
-    setTimeout(() => overlay.querySelector('#lg-cancel')?.focus(), 30);
-  });
+  if (state.role !== 'admin') return Promise.resolve(true);
+  const warning = state.maintenance
+    ? '\n\nO site está em manutenção e ficará bloqueado nesta aba.'
+    : '';
+  return Promise.resolve(window.confirm(`Sair da conta de administrador?${warning}`));
 }
 
 function updateAuthUI() {
   const loginButton = $('#login-btn');
-  const registerButton = $('#register-btn');
+  const accountButton = $('#register-btn');
 
   if (state.session?.user) {
     loginButton.textContent = 'Sair';
     loginButton.onclick = async () => {
-      if (await confirmLogout()) {
-        await supabase.auth.signOut();
-      }
+      if (await confirmLogout()) await supabase.auth.signOut();
     };
-    registerButton.textContent = state.session.user.email || 'Minha conta';
-    registerButton.disabled = true;
+    accountButton.textContent = state.session.user.email || 'Minha conta';
+    accountButton.disabled = true;
   } else {
     loginButton.textContent = 'Entrar';
     loginButton.onclick = () => openAuth('login');
-    registerButton.textContent = 'Registrar';
-    registerButton.disabled = false;
-    registerButton.onclick = () => openAuth('register');
+    accountButton.textContent = 'Registrar';
+    accountButton.disabled = false;
+    accountButton.onclick = () => openAuth('register');
   }
 
   loadSavedBuilds();
@@ -457,80 +387,91 @@ async function handleAuthSubmit(event) {
         emailRedirectTo: window.location.origin + window.location.pathname
       }
     });
-
     if (error) return showMessage(error.message, 'error');
-
-    showMessage(
-      'Sua conta foi criada com sucesso. Enviamos um e-mail de confirmação. ' +
-      'Após validar seu endereço de e-mail, você poderá acessar todos os recursos da plataforma.',
-      'success'
-    );
+    showMessage('Conta criada. Confirme seu endereço pelo e-mail enviado.', 'success');
     return;
   }
 
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) return showMessage(error.message, 'error');
-
   closeAuth();
 }
 
 async function resetPassword() {
   const email = $('#auth-email').value.trim();
   if (!email) return showMessage('Digite seu e-mail primeiro.', 'error');
-
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
     redirectTo: window.location.origin + window.location.pathname
   });
-
   if (error) return showMessage(error.message, 'error');
   showMessage('Enviamos o link de recuperação para seu e-mail.', 'success');
 }
 
-/* =========================================================
-   EVENTOS
-========================================================= */
-
-function bindEvents() {
-  $('#auth-close').onclick = closeAuth;
-
-  $('#auth-modal').onclick = (event) => {
-    if (event.target.id === 'auth-modal') closeAuth();
-  };
-
-  $('#auth-form').addEventListener('submit', handleAuthSubmit);
-
-  $('#auth-switch-btn').onclick = () =>
-    setAuthMode(state.authMode === 'login' ? 'register' : 'login');
-
-  $('#forgot-password-btn').onclick = resetPassword;
-
-  $('#promo-login-btn').onclick = () => openAuth('login');
-  $('#promo-register-btn').onclick = () => openAuth('register');
-
-  $('#create-build-btn').onclick = () => {
-    if (!state.session?.user) return openAuth('login');
-    window.location.href = './criar-build.html';
-  };
-
-  $('#bg').onclick = () => $('#side').classList.toggle('open');
-
-  $$('.filters b').forEach((button) => {
-    button.onclick = () => {
-      $$('.filters b').forEach((item) => item.classList.remove('on'));
-      button.classList.add('on');
-      loadHeroes(button.dataset.class || '');
-    };
-  });
+function shiftCarousel(direction) {
+  const container = $('#heroes');
+  const cards = $$('.hero-card');
+  if (!cards.length) return;
+  const visible = Math.max(1, Math.floor($('.heroes-viewport').clientWidth / 255));
+  const maxIndex = Math.max(0, cards.length - visible);
+  state.carouselIndex = Math.min(maxIndex, Math.max(0, state.carouselIndex + direction));
+  const step = cards[0].getBoundingClientRect().width + 16;
+  container.style.transform = `translateX(${-state.carouselIndex * step}px)`;
 }
 
-/* =========================================================
-   INICIALIZAÇÃO
-========================================================= */
+function bindEvents() {
+  $('#auth-close').addEventListener('click', closeAuth);
+  $('#auth-modal').addEventListener('click', (event) => {
+    if (event.target.id === 'auth-modal') closeAuth();
+  });
+  $('#auth-form').addEventListener('submit', handleAuthSubmit);
+  $('#auth-switch-btn').addEventListener('click', () => setAuthMode(state.authMode === 'login' ? 'register' : 'login'));
+  $('#forgot-password-btn').addEventListener('click', resetPassword);
+
+  $('#hero-details-btn').addEventListener('click', (event) => {
+    const slug = event.currentTarget.dataset.slug;
+    window.location.href = slug ? `./herois.html?hero=${encodeURIComponent(slug)}` : './herois.html';
+  });
+
+  $('#create-build-btn').addEventListener('click', (event) => {
+    if (!state.session?.user) return openAuth('login');
+    const heroId = event.currentTarget.dataset.hero;
+    window.location.href = heroId ? `./criar-build.html?hero=${encodeURIComponent(heroId)}` : './criar-build.html';
+  });
+
+  $('#featured-build-btn').addEventListener('click', (event) => {
+    const buildId = event.currentTarget.dataset.build;
+    if (buildId) window.location.href = `./criar-build.html?build=${encodeURIComponent(buildId)}`;
+  });
+
+  $('#heroes-prev').addEventListener('click', () => shiftCarousel(-1));
+  $('#heroes-next').addEventListener('click', () => shiftCarousel(1));
+
+  $('#hero-search').addEventListener('input', (event) => {
+    const value = event.target.value.trim().toLocaleLowerCase('pt-BR');
+    const results = !value ? state.heroes : state.heroes.filter((hero) =>
+      [hero.name, hero.subtitle, hero.class_name, hero.description]
+        .filter(Boolean)
+        .some((field) => String(field).toLocaleLowerCase('pt-BR').includes(value))
+    );
+    state.carouselIndex = 0;
+    $('#heroes').style.transform = '';
+    renderHeroCards(results);
+  });
+
+  $$('.filters b').forEach((button) => {
+    button.addEventListener('click', () => {
+      $$('.filters b').forEach((item) => item.classList.remove('on'));
+      button.classList.add('on');
+      state.buildFilter = button.dataset.class || '';
+      renderBuildList();
+    });
+  });
+
+  window.addEventListener('resize', () => shiftCarousel(0));
+}
 
 async function bootstrap() {
-  /* O porteiro já substituiu a página — não há o que montar. */
   if (window.__ECHO_BLOCKED) return;
-
   bindEvents();
 
   const { data } = await supabase.auth.getSession();
@@ -547,6 +488,4 @@ async function bootstrap() {
   await Promise.all([loadHeroes(), loadBuilds(), loadSiteStats()]);
 }
 
-bootstrap().catch((error) => {
-  console.error('[Echo Arena]', error);
-});
+bootstrap().catch((error) => console.error('[Echo Arena]', error));
