@@ -408,6 +408,7 @@ function formatBonusEffect(effect) {
 
   const label = humanizeKey(
     effect.atributo ??
+    effect.efeito ??
     effect.attribute ??
     effect.label ??
     effect.name ??
@@ -422,7 +423,20 @@ function formatBonusEffect(effect) {
   const unit = String(
     effect.unidade ??
     effect.unit ??
-    ''
+    (
+      /(?:^|_)percentual(?:_|$)/i.test(
+        String(
+          effect.atributo ??
+          effect.efeito ??
+          effect.attribute ??
+          effect.label ??
+          effect.name ??
+          ''
+        )
+      )
+        ? '%'
+        : ''
+    )
   ).trim();
 
   if (!label) return '';
@@ -519,9 +533,15 @@ function normalizeData(source = {}) {
       : equipment.efeitosPorCategoria &&
         typeof equipment.efeitosPorCategoria === 'object'
         ? equipment.efeitosPorCategoria
+      : equipment.raridades &&
+        typeof equipment.raridades === 'object'
+        ? equipment.raridades
       : source.efeitosPorCategoria &&
         typeof source.efeitosPorCategoria === 'object'
         ? source.efeitosPorCategoria
+      : source.raridades &&
+        typeof source.raridades === 'object'
+        ? source.raridades
       : {};
 
   const variants = {};
