@@ -2,6 +2,7 @@ import { supabase } from '../../js/supabase.js';
 
 const STORAGE_BUCKET = 'game-media';
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
+const MAX_VIDEO_FILE_SIZE = 60 * 1024 * 1024;
 const IMPORT_KEY = 'hero-import-draft';
 const SAVE_RECEIPT_KEY = 'hero-save-success-receipt';
 const IMPORT_SCHEMA_VERSION = 1;
@@ -24,7 +25,31 @@ const fields = {
   enabled: document.getElementById('enabled'),
   imageFile: document.getElementById('image-file'),
   cardFile: document.getElementById('card-file'),
-  gifFile: document.getElementById('gif-file')
+  gifFile: document.getElementById('gif-file'),
+  screenVideoFile: document.getElementById('screen-video-file'),
+  screenVideoIntensity: document.getElementById('screen-video-intensity'),
+  screenVideoIntensityValue: document.getElementById('screen-video-intensity-value'),
+  screenVideoBrightness: document.getElementById('screen-video-brightness'),
+  screenVideoBrightnessValue: document.getElementById('screen-video-brightness-value'),
+  screenVideoContrast: document.getElementById('screen-video-contrast'),
+  screenVideoContrastValue: document.getElementById('screen-video-contrast-value'),
+  screenVideoSaturation: document.getElementById('screen-video-saturation'),
+  screenVideoSaturationValue: document.getElementById('screen-video-saturation-value'),
+  screenVideoHue: document.getElementById('screen-video-hue'),
+  screenVideoHueValue: document.getElementById('screen-video-hue-value'),
+  screenVideoTint: document.getElementById('screen-video-tint'),
+  screenVideoTintValue: document.getElementById('screen-video-tint-value'),
+  screenVideoVignette: document.getElementById('screen-video-vignette'),
+  screenVideoVignetteValue: document.getElementById('screen-video-vignette-value'),
+  screenVideoScale: document.getElementById('screen-video-scale'),
+  screenVideoScaleValue: document.getElementById('screen-video-scale-value'),
+  screenVideoOffsetX: document.getElementById('screen-video-offset-x'),
+  screenVideoOffsetXValue: document.getElementById('screen-video-offset-x-value'),
+  screenVideoOffsetY: document.getElementById('screen-video-offset-y'),
+  screenVideoOffsetYValue: document.getElementById('screen-video-offset-y-value'),
+  screenVideoRotation: document.getElementById('screen-video-rotation'),
+  screenVideoRotationValue: document.getElementById('screen-video-rotation-value'),
+  screenVideoRemove: document.getElementById('screen-video-remove')
 };
 
 const previewElements = {
@@ -107,6 +132,7 @@ let pendingUpdate = null;
 let mainEditor;
 let cardEditor;
 let gifEditor;
+let screenVideoObjectUrl = '';
 
 function showMessage(text = '', type = '') {
   if (!message) return;
@@ -392,13 +418,13 @@ function getPublicUrl(path) {
   return supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path).data.publicUrl;
 }
 
-function validateFile(file, allowedTypes) {
+function validateFile(file, allowedTypes, maximumSize = MAX_FILE_SIZE) {
   if (!file) return;
   if (!allowedTypes.includes(file.type)) {
     throw new Error(`Formato não permitido para "${file.name}".`);
   }
-  if (file.size > MAX_FILE_SIZE) {
-    throw new Error(`"${file.name}" deve ter no máximo 25 MB.`);
+  if (file.size > maximumSize) {
+    throw new Error(`"${file.name}" ultrapassa o limite de ${Math.round(maximumSize / 1024 / 1024)} MB.`);
   }
 }
 
@@ -723,6 +749,158 @@ function createAllMediaEditors() {
     resetButton: document.getElementById('gif-image-reset'),
     allowedTypes: ['image/gif'],
     objectFit: 'cover'
+  });
+}
+
+function revokeScreenVideoObjectUrl() {
+  if (!screenVideoObjectUrl) return;
+  URL.revokeObjectURL(screenVideoObjectUrl);
+  screenVideoObjectUrl = '';
+}
+
+function collectScreenVideoSettings() {
+  return {
+    intensity: clamp(toNumber(fields.screenVideoIntensity?.value, .42), .18, .9),
+    brightness: clamp(toNumber(fields.screenVideoBrightness?.value, .5), .25, 1.25),
+    contrast: clamp(toNumber(fields.screenVideoContrast?.value, 1.2), .7, 1.7),
+    saturation: clamp(toNumber(fields.screenVideoSaturation?.value, .64), 0, 1.8),
+    hue: clamp(toNumber(fields.screenVideoHue?.value, 8), -60, 60),
+    tint: clamp(toNumber(fields.screenVideoTint?.value, .36), 0, .85),
+    vignette: clamp(toNumber(fields.screenVideoVignette?.value, .42), 0, .9),
+    scale: clamp(toNumber(fields.screenVideoScale?.value, 1.08), 1, 1.8),
+    offsetX: clamp(toNumber(fields.screenVideoOffsetX?.value, 0), -35, 35),
+    offsetY: clamp(toNumber(fields.screenVideoOffsetY?.value, 0), -35, 35),
+    rotation: clamp(toNumber(fields.screenVideoRotation?.value, 0), -10, 10)
+  };
+}
+
+function updateScreenVideoAppearance() {
+  const settings = collectScreenVideoSettings();
+  const frame = document.getElementById('screen-video-preview-frame');
+
+  const controls = [
+    [fields.screenVideoIntensity, fields.screenVideoIntensityValue, settings.intensity, '%'],
+    [fields.screenVideoBrightness, fields.screenVideoBrightnessValue, settings.brightness, '%'],
+    [fields.screenVideoContrast, fields.screenVideoContrastValue, settings.contrast, '%'],
+    [fields.screenVideoSaturation, fields.screenVideoSaturationValue, settings.saturation, '%'],
+    [fields.screenVideoHue, fields.screenVideoHueValue, settings.hue, '°'],
+    [fields.screenVideoTint, fields.screenVideoTintValue, settings.tint, '%'],
+    [fields.screenVideoVignette, fields.screenVideoVignetteValue, settings.vignette, '%'],
+    [fields.screenVideoScale, fields.screenVideoScaleValue, settings.scale, '%'],
+    [fields.screenVideoOffsetX, fields.screenVideoOffsetXValue, settings.offsetX, 'position'],
+    [fields.screenVideoOffsetY, fields.screenVideoOffsetYValue, settings.offsetY, 'position'],
+    [fields.screenVideoRotation, fields.screenVideoRotationValue, settings.rotation, '°']
+  ];
+
+  controls.forEach(([input, output, value, unit]) => {
+    if (input) input.value = String(value);
+    if (output) {
+      if (unit === '°') output.textContent = `${Number(value).toFixed(value % 1 ? 1 : 0)}°`;
+      else if (unit === 'position') output.textContent = `${Math.round(value)}%`;
+      else output.textContent = `${Math.round(value * 100)}%`;
+    }
+  });
+
+  if (!frame) return;
+  frame.style.setProperty('--screen-intensity', settings.intensity);
+  frame.style.setProperty('--screen-brightness', settings.brightness);
+  frame.style.setProperty('--screen-contrast', settings.contrast);
+  frame.style.setProperty('--screen-saturation', settings.saturation);
+  frame.style.setProperty('--screen-hue', `${settings.hue}deg`);
+  frame.style.setProperty('--screen-tint', settings.tint);
+  frame.style.setProperty('--screen-vignette', settings.vignette);
+  frame.style.setProperty('--screen-scale', settings.scale);
+  frame.style.setProperty('--screen-x', `${settings.offsetX}%`);
+  frame.style.setProperty('--screen-y', `${settings.offsetY}%`);
+  frame.style.setProperty('--screen-rotate', `${settings.rotation}deg`);
+}
+
+function setScreenVideoPreview(source, { objectUrl = false } = {}) {
+  const canvas = document.getElementById('screen-video-canvas');
+  const video = document.getElementById('screen-video-element');
+  if (!canvas || !video) return;
+
+  if (!objectUrl) revokeScreenVideoObjectUrl();
+
+  if (!source) {
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
+    canvas.classList.remove('has-image');
+    return;
+  }
+
+  video.src = source;
+  video.load();
+  canvas.classList.add('has-image');
+  updateScreenVideoAppearance();
+  video.play().catch(() => {});
+}
+
+function bindScreenVideoEditor() {
+  fields.screenVideoFile?.addEventListener('change', () => {
+    const file = fields.screenVideoFile.files?.[0];
+    if (!file) return;
+
+    try {
+      validateFile(file, ['video/mp4', 'video/webm'], MAX_VIDEO_FILE_SIZE);
+      revokeScreenVideoObjectUrl();
+      screenVideoObjectUrl = URL.createObjectURL(file);
+      fields.screenVideoRemove.checked = false;
+      setScreenVideoPreview(screenVideoObjectUrl, { objectUrl: true });
+    } catch (error) {
+      fields.screenVideoFile.value = '';
+      showMessage(error.message, 'error');
+    }
+  });
+
+  [
+    fields.screenVideoIntensity,
+    fields.screenVideoBrightness,
+    fields.screenVideoContrast,
+    fields.screenVideoSaturation,
+    fields.screenVideoHue,
+    fields.screenVideoTint,
+    fields.screenVideoVignette,
+    fields.screenVideoScale,
+    fields.screenVideoOffsetX,
+    fields.screenVideoOffsetY,
+    fields.screenVideoRotation
+  ].forEach(input => input?.addEventListener('input', updateScreenVideoAppearance));
+
+  const presets = {
+    bright: { intensity:.68, brightness:.88, contrast:1.08, saturation:.82, hue:4, tint:.20, vignette:.20 },
+    arena: { intensity:.58, brightness:.72, contrast:1.18, saturation:.78, hue:8, tint:.32, vignette:.32 },
+    natural: { intensity:.64, brightness:.82, contrast:1.06, saturation:1, hue:0, tint:.10, vignette:.18 },
+    cinema: { intensity:.42, brightness:.50, contrast:1.20, saturation:.64, hue:8, tint:.36, vignette:.42 }
+  };
+
+  document.querySelectorAll('[data-screen-video-preset]').forEach(button => {
+    button.addEventListener('click', () => {
+      const preset = presets[button.dataset.screenVideoPreset];
+      if (!preset) return;
+      fields.screenVideoIntensity.value = preset.intensity;
+      fields.screenVideoBrightness.value = preset.brightness;
+      fields.screenVideoContrast.value = preset.contrast;
+      fields.screenVideoSaturation.value = preset.saturation;
+      fields.screenVideoHue.value = preset.hue;
+      fields.screenVideoTint.value = preset.tint;
+      fields.screenVideoVignette.value = preset.vignette;
+      updateScreenVideoAppearance();
+    });
+  });
+
+  document.getElementById('screen-video-center')?.addEventListener('click', () => {
+    fields.screenVideoScale.value = '1.08';
+    fields.screenVideoOffsetX.value = '0';
+    fields.screenVideoOffsetY.value = '0';
+    fields.screenVideoRotation.value = '0';
+    updateScreenVideoAppearance();
+  });
+
+  fields.screenVideoRemove?.addEventListener('change', () => {
+    const frame = document.getElementById('screen-video-preview-frame');
+    if (frame) frame.style.opacity = fields.screenVideoRemove.checked ? '.12' : '1';
   });
 }
 
@@ -2335,6 +2513,26 @@ function populateHero(hero) {
     offsetY: hero.gif_offset_y ?? 0
   });
 
+  const screenSettings = {
+    screenVideoIntensity: hero.screen_video_intensity ?? .42,
+    screenVideoBrightness: hero.screen_video_brightness ?? .5,
+    screenVideoContrast: hero.screen_video_contrast ?? 1.2,
+    screenVideoSaturation: hero.screen_video_saturation ?? .64,
+    screenVideoHue: hero.screen_video_hue ?? 8,
+    screenVideoTint: hero.screen_video_tint ?? .36,
+    screenVideoVignette: hero.screen_video_vignette ?? .42,
+    screenVideoScale: hero.screen_video_scale ?? 1.08,
+    screenVideoOffsetX: hero.screen_video_offset_x ?? 0,
+    screenVideoOffsetY: hero.screen_video_offset_y ?? 0,
+    screenVideoRotation: hero.screen_video_rotation ?? 0
+  };
+  Object.entries(screenSettings).forEach(([key, value]) => {
+    if (fields[key]) fields[key].value = String(value);
+  });
+  if (fields.screenVideoRemove) fields.screenVideoRemove.checked = false;
+  setScreenVideoPreview(getPublicUrl(hero.screen_video_path));
+  updateScreenVideoAppearance();
+
   const editorTitle = document.getElementById('editor-title');
   if (editorTitle) editorTitle.textContent = `Editar ${hero.name}`;
   if (saveButton) saveButton.textContent = 'Atualizar herói';
@@ -2353,7 +2551,13 @@ async function loadHero() {
       id, name, slug, description, class_id, rarity_id, faction, enabled, display_order,
       image_path, image_scale, image_offset_x, image_offset_y,
       card_image_path, card_image_scale, card_image_offset_x, card_image_offset_y,
-      gif_path, gif_scale, gif_offset_x, gif_offset_y
+      gif_path, gif_scale, gif_offset_x, gif_offset_y,
+      screen_video_path, screen_video_intensity,
+      screen_video_brightness, screen_video_contrast,
+      screen_video_saturation, screen_video_hue,
+      screen_video_tint, screen_video_vignette,
+      screen_video_scale, screen_video_offset_x,
+      screen_video_offset_y, screen_video_rotation
     `)
     .eq('id', heroId)
     .single();
@@ -2458,7 +2662,13 @@ async function loadExistingHeroBundle(targetId) {
       id, name, slug, description, class_id, rarity_id, faction, enabled, display_order,
       image_path, image_scale, image_offset_x, image_offset_y,
       card_image_path, card_image_scale, card_image_offset_x, card_image_offset_y,
-      gif_path, gif_scale, gif_offset_x, gif_offset_y
+      gif_path, gif_scale, gif_offset_x, gif_offset_y,
+      screen_video_path, screen_video_intensity,
+      screen_video_brightness, screen_video_contrast,
+      screen_video_saturation, screen_video_hue,
+      screen_video_tint, screen_video_vignette,
+      screen_video_scale, screen_video_offset_x,
+      screen_video_offset_y, screen_video_rotation
     `).eq('id', targetId).single(),
     supabase.from('hero_base_stats').select('stat_key,value').eq('hero_id', targetId),
     supabase.from('hero_weapon_stats').select('stat_key,value,weapon_name').eq('hero_id', targetId)
@@ -2532,7 +2742,8 @@ function buildUpdateDiffs(bundle) {
   const media = [
     ['image','Imagem principal',fields.imageFile.files?.[0],hero.image_path],
     ['card','Imagem do card',fields.cardFile.files?.[0],hero.card_image_path],
-    ['gif','GIF',fields.gifFile.files?.[0],hero.gif_path]
+    ['gif','GIF',fields.gifFile.files?.[0],hero.gif_path],
+    ['screenVideo','Vídeo do telão',fields.screenVideoFile.files?.[0],hero.screen_video_path]
   ];
   for (const [key,label,file,before] of media) {
     diffs.push(createDiff({ key:`media.${key}`, label, group:'Mídia', before:before ? 'Cadastrada' : 'Não cadastrada', after:file?.name || (before ? 'Cadastrada' : 'Não cadastrada'), apply:{ type:'media', media:key }, selected:Boolean(file) }));
@@ -2648,6 +2859,21 @@ async function applySelectedUpdate(selectAll = false) {
     if (upload.imagePath) heroPatch.image_path = upload.imagePath;
     if (upload.cardImagePath) heroPatch.card_image_path = upload.cardImagePath;
     if (upload.gifPath) heroPatch.gif_path = upload.gifPath;
+    if (upload.screenVideoPath) {
+      const screen = collectScreenVideoSettings();
+      heroPatch.screen_video_path = upload.screenVideoPath;
+      heroPatch.screen_video_intensity = screen.intensity;
+      heroPatch.screen_video_brightness = screen.brightness;
+      heroPatch.screen_video_contrast = screen.contrast;
+      heroPatch.screen_video_saturation = screen.saturation;
+      heroPatch.screen_video_hue = screen.hue;
+      heroPatch.screen_video_tint = screen.tint;
+      heroPatch.screen_video_vignette = screen.vignette;
+      heroPatch.screen_video_scale = screen.scale;
+      heroPatch.screen_video_offset_x = screen.offsetX;
+      heroPatch.screen_video_offset_y = screen.offsetY;
+      heroPatch.screen_video_rotation = screen.rotation;
+    }
     if (Object.keys(heroPatch).length) {
       const { error } = await supabase.from('heroes').update(heroPatch).eq('id', bundle.hero.id);
       if (error) throw error;
@@ -2681,12 +2907,13 @@ async function applySelectedUpdate(selectAll = false) {
 
 async function uploadSelectedMediaSelective(slug, selected) {
   const imageTypes = ['image/png','image/jpeg','image/webp','image/gif'];
-  const [imagePath, cardImagePath, gifPath] = await Promise.all([
+  const [imagePath, cardImagePath, gifPath, screenVideoPath] = await Promise.all([
     selected.has('image') ? uploadFile({file:fields.imageFile.files?.[0],heroSlug:slug,mediaType:'Main',allowedTypes:imageTypes}) : null,
     selected.has('card') ? uploadFile({file:fields.cardFile.files?.[0],heroSlug:slug,mediaType:'Card',allowedTypes:imageTypes}) : null,
-    selected.has('gif') ? uploadFile({file:fields.gifFile.files?.[0],heroSlug:slug,mediaType:'GIF',allowedTypes:['image/gif']}) : null
+    selected.has('gif') ? uploadFile({file:fields.gifFile.files?.[0],heroSlug:slug,mediaType:'GIF',allowedTypes:['image/gif']}) : null,
+    selected.has('screenVideo') ? uploadFile({file:fields.screenVideoFile.files?.[0],heroSlug:slug,mediaType:'ScreenVideo',allowedTypes:['video/mp4','video/webm'],maximumSize:MAX_VIDEO_FILE_SIZE}) : null
   ]);
-  return { imagePath, cardImagePath, gifPath };
+  return { imagePath, cardImagePath, gifPath, screenVideoPath };
 }
 
 async function restoreHeroVersion(version) {
@@ -2721,10 +2948,10 @@ function bindUpdateAssistant() {
   document.getElementById('update-all')?.addEventListener('click',()=>applySelectedUpdate(true));
 }
 
-async function uploadFile({ file, heroSlug, mediaType, allowedTypes }) {
+async function uploadFile({ file, heroSlug, mediaType, allowedTypes, maximumSize = MAX_FILE_SIZE }) {
   if (!file) return null;
 
-  validateFile(file, allowedTypes);
+  validateFile(file, allowedTypes, maximumSize);
 
   const path =
     `Heros/${heroSlug}/${mediaType}/` +
@@ -2745,7 +2972,7 @@ async function uploadFile({ file, heroSlug, mediaType, allowedTypes }) {
 async function uploadSelectedMedia(slug) {
   const imageTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
 
-  const [imagePath, cardImagePath, gifPath] = await Promise.all([
+  const [imagePath, cardImagePath, gifPath, screenVideoPath] = await Promise.all([
     uploadFile({
       file: fields.imageFile.files?.[0],
       heroSlug: slug,
@@ -2763,16 +2990,24 @@ async function uploadSelectedMedia(slug) {
       heroSlug: slug,
       mediaType: 'GIF',
       allowedTypes: ['image/gif']
+    }),
+    uploadFile({
+      file: fields.screenVideoFile.files?.[0],
+      heroSlug: slug,
+      mediaType: 'ScreenVideo',
+      allowedTypes: ['video/mp4', 'video/webm'],
+      maximumSize: MAX_VIDEO_FILE_SIZE
     })
   ]);
 
-  return { imagePath, cardImagePath, gifPath };
+  return { imagePath, cardImagePath, gifPath, screenVideoPath };
 }
 
 function collectPayload(slug, uploadedMedia) {
   const mainState = mainEditor.getState();
   const cardState = cardEditor.getState();
   const gifState = gifEditor.getState();
+  const screenState = collectScreenVideoSettings();
 
   return {
     name: fields.name.value.trim(),
@@ -2800,7 +3035,22 @@ function collectPayload(slug, uploadedMedia) {
     gif_path: uploadedMedia.gifPath || currentHero?.gif_path || null,
     gif_scale: gifState.scale,
     gif_offset_x: gifState.offsetX,
-    gif_offset_y: gifState.offsetY
+    gif_offset_y: gifState.offsetY,
+
+    screen_video_path: fields.screenVideoRemove?.checked
+      ? null
+      : (uploadedMedia.screenVideoPath || currentHero?.screen_video_path || null),
+    screen_video_intensity: screenState.intensity,
+    screen_video_brightness: screenState.brightness,
+    screen_video_contrast: screenState.contrast,
+    screen_video_saturation: screenState.saturation,
+    screen_video_hue: screenState.hue,
+    screen_video_tint: screenState.tint,
+    screen_video_vignette: screenState.vignette,
+    screen_video_scale: screenState.scale,
+    screen_video_offset_x: screenState.offsetX,
+    screen_video_offset_y: screenState.offsetY,
+    screen_video_rotation: screenState.rotation
   };
 }
 
@@ -2894,6 +3144,8 @@ async function saveHero(event) {
     fields.imageFile.value = '';
     fields.cardFile.value = '';
     fields.gifFile.value = '';
+    fields.screenVideoFile.value = '';
+    fields.screenVideoRemove.checked = false;
 
     updateAllPreviews();
   } catch (error) {
@@ -2918,6 +3170,7 @@ async function initialize() {
     showMessage('Preparando editor...');
 
     createAllMediaEditors();
+    bindScreenVideoEditor();
     bindAutomaticSlug();
     bindGeneralPreview();
     bindIntegratedStatsControls();
@@ -2941,6 +3194,19 @@ async function initialize() {
       mainEditor.reset();
       cardEditor.reset();
       gifEditor.reset();
+      fields.screenVideoIntensity.value = '.42';
+      fields.screenVideoBrightness.value = '.5';
+      fields.screenVideoContrast.value = '1.2';
+      fields.screenVideoSaturation.value = '.64';
+      fields.screenVideoHue.value = '8';
+      fields.screenVideoTint.value = '.36';
+      fields.screenVideoVignette.value = '.42';
+      fields.screenVideoScale.value = '1.08';
+      fields.screenVideoOffsetX.value = '0';
+      fields.screenVideoOffsetY.value = '0';
+      fields.screenVideoRotation.value = '0';
+      fields.screenVideoRemove.checked = false;
+      updateScreenVideoAppearance();
       renderIntegratedStatsFields();
 
       showMessage('');
