@@ -33,6 +33,8 @@ let CONFIG = {
   analise: null,
   herois: [],
   catalogo: [],
+  tiers: new Map(),
+  tags: new Set(['Longo alcance', 'Controle']),
 
   /* Fonte única dos números: build-analise.js calcula a partir de
      hero_base_stats + stats do nível de cada equipamento. */
@@ -74,13 +76,14 @@ function getMediaUrl(path, legacyUrl = '') {
 async function carregarConteudoSupabase() {
   const [
     heroesResult, classesResult, equipmentsResult, slotsResult,
-    rarityLevelsResult, equipmentSetsResult, setBonusesResult
+    rarityLevelsResult, equipmentSetsResult, setBonusesResult, tiersResult
   ] = await Promise.all([
     supabase.from('heroes').select(`
         id, name, slug, class_id, enabled, display_order,
         image_path, card_image_path, gif_path,
         image_url, card_image_url, gif_url,
-        image_fit, image_position, image_scale, image_offset_x, image_offset_y
+        image_fit, image_position, image_scale, image_offset_x, image_offset_y,
+        card_image_scale, card_image_offset_x, card_image_offset_y
       `)
       .eq('enabled', true)
       .order('display_order', { ascending: true })
@@ -109,13 +112,17 @@ async function carregarConteudoSupabase() {
     supabase.from('equipment_set_bonuses')
       .select('id,set_id,required_pieces,title,description,display_order')
       .order('required_pieces', { ascending: true })
+      .order('display_order', { ascending: true }),
+
+    supabase.from('equipment_tiers').select('id,slug,name,color')
       .order('display_order', { ascending: true })
   ]);
 
   const falhas = [
     ['heróis', heroesResult], ['classes', classesResult], ['equipamentos', equipmentsResult],
     ['slots', slotsResult], ['níveis', rarityLevelsResult],
-    ['conjuntos', equipmentSetsResult], ['bônus de conjunto', setBonusesResult]
+    ['conjuntos', equipmentSetsResult], ['bônus de conjunto', setBonusesResult],
+    ['tiers', tiersResult]
   ].filter(([, r]) => r.error);
 
   falhas.forEach(([nome, r]) => console.error(`Erro ao carregar ${nome}:`, r.error));
@@ -135,6 +142,8 @@ async function carregarConteudoSupabase() {
     if (!setBonuses.has(bonus.set_id)) setBonuses.set(bonus.set_id, []);
     setBonuses.get(bonus.set_id).push(bonus);
   }
+
+  CONFIG.tiers = new Map((tiersResult.data || []).map(tier => [tier.slug, tier]));
 
   /* --- slots do anel vêm do banco (sem apelidos, sem colisão) --- */
   const slotsDb = (slotsResult.data || []).filter(s => s.slug);
@@ -251,7 +260,29 @@ function renderHeroi() {
   $('hero-name').textContent = CONFIG.heroi.nome;
   $('hero-role').textContent = CONFIG.heroi.classe;
   pintar($('hero-art'), CONFIG.heroi.media);
+  pintar($('hero-card-art'), CONFIG.heroi.media);
   renderSlots();
+  renderHeroBaseStats();
+}
+
+function renderHeroBaseStats() {
+  const resultado = CONFIG.analise;
+  const linhas = resultado?.linhas || [];
+  const alvo = $('hero-base-stats');
+  if (!alvo || !linhas.length) return;
+
+  const mapa = [
+    { keys: ['fogo'], icon: '⌖', label: 'DANO BASE' },
+    { keys: ['sobrevivencia'], icon: '♢', label: 'SOBREVIVÊNCIA BASE' },
+    { keys: ['mobilidade'], icon: '♞', label: 'MOBILIDADE BASE' }
+  ];
+
+  alvo.innerHTML = mapa.map(item => {
+    const linha = linhas.find(l => item.keys.includes(l.key));
+    const pct = Math.max(4, Math.round(linha?.pctBase || 0));
+    const valor = linha ? Math.round(linha.base).toLocaleString('pt-BR') : '—';
+    return `<div><span>${item.icon} <b>${item.label}</b></span><i><u style="width:${pct}%"></u></i><em>${valor}</em></div>`;
+  }).join('');
 }
 
 function renderSlots() {
@@ -261,9 +292,9 @@ function renderSlots() {
   const mob = $('slots-mobile');
   mob.innerHTML = '';
 
-  const mobile = window.matchMedia('(max-width:720px)').matches;
+  const mobile = window.matchMedia('(max-width:560px)').matches;
 
-  CONFIG.slots.forEach(s => {
+  CONFIG.slots.forEach((s, index) => {
     const it = CONFIG.equipados[s.key];
     const el = document.createElement('div');
     el.className = 'slot' + (it ? '' : ' empty') + (slotAtivo === s.key ? ' active' : '');
@@ -271,7 +302,7 @@ function renderSlots() {
     el.style.setProperty('--rc', corDoItem(it));
 
     el.innerHTML =
-      `<div class="lb">${esc(s.label)}</div>` +
+      `<div class="lb" title="${esc(s.label)}">${index + 1}</div>` +
       (it ? '<button class="rm" type="button" aria-label="Remover">✕</button>' : '') +
       '<div class="hex">' + (it
         ? `<div class="media ${it.media && it.media.src ? '' : 'ph'}" style="${mStyle(it.media)}">${mInner(it.media)}</div>`
@@ -485,11 +516,13 @@ function quantidadeDoConjunto(setId) {
 
 function renderDetalheEquipamento(item = equipamentoSelecionado) {
   const detail = $('equipment-detail');
+  const floating = $('equipment-float');
 
   if (!item) {
     equipamentoSelecionado = null;
     detail.className = 'eq-detail empty';
     detail.textContent = 'Toque num slot ao redor do herói para escolher e ver níveis, atributos e bônus do conjunto.';
+    if (floating) floating.innerHTML = '<span class="equipment-float-icon">◇</span><div><strong>SELECIONE UM EQUIPAMENTO</strong><small>Os bônus aparecem aqui</small></div>';
     return;
   }
 
@@ -502,6 +535,15 @@ function renderDetalheEquipamento(item = equipamentoSelecionado) {
   const maxPieces = Math.max(CONFIG.slots.length, ...bonuses.map(b => b.required_pieces || 0)) || 1;
   const cor = corDoItem(item);
   const slotDoItem = CONFIG.slots.find(s => CONFIG.equipados[s.key]?.databaseId === item.databaseId);
+
+  if (floating) {
+    const deltas = Object.entries(stats).slice(0, 3).map(([key, value]) => {
+      const n = Number(value) || 0;
+      const classe = n >= 0 ? 'up' : 'down';
+      return `<span class="${classe}">${n >= 0 ? '↑ +' : '↓ '}${esc(String(value))}${key.endsWith('_pct') ? '%' : ''} <i>${esc(formatStatLabel(key))}</i></span>`;
+    }).join('');
+    floating.innerHTML = `<span class="equipment-float-icon">◇</span><div><strong>${esc(item.nome)}</strong><small>${esc(slotDoItem?.label || item.slotLabel || 'Equipamento')}</small><div class="delta-list">${deltas || '<span class="up">✓ Equipado na mesa</span>'}</div></div>`;
+  }
 
   detail.className = 'eq-detail';
   detail.innerHTML = `
@@ -598,6 +640,10 @@ function renderHerois() {
       CONFIG.resumo.tagA = h.classe;
       renderBonus();
       atualizarAnalise();
+      if (!$('b-name').value.trim()) $('b-name').value = `${h.nome} — Build tática`;
+      $('c-name').textContent = $('b-name').value.length;
+      fecharSeletorHeroi();
+      toast(`${h.nome} selecionado.`, 'success');
     }
 
     tk.querySelectorAll('.hcard').forEach(x => x.classList.toggle('on', x === c));
@@ -625,6 +671,35 @@ function renderStats() {
     </div>`).join('');
 }
 
+function renderImpacto(resultado) {
+  const grid = $('impact-grid');
+  if (!grid) return;
+
+  const linhas = resultado?.linhas || [];
+  if (!linhas.length) return;
+
+  grid.innerHTML = linhas.slice(0, 5).map(linha => {
+    const delta = Number(linha.delta || 0);
+    const negativo = delta < 0;
+    const antes = Math.max(3, Math.min(100, linha.pctBase || 0));
+    const depois = Math.max(3, Math.min(100, linha.pct || 0));
+    return `<article class="${negativo ? 'negative' : ''}">
+      <h3>${esc(linha.icone)} ${esc(linha.nome.toUpperCase())}</h3>
+      <div><small>ANTES</small><i><u style="width:${antes}%"></u></i><em>${Math.round(linha.base).toLocaleString('pt-BR')}</em></div>
+      <div><small>DEPOIS</small><i><u style="width:${depois}%"></u></i><em>${Math.round(linha.valor).toLocaleString('pt-BR')}</em></div>
+      <strong>${delta >= 0 ? '+' : ''}${delta}% ${delta >= 0 ? '↑' : '↓'}</strong>
+    </article>`;
+  }).join('');
+
+  const melhor = [...linhas].sort((a, b) => b.delta - a.delta)[0];
+  const dica = resultado?.estilo || (melhor
+    ? `Dica tática: esta combinação favorece ${melhor.nome.toLowerCase()}.`
+    : 'Dica tática: combine equipamentos para revelar o perfil desta build.');
+  if ($('tactical-tip')) $('tactical-tip').textContent = dica;
+  if ($('recommendation-copy')) $('recommendation-copy').textContent = dica;
+  renderHeroBaseStats();
+}
+
 /* Recalcula tudo que depende do loadout. Ponto único de atualização. */
 function atualizarAnalise() {
   try {
@@ -639,6 +714,7 @@ function atualizarAnalise() {
     CONFIG.macros = resultado.linhas || [];
 
     renderAnalise(resultado);
+    renderImpacto(resultado);
   } catch (error) {
     console.error('[criar-build] Erro ao atualizar análise:', error);
 
@@ -652,6 +728,7 @@ function atualizarAnalise() {
 
     CONFIG.macros = [];
     renderAnalise(CONFIG.analise);
+    renderImpacto(CONFIG.analise);
   }
 
   renderStats();
@@ -718,6 +795,115 @@ function progresso(n) {
   });
 }
 
+function toast(mensagem, tipo = '') {
+  const stack = $('toast-stack');
+  if (!stack) return;
+  const el = document.createElement('div');
+  el.className = `toast ${tipo}`.trim();
+  el.textContent = mensagem;
+  stack.appendChild(el);
+  setTimeout(() => el.remove(), 3200);
+}
+
+function dadosDaBuild(status = 'published') {
+  return {
+    heroId: CONFIG.heroi.databaseId,
+    title: $('b-name').value.trim(),
+    description: $('b-desc').value.trim(),
+    visibility: $('b-vis').value,
+    status,
+    tags: [...CONFIG.tags],
+    items: CONFIG.slots.map((slot, index) => {
+      const item = CONFIG.equipados[slot.key];
+      if (!item) return null;
+      return {
+        equipment_id: item.databaseId,
+        tier_id: CONFIG.tiers.get(item.raridade)?.id || null,
+        slot: index + 1
+      };
+    }).filter(Boolean)
+  };
+}
+
+function salvarLocal(status = 'draft') {
+  const draft = { ...dadosDaBuild(status), savedAt: new Date().toISOString() };
+  localStorage.setItem('echo-arena-build-draft', JSON.stringify(draft));
+  return draft;
+}
+
+async function salvarBuild(status = 'published') {
+  const payload = dadosDaBuild(status);
+  if (!payload.title) {
+    $('b-name').focus();
+    toast('Digite um nome para a build.', 'error');
+    return;
+  }
+  if (!payload.heroId) {
+    toast('Selecione um herói antes de salvar.', 'error');
+    return;
+  }
+
+  const button = status === 'draft' ? $('save-draft') : $('save-build');
+  if (button) button.disabled = true;
+
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      salvarLocal(status);
+      toast('Rascunho salvo neste dispositivo. Entre na conta para publicar.', 'success');
+      return;
+    }
+
+    const isPublic = payload.visibility === 'public' && status === 'published';
+    const visibility = payload.visibility === 'unlisted' ? 'private' : payload.visibility;
+    const { data: build, error } = await supabase.from('builds').insert({
+      user_id: session.user.id,
+      hero_id: payload.heroId,
+      title: payload.title,
+      description: payload.description,
+      is_public: isPublic,
+      visibility,
+      status,
+      published_at: isPublic ? new Date().toISOString() : null
+    }).select('id').single();
+    if (error) throw error;
+
+    const rows = payload.items.map(item => {
+      const row = { build_id: build.id, equipment_id: item.equipment_id, slot: item.slot };
+      if (item.tier_id) row.tier_id = item.tier_id;
+      return row;
+    });
+    if (rows.length) {
+      const { error: itemError } = await supabase.from('build_items').insert(rows);
+      if (itemError) {
+        await supabase.from('builds').delete().eq('id', build.id);
+        throw itemError;
+      }
+    }
+
+    localStorage.removeItem('echo-arena-build-draft');
+    toast(status === 'draft' ? 'Rascunho salvo no seu perfil.' : 'Build publicada com sucesso.', 'success');
+  } catch (error) {
+    console.error('[criar-build] Falha ao salvar:', error);
+    salvarLocal('draft');
+    toast(`Não foi possível publicar: ${error.message}. Um rascunho local foi preservado.`, 'error');
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function abrirSeletorHeroi() {
+  $('hero-picker').hidden = false;
+  $('hero-picker-backdrop').hidden = false;
+  document.body.style.overflow = 'hidden';
+}
+
+function fecharSeletorHeroi() {
+  $('hero-picker').hidden = true;
+  $('hero-picker-backdrop').hidden = true;
+  document.body.style.overflow = '';
+}
+
 /* ---------- eventos ---------- */
 function adicionarEvento(id, evento, callback) {
   const elemento = document.getElementById(id);
@@ -749,6 +935,7 @@ adicionarEvento('clear-all', 'click', () => {
   renderDetalheEquipamento(null);
   atualizarAnalise();
   if (!$('pop').hidden) { $('pop-foot').hidden = true; renderCatalogo(); }
+  toast('Todos os equipamentos foram removidos.');
 });
 
 adicionarEvento('tk-l', 'click', () => $('track')?.scrollBy({ left: -300, behavior: 'smooth' }));
@@ -767,6 +954,7 @@ $('pop-search').oninput = e => { buscaPop = e.target.value; renderCatalogo(); };
 
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && !$('pop').hidden) fecharPop();
+  if (e.key === 'Escape' && !$('hero-picker').hidden) fecharSeletorHeroi();
 });
 
 window.addEventListener('scroll', posicionarPop, { passive: true });
@@ -774,17 +962,93 @@ window.addEventListener('scroll', posicionarPop, { passive: true });
 $('b-name').oninput = e => {
   $('c-name').textContent = e.target.value.length;
   if (e.target.value) progresso(1);
+  salvarLocal('draft');
 };
 
-$('b-desc').oninput = e => { $('c-desc').textContent = e.target.value.length; };
+$('b-desc').oninput = e => { $('c-desc').textContent = e.target.value.length; salvarLocal('draft'); };
 
 $('b-vis').onchange = e => {
-  $('vis-hint').textContent = e.target.value === 'public'
-    ? 'Sua build poderá ser vista por todos.'
-    : 'Somente você poderá ver esta build.';
+  const mensagens = {
+    public: 'Sua build poderá ser vista por todos.',
+    unlisted: 'Somente pessoas com o link poderão acessar.',
+    private: 'Somente você poderá ver esta build.'
+  };
+  $('vis-hint').textContent = mensagens[e.target.value] || mensagens.private;
+  const radio = document.querySelector(`.vis-radio[value="${CSS.escape(e.target.value)}"]`);
+  if (radio) radio.checked = true;
 };
 
-$('burger').onclick = () => $('side').classList.toggle('open');
+$('burger').onclick = () => {
+  const aberto = $('side').classList.toggle('open');
+  document.querySelector('.drawer-backdrop')?.classList.toggle('open', aberto);
+  $('burger').setAttribute('aria-expanded', String(aberto));
+};
+
+document.querySelectorAll('[data-close-menu]').forEach(el => el.onclick = () => {
+  $('side').classList.remove('open');
+  document.querySelector('.drawer-backdrop')?.classList.remove('open');
+  $('burger').setAttribute('aria-expanded', 'false');
+});
+
+document.querySelectorAll('.vis-radio').forEach(radio => radio.onchange = () => {
+  $('b-vis').value = radio.value;
+  $('b-vis').dispatchEvent(new Event('change'));
+});
+
+adicionarEvento('change-hero', 'click', abrirSeletorHeroi);
+adicionarEvento('hero-picker-close', 'click', fecharSeletorHeroi);
+adicionarEvento('hero-picker-backdrop', 'click', fecharSeletorHeroi);
+adicionarEvento('save-build', 'click', () => salvarBuild('published'));
+adicionarEvento('save-draft', 'click', () => salvarBuild('draft'));
+
+adicionarEvento('share-build', 'click', async () => {
+  const title = $('b-name').value.trim() || `Build de ${CONFIG.heroi.nome}`;
+  const data = { title: `Echo Arena — ${title}`, text: 'Confira esta build do Echo Arena.', url: location.href };
+  try {
+    if (navigator.share) await navigator.share(data);
+    else { await navigator.clipboard.writeText(location.href); toast('Link copiado.', 'success'); }
+  } catch (error) {
+    if (error?.name !== 'AbortError') toast('Não foi possível compartilhar agora.', 'error');
+  }
+});
+
+adicionarEvento('compare-build', 'click', () => {
+  salvarLocal('compare');
+  toast('Build adicionada ao comparador.', 'success');
+});
+
+document.querySelectorAll('[data-impact-tab]').forEach(tab => tab.onclick = () => {
+  document.querySelectorAll('[data-impact-tab]').forEach(x => x.classList.toggle('on', x === tab));
+  document.querySelectorAll('[data-impact-view]').forEach(view => view.classList.toggle('on', view.id === tab.dataset.impactTab));
+});
+
+document.querySelectorAll('#build-tags [data-tag]').forEach(button => {
+  button.classList.add('selected');
+  button.onclick = () => {
+    const tag = button.dataset.tag;
+    if (CONFIG.tags.has(tag)) { CONFIG.tags.delete(tag); button.classList.remove('selected'); }
+    else { CONFIG.tags.add(tag); button.classList.add('selected'); }
+  };
+});
+
+document.querySelector('#build-tags .add-tag')?.addEventListener('click', () => {
+  const tag = prompt('Digite uma tag curta para a build:')?.trim();
+  if (!tag || CONFIG.tags.has(tag)) return;
+  CONFIG.tags.add(tag);
+  const button = document.createElement('button');
+  button.type = 'button'; button.dataset.tag = tag; button.className = 'selected'; button.textContent = tag;
+  button.onclick = () => { CONFIG.tags.delete(tag); button.remove(); };
+  document.querySelector('#build-tags .add-tag').before(button);
+});
+
+document.querySelectorAll('.mobile-steps .step').forEach(step => step.addEventListener('click', () => {
+  const numero = Number(step.dataset.s);
+  const alvo = numero === 1 ? document.querySelector('.hero-panel')
+    : numero === 2 ? document.querySelector('.synergy-stage')
+    : numero === 3 ? document.querySelector('.impact-panel')
+    : document.querySelector('.build-plan');
+  alvo?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}));
 
 let resizeTimer = null;
 
@@ -807,6 +1071,34 @@ try {
 } catch (err) {
   console.error('Falha ao carregar conteúdo do Supabase:', err);
 }
+
+try {
+  const draft = JSON.parse(localStorage.getItem('echo-arena-build-draft') || 'null');
+  if (draft) {
+    const hero = CONFIG.herois.find(h => h.databaseId === draft.heroId);
+    if (hero) {
+      CONFIG.heroi = {
+        id: hero.id, databaseId: hero.databaseId, nome: String(hero.nome).toUpperCase(),
+        classe: hero.classe, media: hero.destaque?.src ? hero.destaque : hero.media
+      };
+    }
+    for (const salvo of (draft.items || [])) {
+      const slot = CONFIG.slots[Number(salvo.slot) - 1];
+      const item = CONFIG.catalogo.find(i => i.databaseId === salvo.equipment_id);
+      if (slot && item) CONFIG.equipados[slot.key] = { ...item };
+    }
+    $('b-name').value = draft.title || '';
+    $('b-desc').value = draft.description || '';
+    $('b-vis').value = draft.visibility || 'public';
+  }
+} catch (error) {
+  console.warn('[criar-build] Rascunho local inválido:', error);
+}
+
+if (!$('b-name').value) $('b-name').value = `${CONFIG.heroi.nome || 'Herói'} — Controle de Longo Alcance`;
+$('c-name').textContent = $('b-name').value.length;
+$('c-desc').textContent = $('b-desc').value.length;
+$('b-vis').dispatchEvent(new Event('change'));
 
 heroiAtual = CONFIG.heroi.id;
 CONFIG.resumo.tagA = CONFIG.heroi.classe || '—';
