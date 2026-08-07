@@ -9,6 +9,7 @@ const state = {
   role: null,
   maintenance: false,
   heroes: [],
+  screenVideos: new Map(),
   builds: [],
   activeHero: null,
   carouselIndex: 0,
@@ -66,6 +67,72 @@ function mediaInner(media, alt = '', eager = false) {
     return `<video src="${escapeHtml(media.source)}" autoplay muted loop playsinline></video>`;
   }
   return `<img src="${escapeHtml(media.source)}" alt="${escapeHtml(alt)}" loading="${eager ? 'eager' : 'lazy'}" decoding="async">`;
+}
+
+function storagePublicUrl(path) {
+  if (!path) return '';
+  return supabase.storage.from('game-media').getPublicUrl(path).data.publicUrl || '';
+}
+
+async function loadScreenVideos() {
+  const { data, error } = await supabase
+    .from('heroes')
+    .select(`
+      id, screen_video_path, screen_video_intensity,
+      screen_video_brightness, screen_video_contrast,
+      screen_video_saturation, screen_video_hue,
+      screen_video_tint, screen_video_vignette,
+      screen_video_scale, screen_video_offset_x,
+      screen_video_offset_y, screen_video_rotation
+    `);
+
+  if (error) {
+    console.warn('[vídeos do telão]', error.message);
+    state.screenVideos = new Map();
+    return;
+  }
+
+  state.screenVideos = new Map((data || []).map((item) => [String(item.id), item]));
+}
+
+function renderScreenVideo(hero) {
+  const frame = $('#arena-video-frame');
+  const video = $('#arena-video');
+  if (!frame || !video) return;
+
+  const config = state.screenVideos.get(String(hero?.id || ''));
+  const source = storagePublicUrl(config?.screen_video_path);
+
+  if (!source) {
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
+    frame.hidden = true;
+    return;
+  }
+
+  const setting = (value, fallback, minimum, maximum) =>
+    Math.min(maximum, Math.max(minimum, Number(value ?? fallback)));
+
+  frame.style.setProperty('--screen-intensity', setting(config?.screen_video_intensity, .42, .18, .9));
+  frame.style.setProperty('--screen-brightness', setting(config?.screen_video_brightness, .5, .25, 1.25));
+  frame.style.setProperty('--screen-contrast', setting(config?.screen_video_contrast, 1.2, .7, 1.7));
+  frame.style.setProperty('--screen-saturation', setting(config?.screen_video_saturation, .64, 0, 1.8));
+  frame.style.setProperty('--screen-hue', `${setting(config?.screen_video_hue, 8, -180, 180)}deg`);
+  frame.style.setProperty('--screen-tint', setting(config?.screen_video_tint, .36, 0, .85));
+  frame.style.setProperty('--screen-vignette', setting(config?.screen_video_vignette, .42, 0, .9));
+  frame.style.setProperty('--screen-scale', setting(config?.screen_video_scale, 1.08, 1, 1.8));
+  frame.style.setProperty('--screen-x', `${setting(config?.screen_video_offset_x, 0, -35, 35)}%`);
+  frame.style.setProperty('--screen-y', `${setting(config?.screen_video_offset_y, 0, -35, 35)}%`);
+  frame.style.setProperty('--screen-rotate', `${setting(config?.screen_video_rotation, 0, -10, 10)}deg`);
+  frame.hidden = false;
+
+  if (video.src !== source) {
+    video.src = source;
+    video.load();
+  }
+
+  video.play().catch(() => {});
 }
 
 const CLASS_PALETTE = [
@@ -133,10 +200,14 @@ function renderHeroCards(heroes = state.heroes) {
     const media = mediaOf(hero, 'card');
     const color = classColor(hero);
     const active = state.activeHero?.id === hero.id ? ' active' : '';
+    const backdrop = media && !isVideo(media.source, media.mime_type || '')
+      ? `<div class="media card-backdrop" aria-hidden="true" style="${mediaStyle(media, 'cover')}">${mediaInner(media, '')}</div>`
+      : '';
 
     return `
       <article class="hero-card${active}" data-hero="${escapeHtml(hero.slug || hero.id)}" style="--class-color:${escapeHtml(color)}" tabindex="0" role="button" aria-label="Destacar ${escapeHtml(hero.name)}">
-        <div class="media ${media ? '' : 'empty'} card-media" style="${mediaStyle(media, 'cover')}">${mediaInner(media, hero.name)}</div>
+        ${backdrop}
+        <div class="media ${media ? '' : 'empty'} card-media" style="${mediaStyle(media, 'contain')}">${mediaInner(media, hero.name)}</div>
         <div class="card-fade"></div><div class="role-mark">◇</div>
         <div class="card-copy"><div class="card-name">${escapeHtml(hero.name)}</div><div class="card-role">${escapeHtml(heroRole(hero))}</div></div>
       </article>`;
@@ -199,6 +270,8 @@ function renderSpotlight(hero, animate = true) {
   $('.hero-description').textContent = hero.description || 'Informações em atualização.';
   $('#sp-tag-role').textContent = hero.class_name || 'Herói';
   $('#hero-code').textContent = String(hero.slug || hero.id || '—').toUpperCase();
+  $('#hero-watermark').textContent = hero.name || '';
+  renderScreenVideo(hero);
 
   const media = mediaOf(hero, 'main');
   const element = $('#spot-media');
@@ -411,14 +484,66 @@ function shiftCarousel(direction) {
   const container = $('#heroes');
   const cards = $$('.hero-card');
   if (!cards.length) return;
-  const visible = Math.max(1, Math.floor($('.heroes-viewport').clientWidth / 255));
+  const cardWidth = cards[0].getBoundingClientRect().width;
+  const gap = Number.parseFloat(getComputedStyle(container).columnGap) || 16;
+  const step = cardWidth + gap;
+  const visible = Math.max(1, Math.floor($('.heroes-viewport').clientWidth / step));
   const maxIndex = Math.max(0, cards.length - visible);
   state.carouselIndex = Math.min(maxIndex, Math.max(0, state.carouselIndex + direction));
-  const step = cards[0].getBoundingClientRect().width + 16;
   container.style.transform = `translateX(${-state.carouselIndex * step}px)`;
 }
 
+let navigationToastTimer = 0;
+
+function setSidebarOpen(open) {
+  const sidebar = $('#site-sidebar');
+  const trigger = $('#sidebar-open');
+  if (!sidebar || !trigger) return;
+
+  document.body.classList.toggle('sidebar-open', open);
+  sidebar.setAttribute('aria-hidden', String(!open));
+  trigger.setAttribute('aria-expanded', String(open));
+  $('#sidebar-backdrop')?.setAttribute('aria-hidden', String(!open));
+
+  if (open) $('#sidebar-close')?.focus();
+  else trigger.focus({ preventScroll: true });
+}
+
+function showNavigationToast(message) {
+  const toast = $('#nav-toast');
+  if (!toast) return;
+  window.clearTimeout(navigationToastTimer);
+  toast.textContent = message;
+  toast.classList.add('show');
+  navigationToastTimer = window.setTimeout(() => toast.classList.remove('show'), 2600);
+}
+
+function bindSidebarNavigation() {
+  $('#sidebar-open')?.addEventListener('click', () => setSidebarOpen(true));
+  $('#sidebar-close')?.addEventListener('click', () => setSidebarOpen(false));
+  $('#sidebar-backdrop')?.addEventListener('click', () => setSidebarOpen(false));
+
+  $$('#site-sidebar a').forEach((link) => {
+    link.addEventListener('click', (event) => {
+      const upcoming = link.dataset.comingSoon;
+      if (upcoming) {
+        event.preventDefault();
+        showNavigationToast(`${upcoming}: esta área será disponibilizada em breve.`);
+        return;
+      }
+      setSidebarOpen(false);
+    });
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && document.body.classList.contains('sidebar-open')) {
+      setSidebarOpen(false);
+    }
+  });
+}
+
 function bindEvents() {
+  bindSidebarNavigation();
   $('#auth-close').addEventListener('click', closeAuth);
   $('#auth-modal').addEventListener('click', (event) => {
     if (event.target.id === 'auth-modal') closeAuth();
@@ -485,6 +610,7 @@ async function bootstrap() {
     updateAuthUI();
   });
 
+  await loadScreenVideos();
   await Promise.all([loadHeroes(), loadBuilds(), loadSiteStats()]);
 }
 
