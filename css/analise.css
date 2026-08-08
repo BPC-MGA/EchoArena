@@ -71,6 +71,25 @@
 .an-values i.up { color: #4ADE80; }
 .an-values i.down { color: #FF5470; }
 
+/* V9 — tabela auditável de atributos oficiais */
+.an-real-head,.an-real-values li{display:grid;grid-template-columns:minmax(150px,1.5fr) repeat(3,minmax(76px,.65fr));gap:10px;align-items:center}
+.an-real-head{padding:0 10px 7px;color:#62728a;font-size:8px;font-weight:800;letter-spacing:.08em}
+.an-real-values{list-style:none;margin:0;padding:0;border:1px solid #1b2d45;border-radius:9px;overflow:hidden}
+.an-real-values li{min-height:40px;padding:7px 10px;border-bottom:1px solid #15263b;background:#07111f;font-variant-numeric:tabular-nums}
+.an-real-values li:last-child{border-bottom:0}.an-real-values li.changed{background:linear-gradient(90deg,color-mix(in srgb,var(--rc) 10%,#07111f),#07111f 58%)}
+.an-real-values span,.an-real-values strong,.an-real-values em{text-align:right;font-size:11px}.an-real-values strong{color:var(--rc);font-size:12px}.an-real-values em{font-style:normal;color:#718097}.an-real-values em.up{color:#4ade80}.an-real-values em.down{color:#fbbf24}
+.an-stat-name{display:flex;align-items:center;gap:8px;text-align:left!important}.an-stat-name i{font-style:normal}.an-stat-name b{color:#dfe7f2;font-size:10px;letter-spacing:.025em}
+@media(max-width:560px){.an-real-head{display:none}.an-real-values li{grid-template-columns:1fr 1fr;gap:5px 10px}.an-stat-name{grid-column:1/-1}.an-real-values span:nth-child(2)::before{content:'SEM ITENS';display:block;color:#5f7087;font-size:7px}.an-real-values strong::before{content:'COM BUILD';display:block;color:#5f7087;font-size:7px}.an-real-values em{grid-column:1/-1;text-align:right}}
+
+/* V10 — valor final acompanhado do bônus, como no jogo */
+.an-real-head,.an-real-values li{grid-template-columns:minmax(170px,1.4fr) minmax(72px,.5fr) minmax(160px,.9fr)}.an-current-value{display:flex;align-items:center;justify-content:flex-end;gap:7px}.an-current-value strong{font-size:14px}.an-current-value em{min-width:44px;padding:3px 6px;border:1px solid rgba(74,222,128,.25);border-radius:5px;background:rgba(74,222,128,.08);font-weight:800;text-align:center}.an-current-value em:empty{display:none}.an-current-value em.down{border-color:rgba(251,191,36,.28);background:rgba(251,191,36,.08)}.an-base-value{color:#7e8da1}
+@media(max-width:560px){.an-real-values li{grid-template-columns:1fr auto}.an-base-value{grid-column:1}.an-current-value{grid-column:2;grid-row:2}.an-base-value::before{content:'BASE';display:block;color:#5f7087;font-size:7px}.an-current-value::before,.an-current-value strong::before{content:none!important}}
+
+/* V11 — leitura curta: nome e números permanecem no mesmo campo visual */
+.an-real-head,.an-real-values{width:min(100%,920px);margin-left:0;margin-right:auto}.an-real-head,.an-real-values li{grid-template-columns:minmax(240px,1fr) 105px 235px;column-gap:18px}.an-real-values li:nth-child(even){background:#091523}.an-real-values li.changed{box-shadow:inset 3px 0 0 var(--rc)}.an-real-values li>*+*{border-left:1px solid #172940;padding-left:14px}.an-real-head span{text-align:left}.an-real-head span:nth-child(n+2){padding-left:14px}.an-current-value{justify-content:flex-start}.an-base-value{text-align:left!important}.an-stat-name b{font-size:11px}
+@media(max-width:800px){.an-real-head,.an-real-values{width:100%}.an-real-head,.an-real-values li{grid-template-columns:minmax(170px,1fr) 90px 180px;column-gap:10px}}
+@media(max-width:560px){.an-real-values li{grid-template-columns:1fr auto}.an-real-values li>*+*{border-left:0;padding-left:0}.an-base-value{text-align:left!important}.an-current-value{justify-content:flex-end}}
+
 /* ---------- sinergia ---------- */
 .an-syn { display: grid; grid-template-columns: repeat(auto-fit, minmax(34px, 1fr)); gap: 5px; }
 .an-syn .s {
