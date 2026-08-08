@@ -4,7 +4,7 @@ import {
   mStyle, mInner, normalizar, rc, rn,
   nivelAtual, nomeDoNivel, corDoItem, pintar
 } from './ui-core.js';
-import { carregarDadosAnalise, analisarBuild, renderAnalise } from './build-analise.js';
+import { carregarDadosAnalise, analisarBuild, renderAnalise } from './build-analise.js?v=11';
 
 /* ============================================================
    CRIAR BUILD — lógica da página
@@ -27,7 +27,7 @@ const SLOTS_PADRAO = [
 
 let CONFIG = {
   usuario: { nome: 'SlayerX', nivel: 42, media: { src: '', fit: 'cover' } },
-  heroi:   { id: '', nome: '—', classe: '', media: { src: '', fit: 'contain' } },
+  heroi:   { id: '', nome: '—', classe: '', media: { src: '', fit: 'contain' }, cardMedia: { src: '', fit: 'cover' } },
   slots:   SLOTS_PADRAO.map((s, i, a) => ({ ...s, ...posicaoAnel(i, a.length) })),
   equipados: {},
   analise: null,
@@ -57,7 +57,7 @@ function posicaoAnel(indice, total) {
   const t = qtdColuna <= 1 ? 0.5 : ordemNaColuna / (qtdColuna - 1);
   const curva = Math.sin(t * Math.PI);
   return {
-    y: 18 + t * 64,
+    y: 12 + t * 72,
     x: naEsquerda ? 22 - 12 * curva : 78 + 12 * curva
   };
 }
@@ -70,41 +70,20 @@ function getMediaUrl(path, legacyUrl = '') {
   return legacyUrl || '';
 }
 
-/* O editor atual salva os atributos como uma lista
-   [{ label, value }]. Versões antigas salvavam um objeto JSON.
-   A página aceita os dois formatos sem perder o texto exibido. */
-function normalizeVariantStats(attributes) {
-  if (Array.isArray(attributes)) {
-    return Object.fromEntries(
-      attributes
-        .filter(attribute => String(attribute?.label || '').trim())
-        .map(attribute => [
-          String(attribute.label).trim(),
-          attribute.value ?? ''
-        ])
-    );
-  }
-
-  return attributes && typeof attributes === 'object' ? attributes : {};
-}
-
 /* ============================================================
    SUPABASE — conteúdo administrável
    ============================================================ */
 async function carregarConteudoSupabase() {
   const [
     heroesResult, classesResult, equipmentsResult, slotsResult,
-    rarityLevelsResult, equipmentVariantsResult, equipmentRaritiesResult,
-    equipmentSetsResult, setBonusesResult, tiersResult
+    rarityLevelsResult, equipmentSetsResult, setBonusesResult, tiersResult
   ] = await Promise.all([
     supabase.from('heroes').select(`
         id, name, slug, class_id, enabled, display_order,
         image_path, card_image_path, gif_path,
         image_url, card_image_url, gif_url,
         image_fit, image_position, image_scale, image_offset_x, image_offset_y,
-        card_image_scale, card_image_offset_x, card_image_offset_y,
-        build_image_path, build_image_scale, build_image_offset_x, build_image_offset_y,
-        build_card_image_path, build_card_image_scale, build_card_image_offset_x, build_card_image_offset_y
+        card_image_scale, card_image_offset_x, card_image_offset_y
       `)
       .eq('enabled', true)
       .order('display_order', { ascending: true })
@@ -128,16 +107,6 @@ async function carregarConteudoSupabase() {
       .select('equipment_id,rarity_slug,rarity_name,rarity_order,rarity_color,stats')
       .order('rarity_order', { ascending: true }),
 
-    /* Estrutura atual usada pelo editor administrativo. Mantemos a leitura
-       de equipment_rarity_levels acima apenas como compatibilidade com dados
-       antigos; equipment_variants é a fonte prioritária. */
-    supabase.from('equipment_variants')
-      .select('equipment_id,rarity_id,attributes'),
-
-    supabase.from('equipment_rarities')
-      .select('id,slug,name,color,rank')
-      .order('rank', { ascending: true }),
-
     supabase.from('equipment_sets').select('id,name,slug,description,image_path'),
 
     supabase.from('equipment_set_bonuses')
@@ -152,7 +121,6 @@ async function carregarConteudoSupabase() {
   const falhas = [
     ['heróis', heroesResult], ['classes', classesResult], ['equipamentos', equipmentsResult],
     ['slots', slotsResult], ['níveis', rarityLevelsResult],
-    ['variantes', equipmentVariantsResult], ['raridades', equipmentRaritiesResult],
     ['conjuntos', equipmentSetsResult], ['bônus de conjunto', setBonusesResult],
     ['tiers', tiersResult]
   ].filter(([, r]) => r.error);
@@ -163,45 +131,11 @@ async function carregarConteudoSupabase() {
   const sets = new Map((equipmentSetsResult.data || []).map(i => [i.id, i]));
   const slotsPorId = new Map((slotsResult.data || []).map(i => [i.id, i]));
 
-  const rarityLevelsBySlug = new Map();
-  const addRarityLevel = level => {
-    if (!level?.equipment_id || !level?.rarity_slug) return;
-    if (!rarityLevelsBySlug.has(level.equipment_id)) {
-      rarityLevelsBySlug.set(level.equipment_id, new Map());
-    }
-    rarityLevelsBySlug.get(level.equipment_id).set(level.rarity_slug, level);
-  };
-
-  /* Primeiro entram registros legados. */
+  const rarityLevels = new Map();
   for (const level of (rarityLevelsResult.data || [])) {
-    addRarityLevel(level);
+    if (!rarityLevels.has(level.equipment_id)) rarityLevels.set(level.equipment_id, []);
+    rarityLevels.get(level.equipment_id).push(level);
   }
-
-  /* Depois as variantes atuais sobrescrevem níveis equivalentes. */
-  const raritiesById = new Map(
-    (equipmentRaritiesResult.data || []).map(rarity => [rarity.id, rarity])
-  );
-  for (const variant of (equipmentVariantsResult.data || [])) {
-    const rarity = raritiesById.get(variant.rarity_id);
-    if (!rarity) continue;
-    addRarityLevel({
-      equipment_id: variant.equipment_id,
-      rarity_slug: rarity.slug,
-      rarity_name: rarity.name,
-      rarity_order: rarity.rank,
-      rarity_color: rarity.color,
-      stats: normalizeVariantStats(variant.attributes)
-    });
-  }
-
-  const rarityLevels = new Map(
-    [...rarityLevelsBySlug].map(([equipmentId, levels]) => [
-      equipmentId,
-      [...levels.values()].sort((a, b) =>
-        numSafe(a.rarity_order, 999) - numSafe(b.rarity_order, 999)
-      )
-    ])
-  );
 
   const setBonuses = new Map();
   for (const bonus of (setBonusesResult.data || [])) {
@@ -229,10 +163,6 @@ async function carregarConteudoSupabase() {
     const offsetY = `${numSafe(hero.image_offset_y, 0)}%`;
     const cardX = `${numSafe(hero.card_image_offset_x, 0)}%`;
     const cardY = `${numSafe(hero.card_image_offset_y, 0)}%`;
-    const buildX = `${numSafe(hero.build_image_offset_x, hero.image_offset_x || 0)}%`;
-    const buildY = `${numSafe(hero.build_image_offset_y, hero.image_offset_y || 0)}%`;
-    const buildCardX = `${numSafe(hero.build_card_image_offset_x, hero.card_image_offset_x || 0)}%`;
-    const buildCardY = `${numSafe(hero.build_card_image_offset_y, hero.card_image_offset_y || 0)}%`;
 
     const mainSource = getMediaUrl(
       hero.image_path || hero.card_image_path || hero.gif_path,
@@ -240,14 +170,6 @@ async function carregarConteudoSupabase() {
     );
     const cardSource = getMediaUrl(
       hero.card_image_path || hero.image_path || hero.gif_path,
-      hero.card_image_url || hero.image_url || hero.gif_url
-    );
-    const buildSource = getMediaUrl(
-      hero.build_image_path || hero.image_path || hero.card_image_path || hero.gif_path,
-      hero.image_url || hero.card_image_url || hero.gif_url
-    );
-    const buildCardSource = getMediaUrl(
-      hero.build_card_image_path || hero.card_image_path || hero.build_image_path || hero.image_path || hero.gif_path,
       hero.card_image_url || hero.image_url || hero.gif_url
     );
 
@@ -258,15 +180,13 @@ async function carregarConteudoSupabase() {
       classe: heroClass?.name || 'Sem classe',
       cor: heroClass?.color || '#A855F7',
       media: {
-        src: buildCardSource, fit: 'contain', pos: '50% 50%',
-        scale: numSafe(hero.build_card_image_scale, hero.card_image_scale || 1), x: buildCardX, y: buildCardY
+        src: cardSource, fit: 'cover', pos: '50% 50%',
+        scale: numSafe(hero.card_image_scale, 1), x: cardX, y: cardY
       },
       destaque: {
-        src: buildSource, fit: 'contain', pos: '50% 50%',
-        scale: numSafe(hero.build_image_scale, hero.image_scale || 1), x: buildX, y: buildY
-      },
-      paginaPrincipal: { src: mainSource, fit: hero.image_fit || 'contain', pos: hero.image_position || '50% 50%', scale: numSafe(hero.image_scale, 1), x: offsetX, y: offsetY },
-      cardPrincipal: { src: cardSource, fit: 'cover', pos: '50% 50%', scale: numSafe(hero.card_image_scale, 1), x: cardX, y: cardY }
+        src: mainSource, fit: hero.image_fit || 'contain', pos: hero.image_position || '50% 50%',
+        scale: numSafe(hero.image_scale, 1), x: offsetX, y: offsetY
+      }
     };
   });
 
@@ -328,7 +248,6 @@ async function carregarConteudoSupabase() {
 let heroiAtual = '';
 let slotAtivo = null;
 let etapa = 1;
-let etapaAlcancada = 1;
 let equipamentoSelecionado = null;
 let buscaPop = '';
 
@@ -354,9 +273,9 @@ function renderHeroBaseStats() {
   if (!alvo || !linhas.length) return;
 
   const mapa = [
-    { keys: ['fogo'], icon: '⌖', label: 'DANO BASE' },
-    { keys: ['sobrevivencia'], icon: '♢', label: 'SOBREVIVÊNCIA BASE' },
-    { keys: ['mobilidade'], icon: '♞', label: 'MOBILIDADE BASE' }
+    { keys: ['damage_per_shot'], icon: '⌖', label: 'DANO POR TIRO' },
+    { keys: ['health', 'armor'], icon: '♢', label: 'VIDA BASE' },
+    { keys: ['max_movement_speed'], icon: '♞', label: 'VELOCIDADE BASE' }
   ];
 
   alvo.innerHTML = mapa.map(item => {
@@ -446,7 +365,6 @@ function abrirPop(key) {
 
   $('pop').hidden = false;
   $('pop-back').hidden = false;
-  document.body.classList.add('equipment-modal-open');
 
   renderSlots();
   renderCatalogo();
@@ -458,7 +376,6 @@ function abrirPop(key) {
 function fecharPop() {
   $('pop').hidden = true;
   $('pop-back').hidden = true;
-  document.body.classList.remove('equipment-modal-open');
   renderSlots();
 }
 
@@ -601,11 +518,9 @@ function quantidadeDoConjunto(setId) {
 function renderDetalheEquipamento(item = equipamentoSelecionado) {
   const detail = $('equipment-detail');
   const floating = $('equipment-float');
-  const pop = $('pop');
 
   if (!item) {
     equipamentoSelecionado = null;
-    pop?.classList.remove('has-detail');
     detail.className = 'eq-detail empty';
     detail.textContent = 'Toque num slot ao redor do herói para escolher e ver níveis, atributos e bônus do conjunto.';
     if (floating) floating.innerHTML = '<span class="equipment-float-icon">◇</span><div><strong>SELECIONE UM EQUIPAMENTO</strong><small>Os bônus aparecem aqui</small></div>';
@@ -613,7 +528,6 @@ function renderDetalheEquipamento(item = equipamentoSelecionado) {
   }
 
   equipamentoSelecionado = item;
-  pop?.classList.add('has-detail');
 
   const level = nivelAtual(item);
   const stats = level?.stats || {};
@@ -660,13 +574,13 @@ function renderDetalheEquipamento(item = equipamentoSelecionado) {
       </div>
     </div>
 
-    ${item.set ? `<details class="eq-section eq-set-details">
-      <summary class="eq-section-title"><span>Bônus do conjunto · ${esc(item.set.nome)}</span><span>${pieces}/${maxPieces} peças · abrir ▾</span></summary>
+    ${item.set ? `<div class="eq-section">
+      <div class="eq-section-title"><span>${esc(item.set.nome)}</span><span>${pieces}/${maxPieces} peças</span></div>
       <div class="set-progress"><div class="track2"><i style="width:${Math.min(100, (pieces / maxPieces) * 100)}%"></i></div><b>${pieces}/${maxPieces}</b></div>
       <div class="set-bonuses">
         ${bonuses.map(b => `<div class="set-bonus ${pieces >= b.required_pieces ? 'active' : ''}"><div class="pieces">${esc(b.required_pieces)}</div><div><b>${esc(b.title)}</b><p>${esc(b.description)}</p></div></div>`).join('')}
       </div>
-    </details>` : ''}
+    </div>` : ''}
 
     ${item.recommendation ? `<div class="eq-section"><div class="recommendation"><b>Indicação</b>${esc(item.recommendation)}</div></div>` : ''}
   `;
@@ -722,7 +636,9 @@ function renderHerois() {
       } else if (h.media && h.media.src) {
         CONFIG.heroi.media = Object.assign({}, h.media, { fit: 'contain' });
       }
-      CONFIG.heroi.cardMedia = Object.assign({}, h.media?.src ? h.media : CONFIG.heroi.media);
+      CONFIG.heroi.cardMedia = h.media?.src
+        ? Object.assign({}, h.media)
+        : Object.assign({}, CONFIG.heroi.media, { fit: 'cover' });
 
       renderHeroi();
       CONFIG.resumo.tagA = h.classe;
@@ -768,24 +684,50 @@ function renderImpacto(resultado) {
 
   grid.innerHTML = linhas.slice(0, 5).map(linha => {
     const delta = Number(linha.delta || 0);
-    const negativo = delta < 0;
-    const antes = Math.max(3, Math.min(100, linha.pctBase || 0));
-    const depois = Math.max(3, Math.min(100, linha.pct || 0));
-    return `<article class="${negativo ? 'negative' : ''}">
-      <h3>${esc(linha.icone)} ${esc(linha.nome.toUpperCase())}</h3>
-      <div><small>ANTES</small><i><u style="width:${antes}%"></u></i><em>${Math.round(linha.base).toLocaleString('pt-BR')}</em></div>
-      <div><small>DEPOIS</small><i><u style="width:${depois}%"></u></i><em>${Math.round(linha.valor).toLocaleString('pt-BR')}</em></div>
-      <strong>${delta >= 0 ? '+' : ''}${delta}% ${delta >= 0 ? '↑' : '↓'}</strong>
+    const negativo = Number(linha.beneficialDelta ?? delta) < 0;
+    const mudou = Math.abs(Number(linha.difference || 0)) > 1e-9;
+    return `<article class="real-stat-card ${negativo ? 'negative' : ''} ${mudou ? 'changed' : 'unchanged'}" style="--stat-color:${esc(linha.cor)}">
+      <div class="real-stat-title"><span>${esc(linha.icone)}</span><h3>${esc(linha.nome)}</h3><i>OFICIAL</i></div>
+      <div class="real-stat-current">
+        <small>VALOR ATUAL</small>
+        <div><b>${formatImpactValue(linha, linha.valor)}</b>${mudou ? `<strong class="${negativo ? 'penalty' : ''}">${
+          linha.difference > 0 ? '+' : ''}${formatImpactDelta(linha, linha.difference)}</strong>` : ''}</div>
+      </div>
+      <div class="real-stat-base"><span>BASE SEM ITENS</span><b>${formatImpactValue(linha, linha.base)}</b>${mudou
+        ? `<em>${delta >= 0 ? '+' : ''}${formatPercent(delta)}%</em>` : '<em>SEM ALTERAÇÃO</em>'}</div>
     </article>`;
   }).join('');
 
-  const melhor = [...linhas].sort((a, b) => b.delta - a.delta)[0];
-  const dica = resultado?.estilo || (melhor
-    ? `Dica tática: esta combinação favorece ${melhor.nome.toLowerCase()}.`
-    : 'Dica tática: combine equipamentos para revelar o perfil desta build.');
+  const alteradas = resultado?.estatisticas?.filter(l => Math.abs(Number(l.difference)) > 1e-9) || [];
+  const dica = alteradas.length
+    ? `${alteradas.length} atributo(s) oficial(is) alterado(s). Abra “Detalhes” para auditar todos os valores.`
+    : 'Nenhum atributo oficial foi alterado pelos equipamentos selecionados.';
   if ($('tactical-tip')) $('tactical-tip').textContent = dica;
   if ($('recommendation-copy')) $('recommendation-copy').textContent = dica;
   renderHeroBaseStats();
+}
+
+function formatPercent(value) {
+  const rounded = Math.round(Number(value || 0) * 10) / 10;
+  return rounded.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+}
+
+function formatImpactValue(linha, value) {
+  const decimals = Number(linha.decimals || 0);
+  const formatted = Number(value || 0).toLocaleString('pt-BR', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals
+  });
+  return `${esc(linha.prefix || '')}${formatted}${esc(linha.unit || '')}`;
+}
+
+function formatImpactDelta(linha, value) {
+  const decimals = Number(linha.decimals || 0);
+  const formatted = Number(value || 0).toLocaleString('pt-BR', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals
+  });
+  return `${formatted}${esc(linha.unit || '')}`;
 }
 
 /* Recalcula tudo que depende do loadout. Ponto único de atualização. */
@@ -871,10 +813,9 @@ function renderBonus() {
 }
 
 /* ---------- etapas / progresso ---------- */
-function progresso(n, navegacaoManual = false) {
-  etapaAlcancada = Math.max(etapaAlcancada, n);
-  etapa = navegacaoManual ? n : etapaAlcancada;
-  const pct = Math.min(100, etapaAlcancada * 25);
+function progresso(n) {
+  if (n > etapa) etapa = n;
+  const pct = Math.min(100, etapa * 25);
   $('prog-pct').textContent = pct + '%';
   $('prog-bar').style.width = pct + '%';
   document.querySelectorAll('.step').forEach(s => {
@@ -1007,7 +948,7 @@ function adicionarEvento(id, evento, callback) {
 
 adicionarEvento('steps', 'click', e => {
   const s = e.target.closest('.step');
-  if (s) progresso(+s.dataset.s, true);
+  if (s) progresso(+s.dataset.s);
 });
 
 adicionarEvento('next-equip', 'click', () => {
@@ -1168,8 +1109,7 @@ try {
     if (hero) {
       CONFIG.heroi = {
         id: hero.id, databaseId: hero.databaseId, nome: String(hero.nome).toUpperCase(),
-        classe: hero.classe, media: hero.destaque?.src ? hero.destaque : hero.media,
-        cardMedia: hero.media?.src ? hero.media : hero.destaque
+        classe: hero.classe, media: hero.destaque?.src ? hero.destaque : hero.media
       };
     }
     for (const salvo of (draft.items || [])) {

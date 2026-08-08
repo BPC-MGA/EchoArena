@@ -1,5 +1,10 @@
 import { supabase } from './supabase.js';
 import { esc, mStyle, mInner, corDoItem, normalizar } from './ui-core.js';
+import {
+  applyEquipmentStats,
+  buildRealStatLines,
+  calculateShotDistribution
+} from './game-stat-engine.js?v=11';
 
 /* ============================================================
    ANÁLISE DA BUILD
@@ -171,7 +176,8 @@ export async function carregarDadosAnalise() {
     }
   }
 
-  dados.tetos = calcularTetos(dados.baseHerois);
+  /* A V9 não cria mais tetos ou scores sintéticos. */
+  dados.tetos = {};
 
   try {
     const { data, error } = await supabase.from('heroes')
@@ -203,14 +209,7 @@ function acumular(alvo, stats, desconhecidas, mult = 1, base = null) {
     const regras = STAT_MAP[chave] || STAT_MAP[normalizar(chave)];
     if (!regras) { desconhecidas.add(chave); continue; }
 
-    /* O editor aceita valores como "+6%" ou "1,5". Para cálculo,
-       extraímos somente a parcela numérica; o texto original continua
-       intacto no modal do equipamento. */
-    const direto = Number(valor);
-    const trecho = String(valor ?? '')
-      .replace(',', '.')
-      .match(/[-+]?\d+(?:\.\d+)?/);
-    const n = Number.isFinite(direto) ? direto : Number(trecho?.[0]);
+    const n = Number(valor);
     if (!Number.isFinite(n)) continue;
 
     for (const [macro, peso, modo] of regras) {
@@ -283,39 +282,33 @@ export function calcularMacros(contexto = {}) {
     );
   }
 
-  const mult = NIVEL_MULT[heroi.nivelSlug] ?? 1;
-
-  const pontosBase = Object.fromEntries(MACROS.map(m => [m.key, 0]));
-  acumular(pontosBase, base, desconhecidas, mult);
-
-  const pontosTotal = { ...pontosBase };
-
-  /* equipamentos: stats do nível escolhido */
+  const fontesEquipamentos = [];
   for (const item of Object.values(equipados).filter(Boolean)) {
     const level = item.levels?.find(l => l.slug === item.raridade) || item.levels?.[0];
-    acumular(pontosTotal, level?.stats, desconhecidas, 1, pontosBase);
+    if (level?.stats) fontesEquipamentos.push(level.stats);
   }
 
-  /* bônus de conjunto atingidos */
+  /* Bônus de conjunto usam o mesmo vocabulário de stats dos equipamentos. */
   for (const b of calcularBonusAtivos(contexto)) {
-    acumular(pontosTotal, dados.statsBonus?.get(b.id), desconhecidas, 1, pontosBase);
+    const stats = dados.statsBonus?.get(b.id);
+    if (stats) fontesEquipamentos.push(stats);
   }
 
-  const linhas = MACROS.map(m => {
-    const teto = dados.tetos?.[m.key] || m.teto;
-    const valorBase = Math.round(pontosBase[m.key] || 0);
-    const valor = Math.round(pontosTotal[m.key] || 0);
-    const pct = Math.max(0, Math.min(100, (valor / teto) * 100));
-    const pctBase = Math.max(0, Math.min(100, (valorBase / teto) * 100));
-    const delta = valorBase > 0 ? Math.round(((valor - valorBase) / valorBase) * 100) : 0;
-    return { ...m, teto, base: valorBase, valor, pct, pctBase, delta };
-  });
+  const calculo = applyEquipmentStats(base, fontesEquipamentos);
+  calculo.unknown.forEach(key => desconhecidas.add(key));
+  const estatisticas = buildRealStatLines(calculo, 99);
+  const linhas = estatisticas.slice(0, 5);
 
   return {
     status: 'ok',
-    base: pontosBase,
-    total: pontosTotal,
+    base: calculo.base,
+    total: calculo.final,
     linhas,
+    estatisticas,
+    modificadoresAplicados: calculo.applied,
+    /* Cenário neutro (RA 0) para auditoria. A interface não o chama de
+       dano universal: contra outro alvo, recalcular com a RA daquele alvo. */
+    distribuicaoDisparoRa0: calculateShotDistribution(calculo.final, 0),
     estimado: false,
     estatisticasDesconhecidas: [...desconhecidas]
   };
@@ -373,18 +366,17 @@ export function analisarBuild(contexto = {}) {
 
     const texto = dados.textos?.get(heroi.databaseId) || {};
 
-    const media = linhas.reduce((soma, l) => soma + l.pct, 0) / (linhas.length || 1);
-
-    const rotulo = l => `${l.nome}: ${Math.round(l.pct)}% do teto`;
-    const fortes = media > 0
-      ? linhas.filter(l => l.pct >= media * LIMIAR_FORTE).map(rotulo) : [];
-    const fracos = media > 0
-      ? linhas.filter(l => l.pct <= media * LIMIAR_FRACO).map(rotulo) : [];
+    const rotulo = l => `${l.nome}: ${l.delta >= 0 ? '+' : ''}${
+      (Math.round(l.delta * 10) / 10).toLocaleString('pt-BR')}%`;
+    const fortes = linhas.filter(l => Number(l.beneficialDelta) > 0).map(rotulo);
+    const fracos = linhas.filter(l => Number(l.beneficialDelta) < 0).map(rotulo);
     if (texto.strength_note) fortes.push(texto.strength_note);
     if (texto.weakness_note) fracos.push(texto.weakness_note);
 
-    const topo = [...linhas].sort((a, b) => b.pct - a.pct)[0];
-    const derivado = ESTILO_DERIVADO[topo?.key] || 'Monte o loadout para definir o estilo.';
+    const alteradas = linhas.filter(l => Math.abs(Number(l.delta)) > 0.001);
+    const derivado = alteradas.length
+      ? `${alteradas.length} atributo(s) real(is) alterado(s) pelos itens selecionados.`
+      : 'Nenhum atributo cadastrado foi alterado pelos itens selecionados.';
     const estilo = equipadosN === 0
       ? 'A análise será atualizada automaticamente conforme a montagem da build.'
       : (texto.playstyle ? `${texto.playstyle} ${derivado}` : derivado);
@@ -414,7 +406,7 @@ export function analisarBuild(contexto = {}) {
     };
 
     if (resultado.estatisticasDesconhecidas.length) {
-      console.warn('[build-analise] Stats sem mapeamento em STAT_MAP:',
+      console.warn('[build-analise] Stats de equipamento sem atributo-base compatível:',
         resultado.estatisticasDesconhecidas.join(', '));
     }
 
@@ -434,8 +426,8 @@ export function analisarBuild(contexto = {}) {
    ============================================================ */
 const CX = 132, CY = 122, R = 78;
 
-function ponto(i, r) {
-  const a = (-90 + i * (360 / MACROS.length)) * Math.PI / 180;
+function ponto(i, r, total = 5) {
+  const a = (-90 + i * (360 / total)) * Math.PI / 180;
 
   return [
     CX + r * Math.cos(a),
@@ -445,28 +437,28 @@ function ponto(i, r) {
 
 function poligono(pcts) {
   return pcts.map((p, i) => {
-    const [x, y] = ponto(i, R * Math.max(0.02, Math.min(1, p / 100)));
+    const [x, y] = ponto(i, R * Math.max(0.02, Math.min(1, p / 100)), pcts.length);
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
 }
 
 function radarSvg(linhas) {
   const aneis = [25, 50, 75, 100].map(p =>
-    `<polygon class="an-grid" points="${poligono(MACROS.map(() => p))}"></polygon>`).join('');
+    `<polygon class="an-grid" points="${poligono(linhas.map(() => p))}"></polygon>`).join('');
 
-  const eixos = MACROS.map((m, i) => {
-    const [x, y] = ponto(i, R);
+  const eixos = linhas.map((m, i) => {
+    const [x, y] = ponto(i, R, linhas.length);
     return `<line class="an-axis" x1="${CX}" y1="${CY}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}"></line>`;
   }).join('');
 
-  const rotulos = MACROS.map((m, i) => {
-    const [x, y] = ponto(i, R + 20);
+  const rotulos = linhas.map((m, i) => {
+    const [x, y] = ponto(i, R + 20, linhas.length);
     const anchor = Math.abs(x - CX) < 6 ? 'middle' : (x > CX ? 'start' : 'end');
-    return `<text class="an-label" x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" text-anchor="${anchor}" fill="${m.cor}">${m.curto}</text>`;
+    return `<text class="an-label" x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" text-anchor="${anchor}" fill="${m.cor}">${esc(m.curto)}</text>`;
   }).join('');
 
   const vertices = linhas.map((l, i) => {
-    const [x, y] = ponto(i, R * Math.max(0.02, Math.min(1, l.pct / 100)));
+    const [x, y] = ponto(i, R * Math.max(0.02, Math.min(1, l.pct / 100)), linhas.length);
     return `<circle class="an-dot" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="${l.cor}"></circle>`;
   }).join('');
 
@@ -535,7 +527,8 @@ export function renderAnalise(resultado) {
 
   const {
     linhas = [], fortes = [], fracos = [], bonusAtivos = [], sinergia = [],
-    estilo, dificuldade, estado, classe, equipadosN = 0, totalSlots = 0
+    estilo, dificuldade, estado, classe, equipadosN = 0, totalSlots = 0,
+    distribuicaoDisparoRa0, estatisticas = linhas
   } = resultado;
 
   const chips = (lista, tipo, vazio) => lista.length
@@ -545,21 +538,27 @@ export function renderAnalise(resultado) {
   container.innerHTML = `
     ${cabecalho(estado || 'Pronta', estado === 'Completa' ? 'ok' : '')}
 
-    ${radarSvg(linhas)}
-
-    <div class="an-legend">
-      <span><i class="l-base"></i>Herói</span>
-      <span><i class="l-total"></i>Com equipamentos</span>
+    <div class="an-real-head">
+      <span>ATRIBUTO OFICIAL</span><span>BASE</span><span>VALOR ATUAL + EQUIPAMENTOS</span>
     </div>
-
-    <ul class="an-values">
-      ${linhas.map(l => `
-        <li style="--rc:${esc(l.cor)}">
-          <span class="ic">${esc(l.icone)}</span>
-          <span class="nm">${esc(l.curto)}</span>
-          <b>${l.valor.toLocaleString('pt-BR')}</b>
-          <i class="${l.delta >= 0 ? 'up' : 'down'}">${l.delta >= 0 ? '+' : ''}${l.delta}%</i>
-        </li>`).join('')}
+    <ul class="an-real-values">
+      ${estatisticas.map(l => {
+        const decimals = Number(l.decimals || 0);
+        const fmt = value => `${l.prefix || ''}${Number(value).toLocaleString('pt-BR', {
+          minimumFractionDigits: decimals, maximumFractionDigits: decimals
+        })}${l.unit || ''}`;
+        const fmtDelta = value => `${Number(value).toLocaleString('pt-BR', {
+          minimumFractionDigits: decimals, maximumFractionDigits: decimals
+        })}${l.unit || ''}`;
+        const changed = Math.abs(Number(l.difference)) > 1e-9;
+        return `<li class="${changed ? 'changed' : ''}" style="--rc:${esc(l.cor)}">
+          <span class="an-stat-name"><i>${esc(l.icone)}</i><b>${esc(l.nome)}</b></span>
+          <span class="an-base-value">${esc(fmt(l.base))}</span>
+          <span class="an-current-value"><strong>${esc(fmt(l.valor))}</strong><em class="${
+            Number(l.beneficialDelta) < 0 ? 'down' : 'up'}">${changed
+              ? `${l.difference > 0 ? '+' : ''}${esc(fmtDelta(l.difference))}` : ''}</em></span>
+        </li>`;
+      }).join('')}
     </ul>
 
     <div class="an-syn" title="Sinergia dos itens">
@@ -581,6 +580,13 @@ export function renderAnalise(resultado) {
       <h3>Estilo de jogo</h3>
       <p>${esc(estilo || '')}</p>
     </section>
+
+    ${distribuicaoDisparoRa0?.complete ? `<section class="an-style an-formula">
+      <h3>Distribuição oficial do disparo <small>referência: alvo com RA 0</small></h3>
+      <p>Penetração efetiva: <b>${distribuicaoDisparoRa0.effectivePenetration.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%</b></p>
+      <p>Ao HP: <b>${Math.round(distribuicaoDisparoRa0.healthDamage).toLocaleString('pt-BR')}</b> · À armadura: <b>${Math.round(distribuicaoDisparoRa0.armorDamage).toLocaleString('pt-BR')}</b></p>
+      <small>O resultado muda conforme a resistência à armadura do alvo. Poder de perfuração não entra nesta conta.</small>
+    </section>` : ''}
 
     <div class="an-foot">
       <div>
