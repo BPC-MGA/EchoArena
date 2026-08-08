@@ -159,3 +159,153 @@ img,video{display:block;max-width:100%}
   .mobile-steps b{display:none}.mobile-steps .step{gap:0}.mobile-steps .n{width:26px;height:26px}
 }
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+
+/* =========================================================
+   REFINO MOBILE — layout preservado, escala e leitura
+   ========================================================= */
+@media(max-width:800px){
+  /* O cartão do herói deixa de disputar espaço com a arte. */
+  .hero-panel{
+    min-height:330px;
+    padding-bottom:62px;
+  }
+  .hero-card-art{
+    width:46%;
+    height:205px;
+    margin:8px 2% 0 auto;
+    overflow:hidden;
+  }
+  .hero-card-art.media>img,.hero-card-art.media>video{
+    object-fit:contain!important;
+    object-position:center!important;
+    max-width:100%;
+    max-height:100%;
+  }
+  .hero-base-stats{
+    left:12px;
+    right:48%;
+    bottom:66px;
+    margin:0;
+    padding:9px 0;
+  }
+  .hero-base-stats>div{
+    grid-template-columns:minmax(92px,1fr) minmax(62px,.9fr) minmax(38px,auto);
+    gap:7px;
+  }
+  .hero-base-stats span,.hero-base-stats b{font-size:9px}
+  .hero-base-stats em{font-size:15px;white-space:nowrap}
+
+  /* Navegador da página: compacto e autoexplicativo. */
+  .mobile-steps{
+    gap:3px;
+    padding:5px;
+    border-color:#223650;
+    background:rgba(5,12,23,.92);
+  }
+  .mobile-steps .step{
+    height:52px;
+    min-width:0;
+    flex-direction:column;
+    gap:2px;
+    border:1px solid transparent;
+    transition:background .18s ease,border-color .18s ease,color .18s ease;
+  }
+  .mobile-steps .step.on{
+    color:#fff;
+    border-color:rgba(155,98,255,.5);
+    background:linear-gradient(180deg,rgba(118,65,220,.28),rgba(52,31,105,.2));
+    box-shadow:inset 0 -2px 0 var(--violet);
+  }
+  .mobile-steps .step.done{color:#9b86c8}
+  .mobile-steps .n{width:23px;height:23px;font-size:10px}
+  .mobile-steps b{
+    display:block;
+    max-width:100%;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    font:600 8px var(--display);
+    letter-spacing:.04em;
+  }
+}
+
+@media(max-width:560px){
+  /* Herói central com os seis slots orbitando as laterais. */
+  .synergy-stage{padding:8px 6px 10px}
+  .ring{
+    height:500px;
+    width:100%;
+    max-width:430px;
+    margin-inline:auto;
+    overflow:visible;
+  }
+  .ring .glow{width:330px;height:330px;top:49%}
+  .orbit-a{width:310px;height:310px}
+  .orbit-b{width:235px;height:235px}
+  .orbit,.connector-lines{top:49%}
+  .connector-lines{width:345px;height:300px;opacity:.42}
+  .hero{
+    width:220px;
+    height:350px;
+    top:50%;
+    transform:translate(-50%,-49%);
+  }
+
+  .ring>.slot{display:block}
+  .slots-grid{display:none!important}
+  .slot{width:74px;z-index:9}
+  .slot .hex{width:74px;height:69px}
+  .slot .plus{font-size:31px}
+  .slot .lb{
+    left:50%;top:-9px;
+    width:20px;height:18px;
+    transform:translateX(-50%);
+    border-radius:5px;
+    font-size:11px;
+  }
+  .slot .in{
+    width:82px;
+    max-width:82px;
+    margin:1px 0 0 50%;
+    padding:3px 4px;
+    transform:translateX(-50%);
+    border-radius:5px;
+    text-align:center;
+  }
+  .slot .in b{max-width:74px;font-size:8px}
+  .slot .in i{font-size:7px}
+  .slot .rm{right:-3px;top:-3px;width:19px;height:19px;font-size:9px;opacity:1}
+
+  .equipment-float{
+    left:50%;
+    bottom:17px;
+    width:min(232px,68vw);
+    min-height:58px;
+    padding:9px 10px;
+    transform:translateX(-50%);
+    pointer-events:none;
+  }
+  .equipment-float-icon{width:26px;height:26px;flex-basis:26px;font-size:16px}
+  .equipment-float strong{font-size:12px}
+  .equipment-float small{font-size:9px}
+  .stage-count{margin:2px 0 6px}
+
+  /* No celular pequeno, mantém os nomes das etapas visíveis. */
+  .mobile-steps b{display:block;font-size:7.5px}
+  .mobile-steps .n{width:22px;height:22px}
+
+  /* Status do topo com escala mais estável em telas estreitas. */
+  .hero-panel{min-height:320px}
+  .hero-card-art{width:45%;height:195px;margin-right:1%}
+  .hero-base-stats{right:46%;bottom:66px}
+  .hero-base-stats>div{grid-template-columns:minmax(86px,1fr) minmax(50px,.75fr) minmax(34px,auto)}
+  .hero-base-stats span,.hero-base-stats b{font-size:8px}
+  .hero-base-stats em{font-size:14px}
+}
+
+@media(max-width:370px){
+  .slot{width:67px}.slot .hex{width:67px;height:63px}.slot .in{width:72px}.slot .in b{max-width:66px}
+  .hero{width:205px;height:332px}
+  .equipment-float{width:210px}
+  .mobile-steps b{font-size:7px}
+}
