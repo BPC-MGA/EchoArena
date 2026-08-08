@@ -294,6 +294,10 @@ function renderSlots() {
   mob.innerHTML = '';
 
   const mobile = window.matchMedia('(max-width:560px)').matches;
+  const mobileOrbitPositions = [
+    { x: 14, y: 28 }, { x: 12, y: 50 }, { x: 15, y: 72 },
+    { x: 86, y: 28 }, { x: 88, y: 50 }, { x: 85, y: 72 }
+  ];
 
   CONFIG.slots.forEach((s, index) => {
     const it = CONFIG.equipados[s.key];
@@ -317,15 +321,12 @@ function renderSlots() {
       abrirPop(s.key);
     };
 
-    if (mobile) {
-      mob.appendChild(el);
-    } else {
-      el.style.position = 'absolute';
-      el.style.left = s.x + '%';
-      el.style.top = s.y + '%';
-      el.style.transform = 'translate(-50%,-50%)';
-      ring.appendChild(el);
-    }
+    const pos = mobile ? mobileOrbitPositions[index] : { x: s.x, y: s.y };
+    el.style.position = 'absolute';
+    el.style.left = pos.x + '%';
+    el.style.top = pos.y + '%';
+    el.style.transform = 'translate(-50%,-50%)';
+    ring.appendChild(el);
   });
 
   atualizarContagem();
@@ -370,7 +371,7 @@ function abrirPop(key) {
   renderCatalogo();
   renderDetalheEquipamento(CONFIG.equipados[key] || null);
   posicionarPop();
-  progresso(3);
+  progresso(2);
 }
 
 function fecharPop() {
@@ -489,7 +490,7 @@ function equipar(item) {
   renderSinergia();
   renderBonus();
   atualizarAnalise();
-  progresso(3);
+  progresso(2);
 }
 
 /* ---------- detalhe do equipamento ---------- */
@@ -813,6 +814,15 @@ function renderBonus() {
 }
 
 /* ---------- etapas / progresso ---------- */
+function destacarEtapa(n) {
+  const atual = Math.max(1, Math.min(4, Number(n) || 1));
+  document.querySelectorAll('.step').forEach(s => {
+    const i = +s.dataset.s;
+    s.classList.toggle('on', i === atual);
+    s.setAttribute('aria-current', i === atual ? 'step' : 'false');
+  });
+}
+
 function progresso(n) {
   if (n > etapa) etapa = n;
   const pct = Math.min(100, etapa * 25);
@@ -820,9 +830,9 @@ function progresso(n) {
   $('prog-bar').style.width = pct + '%';
   document.querySelectorAll('.step').forEach(s => {
     const i = +s.dataset.s;
-    s.classList.toggle('on', i === etapa);
     s.classList.toggle('done', i < etapa);
   });
+  destacarEtapa(Math.min(n, 4));
 }
 
 function toast(mensagem, tipo = '') {
@@ -948,7 +958,7 @@ function adicionarEvento(id, evento, callback) {
 
 adicionarEvento('steps', 'click', e => {
   const s = e.target.closest('.step');
-  if (s) progresso(+s.dataset.s);
+  if (s) destacarEtapa(+s.dataset.s);
 });
 
 adicionarEvento('next-equip', 'click', () => {
@@ -1079,6 +1089,38 @@ document.querySelectorAll('.mobile-steps .step').forEach(step => step.addEventLi
     : document.querySelector('.build-plan');
   alvo?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }));
+
+// Mantém o navegador de etapas sincronizado com a seção realmente visível.
+// A página continua única; os números funcionam como atalhos, não como páginas separadas.
+const secoesEtapas = [
+  { n: 1, el: document.querySelector('.hero-panel') },
+  { n: 2, el: document.querySelector('.synergy-stage') },
+  { n: 3, el: document.querySelector('.impact-panel') },
+  { n: 4, el: document.querySelector('.build-plan') }
+].filter(item => item.el);
+
+let scrollSpyTimer = null;
+function sincronizarEtapaComScroll() {
+  if (!window.matchMedia('(max-width:800px)').matches) return;
+  const referencia = window.innerHeight * 0.42;
+  let melhor = secoesEtapas[0];
+  let distancia = Infinity;
+  secoesEtapas.forEach(item => {
+    const rect = item.el.getBoundingClientRect();
+    const ponto = Math.max(rect.top, Math.min(referencia, rect.bottom));
+    const d = Math.abs(ponto - referencia);
+    if (rect.bottom > 70 && rect.top < window.innerHeight && d < distancia) {
+      distancia = d;
+      melhor = item;
+    }
+  });
+  if (melhor) destacarEtapa(melhor.n);
+}
+
+window.addEventListener('scroll', () => {
+  clearTimeout(scrollSpyTimer);
+  scrollSpyTimer = setTimeout(sincronizarEtapaComScroll, 45);
+}, { passive: true });
 
 let resizeTimer = null;
 
