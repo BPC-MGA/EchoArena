@@ -17,11 +17,15 @@ const fields = {
   name: document.getElementById('name'),
   slug: document.getElementById('slug'),
   classId: document.getElementById('class-id'),
+  rarityId: document.getElementById('rarity-id'),
+  faction: document.getElementById('faction'),
   displayOrder: document.getElementById('display-order'),
   description: document.getElementById('description'),
   enabled: document.getElementById('enabled'),
   imageFile: document.getElementById('image-file'),
   cardFile: document.getElementById('card-file'),
+  buildImageFile: document.getElementById('build-image-file'),
+  buildCardFile: document.getElementById('build-card-file'),
   gifFile: document.getElementById('gif-file')
 };
 
@@ -104,45 +108,14 @@ let isSaving = false;
 let pendingUpdate = null;
 let mainEditor;
 let cardEditor;
+let buildImageEditor;
+let buildCardEditor;
 let gifEditor;
 
 function showMessage(text = '', type = '') {
   if (!message) return;
   message.textContent = text;
   message.className = type;
-}
-
-function showRequiredFieldAlert(text, field) {
-  let alert = document.getElementById('hero-required-field-alert');
-
-  if (!alert) {
-    const style = document.createElement('style');
-    style.textContent = `
-      .hero-required-field-alert{position:fixed;inset:0;z-index:10020;display:grid;place-items:center;padding:20px;background:rgba(2,7,18,.88);backdrop-filter:blur(9px)}
-      .hero-required-field-card{width:min(520px,100%);padding:30px;border:1px solid #fb7185;border-radius:22px;background:#0b1728;box-shadow:0 24px 80px rgba(0,0,0,.48);text-align:center}
-      .hero-required-field-icon{display:grid;place-items:center;width:72px;height:72px;margin:0 auto 18px;border:2px solid #fb7185;border-radius:50%;color:#fda4af;font-size:36px;font-weight:900}
-      .hero-required-field-card h2{margin:0 0 10px;color:#fff;font-size:25px}.hero-required-field-card p{margin:0 0 22px;color:#c6d0df;line-height:1.6}
-      .hero-required-field-card button{min-height:50px;padding:0 22px;border:1px solid #8b5cf6;border-radius:13px;background:linear-gradient(135deg,#8b5cf6,#6d28d9);color:#fff;font-weight:800}
-      .hero-form-field.is-invalid label{color:#fda4af}.hero-form-field.is-invalid .admin-input,.hero-form-field.is-invalid .admin-select{border-color:#fb7185!important;box-shadow:0 0 0 3px rgba(251,113,133,.16)!important}
-    `;
-    document.head.appendChild(style);
-
-    alert = document.createElement('div');
-    alert.id = 'hero-required-field-alert';
-    alert.className = 'hero-required-field-alert';
-    alert.innerHTML = `<section class="hero-required-field-card" role="alertdialog" aria-modal="true"><div class="hero-required-field-icon">!</div><h2>Informação obrigatória</h2><p></p><button type="button">Preencher agora</button></section>`;
-    document.body.appendChild(alert);
-  }
-
-  alert.querySelector('p').textContent = text;
-  alert.hidden = false;
-
-  alert.querySelector('button').onclick = () => {
-    alert.hidden = true;
-    document.querySelector('[data-tab="general"]')?.click();
-    field?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    window.setTimeout(() => field?.focus({ preventScroll: true }), 80);
-  };
 }
 
 function clearSaveReceipt() {
@@ -743,6 +716,32 @@ function createAllMediaEditors() {
     objectFit: 'cover'
   });
 
+  buildImageEditor = createMediaEditor({
+    name: 'imagem da mesa de builds',
+    input: fields.buildImageFile,
+    canvas: document.getElementById('build-image-canvas'),
+    image: document.getElementById('build-image-element'),
+    zoom: document.getElementById('build-image-zoom'),
+    zoomValue: document.getElementById('build-image-zoom-value'),
+    centerButton: document.getElementById('build-image-center'),
+    resetButton: document.getElementById('build-image-reset'),
+    allowedTypes: sharedImageTypes,
+    objectFit: 'contain'
+  });
+
+  buildCardEditor = createMediaEditor({
+    name: 'imagem do card da build',
+    input: fields.buildCardFile,
+    canvas: document.getElementById('build-card-canvas'),
+    image: document.getElementById('build-card-element'),
+    zoom: document.getElementById('build-card-zoom'),
+    zoomValue: document.getElementById('build-card-zoom-value'),
+    centerButton: document.getElementById('build-card-center'),
+    resetButton: document.getElementById('build-card-reset'),
+    allowedTypes: sharedImageTypes,
+    objectFit: 'contain'
+  });
+
   gifEditor = createMediaEditor({
     name: 'GIF animado',
     input: fields.gifFile,
@@ -867,6 +866,34 @@ async function loadHeroClasses() {
         value="${heroClass.id}"
         data-slug="${heroClass.slug || ''}"
       >${heroClass.name}</option>
+    `).join('')}
+  `;
+}
+
+async function loadHeroRarities() {
+  const { data, error } = await supabase
+    .from('hero_rarities')
+    .select('id,name,slug,rank,color')
+    .order('rank', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  const rarities = data || [];
+
+  if (!fields.rarityId) {
+    return;
+  }
+
+  fields.rarityId.innerHTML = `
+    <option value="">Sem raridade</option>
+    ${rarities.map(rarity => `
+      <option
+        value="${rarity.id}"
+        data-slug="${rarity.slug || ''}"
+        data-color="${rarity.color || ''}"
+      >${rarity.name}</option>
     `).join('')}
   `;
 }
@@ -1835,6 +1862,40 @@ function findClassOption(className) {
   }) || null;
 }
 
+function findRarityOption(rarityName) {
+  if (!fields.rarityId || !rarityName) {
+    return null;
+  }
+
+  const wanted = normalizeText(rarityName);
+  const options = [...fields.rarityId.options];
+
+  return options.find(option => {
+    if (!option.value) {
+      return false;
+    }
+
+    return (
+      normalizeText(option.textContent) === wanted ||
+      normalizeText(option.dataset.slug) === wanted
+    );
+  }) || options.find(option => {
+    if (!option.value) {
+      return false;
+    }
+
+    const text = normalizeText(option.textContent);
+    const slug = normalizeText(option.dataset.slug);
+
+    return (
+      text.includes(wanted) ||
+      wanted.includes(text) ||
+      slug.includes(wanted) ||
+      wanted.includes(slug)
+    );
+  }) || null;
+}
+
 function saveImportDraft(data) {
   sessionStorage.setItem(
     IMPORT_KEY,
@@ -1897,6 +1958,31 @@ function applyImportedData(data) {
   if (hero.description) {
     setFieldValue(fields.description, hero.description, 'input');
     applied.push('descrição');
+  }
+
+  if (data.meta?.rarity) {
+    const rarityOption = findRarityOption(data.meta.rarity);
+
+    if (rarityOption) {
+      fields.rarityId.value = rarityOption.value;
+      fields.rarityId.dispatchEvent(
+        new Event('change', { bubbles: true })
+      );
+      applied.push('raridade');
+    } else {
+      warnings.push(
+        `Raridade "${data.meta.rarity}" não encontrada.`
+      );
+    }
+  }
+
+  if (data.meta?.faction) {
+    setFieldValue(
+      fields.faction,
+      data.meta.faction,
+      'input'
+    );
+    applied.push('facção');
   }
 
   if (hero.displayOrder !== null) {
@@ -2123,6 +2209,10 @@ function injectImportUi() {
         ? findClassOption(validatedData.hero.class)
         : null;
 
+      const rarityOption = validatedData.meta?.rarity
+        ? findRarityOption(validatedData.meta.rarity)
+        : null;
+
       resultArea.innerHTML = `
         <div class="hero-import-summary">
           <div><small>Informações</small><strong>${countValues(validatedData.hero)}</strong></div>
@@ -2148,11 +2238,31 @@ function injectImportUi() {
             : 'Classe não informada.'}
         </div>
 
-        ${countValues(validatedData.meta) ? `
-          <div class="hero-import-note warn">
-            Nível e raridade foram reconhecidos, mas o editor atual ainda não possui campos de destino para salvá-los.
-          </div>
-        ` : ''}
+        <div class="hero-import-note ${
+          validatedData.meta?.rarity
+            ? (rarityOption ? 'ok' : 'warn')
+            : 'warn'
+        }">
+          ${
+            validatedData.meta?.rarity
+              ? (
+                  rarityOption
+                    ? `Raridade encontrada: ${escapeHtml(rarityOption.textContent.trim())}.`
+                    : `Raridade não encontrada: ${escapeHtml(validatedData.meta.rarity)}.`
+                )
+              : 'Raridade não informada.'
+          }
+        </div>
+
+        <div class="hero-import-note ${
+          validatedData.meta?.faction ? 'ok' : 'warn'
+        }">
+          ${
+            validatedData.meta?.faction
+              ? `Facção reconhecida: ${escapeHtml(validatedData.meta.faction)}.`
+              : 'Facção não informada.'
+          }
+        </div>
       `;
 
       applyButton.disabled = false;
@@ -2231,6 +2341,8 @@ function populateHero(hero) {
   fields.name.value = hero.name ?? '';
   fields.slug.value = hero.slug ?? '';
   fields.classId.value = hero.class_id ?? '';
+  fields.rarityId.value = hero.rarity_id ?? '';
+  fields.faction.value = hero.faction ?? '';
   fields.displayOrder.value = String(hero.display_order ?? 0);
   fields.description.value = hero.description ?? '';
   fields.enabled.checked = hero.enabled !== false;
@@ -2246,6 +2358,24 @@ function populateHero(hero) {
     offsetX: hero.card_image_offset_x ?? 0,
     offsetY: hero.card_image_offset_y ?? 0
   });
+
+  buildImageEditor.setSource(
+    getPublicUrl(hero.build_image_path || hero.image_path),
+    {
+      scale: hero.build_image_scale ?? hero.image_scale ?? 1,
+      offsetX: hero.build_image_offset_x ?? hero.image_offset_x ?? 0,
+      offsetY: hero.build_image_offset_y ?? hero.image_offset_y ?? 0
+    }
+  );
+
+  buildCardEditor.setSource(
+    getPublicUrl(hero.build_card_image_path || hero.card_image_path || hero.image_path),
+    {
+      scale: hero.build_card_image_scale ?? hero.card_image_scale ?? 1,
+      offsetX: hero.build_card_image_offset_x ?? hero.card_image_offset_x ?? 0,
+      offsetY: hero.build_card_image_offset_y ?? hero.card_image_offset_y ?? 0
+    }
+  );
 
   gifEditor.setSource(getPublicUrl(hero.gif_path), {
     scale: hero.gif_scale ?? 1,
@@ -2268,9 +2398,11 @@ async function loadHero() {
   const { data, error } = await supabase
     .from('heroes')
     .select(`
-      id, name, slug, description, class_id, enabled, display_order,
+      id, name, slug, description, class_id, rarity_id, faction, enabled, display_order,
       image_path, image_scale, image_offset_x, image_offset_y,
       card_image_path, card_image_scale, card_image_offset_x, card_image_offset_y,
+      build_image_path, build_image_scale, build_image_offset_x, build_image_offset_y,
+      build_card_image_path, build_card_image_scale, build_card_image_offset_x, build_card_image_offset_y,
       gif_path, gif_scale, gif_offset_x, gif_offset_y
     `)
     .eq('id', heroId)
@@ -2291,14 +2423,7 @@ async function loadHero() {
 function validateForm() {
   const name = fields.name.value.trim();
 
-  fields.name.closest('.hero-form-field')?.classList.toggle('is-invalid', !name);
-  fields.name.toggleAttribute('aria-invalid', !name);
-
-  if (!name) {
-    const error = new Error('Informe o nome do herói antes de salvar.');
-    error.validationField = fields.name;
-    throw error;
-  }
+  if (!name) throw new Error('Informe o nome do herói.');
 
   const slug = slugify(name);
 
@@ -2380,9 +2505,11 @@ function createDiff({ key, label, group, before, after, kind = 'text', apply, se
 async function loadExistingHeroBundle(targetId) {
   const [heroResult, heroStatsResult, weaponStatsResult] = await Promise.all([
     supabase.from('heroes').select(`
-      id, name, slug, description, class_id, enabled, display_order,
+      id, name, slug, description, class_id, rarity_id, faction, enabled, display_order,
       image_path, image_scale, image_offset_x, image_offset_y,
       card_image_path, card_image_scale, card_image_offset_x, card_image_offset_y,
+      build_image_path, build_image_scale, build_image_offset_x, build_image_offset_y,
+      build_card_image_path, build_card_image_scale, build_card_image_offset_x, build_card_image_offset_y,
       gif_path, gif_scale, gif_offset_x, gif_offset_y
     `).eq('id', targetId).single(),
     supabase.from('hero_base_stats').select('stat_key,value').eq('hero_id', targetId),
@@ -2400,8 +2527,31 @@ async function loadExistingHeroBundle(targetId) {
 }
 
 function classNameForId(id) {
-  const option = [...(fields.classId?.options || [])].find(item => item.value === String(id || ''));
+  const option = [...(fields.classId?.options || [])].find(
+    item => item.value === String(id || '')
+  );
+
   return option?.textContent.trim() || 'Sem classe';
+}
+
+function rarityNameForId(id) {
+  const option = [...(fields.rarityId?.options || [])].find(
+    item => item.value === String(id || '')
+  );
+
+  return option?.textContent.trim() || 'Sem raridade';
+}
+
+function formatHeroDiffValue(item, value) {
+  if (item.key === 'class_id') {
+    return classNameForId(value);
+  }
+
+  if (item.key === 'rarity_id') {
+    return rarityNameForId(value);
+  }
+
+  return displayDiffValue(value);
 }
 
 function buildUpdateDiffs(bundle) {
@@ -2412,6 +2562,8 @@ function buildUpdateDiffs(bundle) {
   const diffs = [
     createDiff({ key:'name', label:'Nome', group:'Geral', before:hero.name, after:importedValue('name',fields.name.value.trim(),hero.name), apply:{ type:'hero', column:'name' } }),
     createDiff({ key:'class_id', label:'Classe', group:'Geral', before:hero.class_id, after:importedValue('class',fields.classId.value || null,hero.class_id), apply:{ type:'hero', column:'class_id' } }),
+    createDiff({ key:'rarity_id', label:'Raridade', group:'Geral', before:hero.rarity_id, after:loadImportDraft()?.data?.meta?.rarity == null ? hero.rarity_id : (fields.rarityId.value || null), apply:{ type:'hero', column:'rarity_id' } }),
+    createDiff({ key:'faction', label:'Facção', group:'Geral', before:hero.faction, after:loadImportDraft()?.data?.meta?.faction == null ? hero.faction : (fields.faction.value.trim() || null), apply:{ type:'hero', column:'faction' } }),
     createDiff({ key:'description', label:'Descrição', group:'Geral', before:hero.description, after:importedValue('description',fields.description.value.trim() || null,hero.description), apply:{ type:'hero', column:'description' } }),
     createDiff({ key:'enabled', label:'Publicação', group:'Geral', before:hero.enabled, after:importedValue('active',fields.enabled.checked,hero.enabled), apply:{ type:'hero', column:'enabled' } }),
     createDiff({ key:'display_order', label:'Ordem de exibição', group:'Geral', before:hero.display_order, after:importedValue('displayOrder',toNumber(fields.displayOrder.value,0),hero.display_order), kind:'number', apply:{ type:'hero', column:'display_order' } })
@@ -2429,9 +2581,33 @@ function buildUpdateDiffs(bundle) {
     }
   }
 
+  const transforms = [
+    ['image_scale','Zoom da imagem principal',hero.image_scale,mainEditor.getState().scale],
+    ['image_offset_x','Posição X da imagem principal',hero.image_offset_x,mainEditor.getState().offsetX],
+    ['image_offset_y','Posição Y da imagem principal',hero.image_offset_y,mainEditor.getState().offsetY],
+    ['card_image_scale','Zoom do card principal',hero.card_image_scale,cardEditor.getState().scale],
+    ['card_image_offset_x','Posição X do card principal',hero.card_image_offset_x,cardEditor.getState().offsetX],
+    ['card_image_offset_y','Posição Y do card principal',hero.card_image_offset_y,cardEditor.getState().offsetY],
+    ['build_image_scale','Zoom da imagem da build',hero.build_image_scale,buildImageEditor.getState().scale],
+    ['build_image_offset_x','Posição X da imagem da build',hero.build_image_offset_x,buildImageEditor.getState().offsetX],
+    ['build_image_offset_y','Posição Y da imagem da build',hero.build_image_offset_y,buildImageEditor.getState().offsetY],
+    ['build_card_image_scale','Zoom do card da build',hero.build_card_image_scale,buildCardEditor.getState().scale],
+    ['build_card_image_offset_x','Posição X do card da build',hero.build_card_image_offset_x,buildCardEditor.getState().offsetX],
+    ['build_card_image_offset_y','Posição Y do card da build',hero.build_card_image_offset_y,buildCardEditor.getState().offsetY]
+  ];
+  for (const [column,label,before,after] of transforms) {
+    diffs.push(createDiff({
+      key:`transform.${column}`, label, group:'Mídia', before:toNumber(before, column.endsWith('_scale') ? 1 : 0),
+      after:toNumber(after, column.endsWith('_scale') ? 1 : 0), kind:'number',
+      apply:{ type:'hero', column }
+    }));
+  }
+
   const media = [
     ['image','Imagem principal',fields.imageFile.files?.[0],hero.image_path],
     ['card','Imagem do card',fields.cardFile.files?.[0],hero.card_image_path],
+    ['buildImage','Imagem da mesa de builds',fields.buildImageFile.files?.[0],hero.build_image_path],
+    ['buildCard','Imagem do card da build',fields.buildCardFile.files?.[0],hero.build_card_image_path],
     ['gif','GIF',fields.gifFile.files?.[0],hero.gif_path]
   ];
   for (const [key,label,file,before] of media) {
@@ -2484,8 +2660,8 @@ function renderUpdateAssistant() {
       <div class="update-diff ${item.change} ${item.changed ? '' : 'is-same'}">
         <input type="checkbox" data-diff-key="${escapeHtml(item.key)}" ${item.selected ? 'checked' : ''} ${item.changed ? '' : 'disabled'} aria-label="Atualizar ${escapeHtml(item.label)}">
         <div class="update-diff-label"><strong>${escapeHtml(item.label)}</strong><small>${item.changed ? (item.change === 'increase' ? '▲ Aumento' : item.change === 'decrease' ? '▼ Redução' : '⚠ Modificado') : '✔ Sem alteração'}</small></div>
-        <div class="update-value">${escapeHtml(item.key === 'class_id' ? classNameForId(item.before) : displayDiffValue(item.before))}</div><div class="update-arrow">→</div>
-        <div class="update-value">${escapeHtml(item.key === 'class_id' ? classNameForId(item.after) : displayDiffValue(item.after))}</div>
+        <div class="update-value">${escapeHtml(formatHeroDiffValue(item, item.before))}</div><div class="update-arrow">→</div>
+        <div class="update-value">${escapeHtml(formatHeroDiffValue(item, item.after))}</div>
         ${item.risky ? '<div class="update-risk">⚠ Alteração muito grande — diferença superior a 80%. Confirme com atenção; pode ser um erro de OCR.</div>' : ''}
       </div>`).join('')}</section>`;
   }).join('');
@@ -2547,6 +2723,8 @@ async function applySelectedUpdate(selectAll = false) {
     }
     if (upload.imagePath) heroPatch.image_path = upload.imagePath;
     if (upload.cardImagePath) heroPatch.card_image_path = upload.cardImagePath;
+    if (upload.buildImagePath) heroPatch.build_image_path = upload.buildImagePath;
+    if (upload.buildCardImagePath) heroPatch.build_card_image_path = upload.buildCardImagePath;
     if (upload.gifPath) heroPatch.gif_path = upload.gifPath;
     if (Object.keys(heroPatch).length) {
       const { error } = await supabase.from('heroes').update(heroPatch).eq('id', bundle.hero.id);
@@ -2581,12 +2759,14 @@ async function applySelectedUpdate(selectAll = false) {
 
 async function uploadSelectedMediaSelective(slug, selected) {
   const imageTypes = ['image/png','image/jpeg','image/webp','image/gif'];
-  const [imagePath, cardImagePath, gifPath] = await Promise.all([
+  const [imagePath, cardImagePath, buildImagePath, buildCardImagePath, gifPath] = await Promise.all([
     selected.has('image') ? uploadFile({file:fields.imageFile.files?.[0],heroSlug:slug,mediaType:'Main',allowedTypes:imageTypes}) : null,
     selected.has('card') ? uploadFile({file:fields.cardFile.files?.[0],heroSlug:slug,mediaType:'Card',allowedTypes:imageTypes}) : null,
+    selected.has('buildImage') ? uploadFile({file:fields.buildImageFile.files?.[0],heroSlug:slug,mediaType:'BuildMain',allowedTypes:imageTypes}) : null,
+    selected.has('buildCard') ? uploadFile({file:fields.buildCardFile.files?.[0],heroSlug:slug,mediaType:'BuildCard',allowedTypes:imageTypes}) : null,
     selected.has('gif') ? uploadFile({file:fields.gifFile.files?.[0],heroSlug:slug,mediaType:'GIF',allowedTypes:['image/gif']}) : null
   ]);
-  return { imagePath, cardImagePath, gifPath };
+  return { imagePath, cardImagePath, buildImagePath, buildCardImagePath, gifPath };
 }
 
 async function restoreHeroVersion(version) {
@@ -2645,7 +2825,7 @@ async function uploadFile({ file, heroSlug, mediaType, allowedTypes }) {
 async function uploadSelectedMedia(slug) {
   const imageTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
 
-  const [imagePath, cardImagePath, gifPath] = await Promise.all([
+  const [imagePath, cardImagePath, buildImagePath, buildCardImagePath, gifPath] = await Promise.all([
     uploadFile({
       file: fields.imageFile.files?.[0],
       heroSlug: slug,
@@ -2659,6 +2839,18 @@ async function uploadSelectedMedia(slug) {
       allowedTypes: imageTypes
     }),
     uploadFile({
+      file: fields.buildImageFile.files?.[0],
+      heroSlug: slug,
+      mediaType: 'BuildMain',
+      allowedTypes: imageTypes
+    }),
+    uploadFile({
+      file: fields.buildCardFile.files?.[0],
+      heroSlug: slug,
+      mediaType: 'BuildCard',
+      allowedTypes: imageTypes
+    }),
+    uploadFile({
       file: fields.gifFile.files?.[0],
       heroSlug: slug,
       mediaType: 'GIF',
@@ -2666,12 +2858,14 @@ async function uploadSelectedMedia(slug) {
     })
   ]);
 
-  return { imagePath, cardImagePath, gifPath };
+  return { imagePath, cardImagePath, buildImagePath, buildCardImagePath, gifPath };
 }
 
 function collectPayload(slug, uploadedMedia) {
   const mainState = mainEditor.getState();
   const cardState = cardEditor.getState();
+  const buildImageState = buildImageEditor.getState();
+  const buildCardState = buildCardEditor.getState();
   const gifState = gifEditor.getState();
 
   return {
@@ -2679,6 +2873,8 @@ function collectPayload(slug, uploadedMedia) {
     slug,
     description: fields.description.value.trim() || null,
     class_id: fields.classId.value || null,
+    rarity_id: fields.rarityId.value || null,
+    faction: fields.faction.value.trim() || null,
     enabled: fields.enabled.checked,
     display_order: toNumber(fields.displayOrder.value, 0),
 
@@ -2694,6 +2890,18 @@ function collectPayload(slug, uploadedMedia) {
     card_image_scale: cardState.scale,
     card_image_offset_x: cardState.offsetX,
     card_image_offset_y: cardState.offsetY,
+
+    build_image_path:
+      uploadedMedia.buildImagePath || currentHero?.build_image_path || null,
+    build_image_scale: buildImageState.scale,
+    build_image_offset_x: buildImageState.offsetX,
+    build_image_offset_y: buildImageState.offsetY,
+
+    build_card_image_path:
+      uploadedMedia.buildCardImagePath || currentHero?.build_card_image_path || null,
+    build_card_image_scale: buildCardState.scale,
+    build_card_image_offset_x: buildCardState.offsetX,
+    build_card_image_offset_y: buildCardState.offsetY,
 
     gif_path: uploadedMedia.gifPath || currentHero?.gif_path || null,
     gif_scale: gifState.scale,
@@ -2791,15 +2999,14 @@ async function saveHero(event) {
 
     fields.imageFile.value = '';
     fields.cardFile.value = '';
+    fields.buildImageFile.value = '';
+    fields.buildCardFile.value = '';
     fields.gifFile.value = '';
 
     updateAllPreviews();
   } catch (error) {
     console.error('Erro ao salvar herói:', error);
     showMessage(error.message || 'Não foi possível salvar o herói.', 'error');
-    if (error.validationField) {
-      showRequiredFieldAlert(error.message, error.validationField);
-    }
   } finally {
     isSaving = false;
 
@@ -2825,16 +3032,11 @@ async function initialize() {
     bindUpdateAssistant();
     ensureSaveSuccessUi();
 
-    fields.name?.addEventListener('input', () => {
-      if (!fields.name.value.trim()) return;
-      fields.name.removeAttribute('aria-invalid');
-      fields.name.closest('.hero-form-field')?.classList.remove('is-invalid');
-    });
-
     form?.addEventListener('submit', saveHero);
 
     await Promise.all([
       loadHeroClasses(),
+      loadHeroRarities(),
       loadStatDefinitions()
     ]);
 
@@ -2844,9 +3046,11 @@ async function initialize() {
       await loadNextDisplayOrder();
       fields.enabled.checked = true;
 
-      mainEditor.reset();
-      cardEditor.reset();
-      gifEditor.reset();
+    mainEditor.reset();
+    cardEditor.reset();
+    buildImageEditor.reset();
+    buildCardEditor.reset();
+    gifEditor.reset();
       renderIntegratedStatsFields();
 
       showMessage('');
@@ -2862,6 +3066,8 @@ async function initialize() {
     window.addEventListener('resize', () => {
       mainEditor.resize();
       cardEditor.resize();
+      buildImageEditor.resize();
+      buildCardEditor.resize();
       gifEditor.resize();
     });
   } catch (error) {
