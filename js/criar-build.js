@@ -661,7 +661,7 @@ function renderDetalheEquipamento(item = equipamentoSelecionado) {
     </div>
 
     ${item.set ? `<details class="eq-section eq-set-details">
-      <summary class="eq-section-title"><span>${esc(item.set.nome)}</span><span>${pieces}/${maxPieces} peças · ver bônus</span></summary>
+      <summary class="eq-section-title"><span>Bônus do conjunto · ${esc(item.set.nome)}</span><span>${pieces}/${maxPieces} peças · abrir ▾</span></summary>
       <div class="set-progress"><div class="track2"><i style="width:${Math.min(100, (pieces / maxPieces) * 100)}%"></i></div><b>${pieces}/${maxPieces}</b></div>
       <div class="set-bonuses">
         ${bonuses.map(b => `<div class="set-bonus ${pieces >= b.required_pieces ? 'active' : ''}"><div class="pieces">${esc(b.required_pieces)}</div><div><b>${esc(b.title)}</b><p>${esc(b.description)}</p></div></div>`).join('')}
